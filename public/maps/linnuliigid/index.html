@@ -1234,6 +1234,27 @@ const _countyCentroids = {
   'viljandi': { lat: 58.36, lon: 25.60 },
   'voru': { lat: 57.84, lon: 27.00 },
 };
+var _MUNI_TO_COUNTY = {
+  'alutaguse': 'ida viru', 'anija': 'harju', 'antsla': 'voru', 'elva': 'tartu',
+  'haademeeste': 'parnu', 'haapsalu': 'laane', 'haljala': 'laane viru', 'harku': 'harju',
+  'hiiumaa': 'hiiu', 'jarva': 'jarva', 'joelahtme': 'harju', 'jogeva': 'jogeva',
+  'johvi': 'ida viru', 'kadrina': 'laane viru', 'kambja': 'tartu', 'kanepi': 'polva',
+  'kastre': 'tartu', 'kehtna': 'rapla', 'keila': 'harju', 'kihnu': 'parnu',
+  'kiili': 'harju', 'kohila': 'rapla', 'kohtla jarve': 'ida viru', 'kose': 'harju',
+  'kuusalu': 'harju', 'laane harju': 'harju', 'laane nigula': 'laane', 'laaneranna': 'parnu',
+  'loksa': 'harju', 'luganuse': 'ida viru', 'luunja': 'tartu', 'maardu': 'harju',
+  'marjamaa': 'rapla', 'muhu': 'saare', 'mulgi': 'viljandi', 'mustvee': 'jogeva',
+  'narva': 'ida viru', 'narva joesuu': 'ida viru', 'noo': 'tartu', 'otepaa': 'valga',
+  'paide': 'jarva', 'parnu': 'parnu', 'peipsiaare': 'tartu', 'pohja parnumaa': 'parnu',
+  'pohja sakala': 'viljandi', 'poltsamaa': 'jogeva', 'polva': 'polva', 'raasiku': 'harju',
+  'rae': 'harju', 'rakvere': 'laane viru', 'rapina': 'polva', 'rapla': 'rapla',
+  'rouge': 'voru', 'ruhnu': 'saare', 'saarde': 'parnu', 'saaremaa': 'saare',
+  'saku': 'harju', 'saue': 'harju', 'setomaa': 'voru', 'sillamae': 'ida viru',
+  'tallinna': 'harju', 'tallinn': 'harju', 'tapa': 'laane viru', 'tartu': 'tartu',
+  'tori': 'parnu', 'torva': 'valga', 'turi': 'jarva', 'vaike maarja': 'laane viru',
+  'valga': 'valga', 'viimsi': 'harju', 'viljandi': 'viljandi', 'vinni': 'laane viru',
+  'viru nigula': 'laane viru', 'vormsi': 'laane', 'voru': 'voru',
+};
 function _buildDynamicPlaceCentroids(){
   const muni = {};
   const county = {};
@@ -1343,6 +1364,13 @@ function resolveCentroidFromPlace(placeText){
   }
   if(_countyCentroids[norm]){
     return { lat: _countyCentroids[norm].lat, lon: _countyCentroids[norm].lon, source: /maakond$/i.test(place) ? 'county_centroid' : 'municipality_centroid', placeText: place };
+  }
+  // _normalizePlaceKey strips `vald` but keeps the distinguishing first word, so a municipality
+  // never collapses onto its county key — `Lääne-Nigula vald` becomes `laane nigula`, not `laane`.
+  // Map it to its county and use that centroid instead of giving up.
+  const countyKey = _MUNI_TO_COUNTY[norm];
+  if(countyKey && _countyCentroids[countyKey]){
+    return { lat: _countyCentroids[countyKey].lat, lon: _countyCentroids[countyKey].lon, source: 'county_centroid', placeText: place };
   }
   return null;
 }
@@ -3604,6 +3632,23 @@ async function _applyElurikkusPayloadToPoints(species, payload){
   let best = null;
   let found = { lat: null, lon: null, source: '-', occUrl: null };
   let reason = 'no public coords';
+  // The displayed date, koht, collectors and individual count all come from the NEWEST
+  // occurrence. If that occurrence's coordinates are hidden, no exact point in the payload
+  // describes it — every public-coords item is a different, older observation somewhere else,
+  // so placing the marker on one of them can strand the bird ~100 km from its reported koht.
+  let newestItem = null;
+  let newestItemDt = '';
+  for(let i = 0; i < items.length; i++){
+    const it = items[i] || {};
+    const dt = String((it.eventDate || it.observedAt || it.rawObserved || it.date || it.t) || '').slice(0,10);
+    if(!dt) continue;
+    if(!newestItemDt || dt > newestItemDt){ newestItemDt = dt; newestItem = it; }
+  }
+  const newestHasPublicCoords = !!newestItem &&
+    String((newestItem.coordsStatus || newestItem.coords_status || '')).toLowerCase() === 'public' &&
+    Number.isFinite(Number(newestItem.lat)) &&
+    Number.isFinite(Number(newestItem.lon));
+  const newestCoordsHidden = !!newestItem && !newestHasPublicCoords;
   for(let i = 0; i < items.length; i++){
     const it = items[i] || {};
     const st = String((it.coordsStatus || it.coords_status || '')).toLowerCase();
@@ -3621,11 +3666,16 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     const s = String((it && (it.coordsStatus || it.coords_status)) || '').toLowerCase();
     return s === 'restricted';
   }) || null;
-  const placeHint = restrictedItem
-    ? String((restrictedItem.placeText || restrictedItem.municipality || restrictedItem.locality || restrictedItem.county) || '').trim()
+  // Prefer the newest occurrence's own place text — that is the koht the popup shows, so its
+  // centroid is the only approximate point that agrees with the rest of the displayed record.
+  const hintItem = (newestCoordsHidden && newestItem) ? newestItem : restrictedItem;
+  const placeHint = hintItem
+    ? String((hintItem.placeText || hintItem.municipality || hintItem.locality || hintItem.county) || '').trim()
     : '';
-  const centroid = (!best && placeHint && typeof resolveCentroidFromPlace === 'function') ? resolveCentroidFromPlace(placeHint) : null;
-  if(!best){
+  const centroid = ((!best || newestCoordsHidden) && placeHint && typeof resolveCentroidFromPlace === 'function') ? resolveCentroidFromPlace(placeHint) : null;
+  // Skip the detail-page scrape when the newest occurrence is hidden: those URLs lead to older
+  // occurrences too, so an exact point recovered there reintroduces the same mismatch.
+  if(!best && !newestCoordsHidden){
     let detailUrls = _extractDetailUrlsFromItems(items, 3);
     if(!detailUrls.length){
       try{
@@ -3650,7 +3700,18 @@ async function _applyElurikkusPayloadToPoints(species, payload){
       }catch(e){}
     }
   }
-  if(best && !hasExactLock){
+  if(newestCoordsHidden && centroid){
+    // Beats both an older public-coords point and a previously locked exact point: those
+    // describe a different observation, the centroid describes this one. coordLock is cleared
+    // so the next payload with public coords on its newest item can re-pin an exact position.
+    row.lat = centroid.lat;
+    row.lon = centroid.lon;
+    row.coordsSource = centroid.source;
+    row.coords_source = centroid.source;
+    row.coords_status = 'restricted_or_missing';
+    try{ delete row.coordLock; }catch(e){}
+    reason = 'restricted->centroid';
+  } else if(best && !hasExactLock && !newestCoordsHidden){
     row.lat = best.lat;
     row.lon = best.lon;
     const foundSrc = String(best.source || 'detail').toLowerCase();
@@ -3658,19 +3719,21 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     row.coordsSource = useSrc;
     row.coords_source = useSrc;
     row.coords_status = 'public';
-    found = { lat: Number(best.lat), lon: Number(best.lon), source: useSrc, occUrl: best.occUrl || null };
+    found = { lat: Number(best.lat), lon: Number(best.lon), source: useSrc, occUrl: best.occUrl || null, dt: String(best.dt || '') };
     reason = 'applied exact';
-  } else if(hasExactLock || hadExactBefore){
+  } else if((hasExactLock || hadExactBefore) && !newestCoordsHidden){
     row.coordsSource = 'elurikkus_occurrence_detail';
     row.coords_source = 'elurikkus_occurrence_detail';
     row.coords_status = row.coords_status || 'public';
     row.coordLock = 'exact';
     reason = 'kept_existing_exact_detail';
   } else {
+    // Newest occurrence hidden and no centroid resolved from its place text: keep whatever
+    // point the marker had, but drop the status to restricted so the popup caveats it.
     row.coords_status = 'restricted_or_missing';
     row.coordsSource = String(row.coordsSource || row.coords_source || 'kept_existing');
     row.coords_source = row.coordsSource;
-    reason = restrictedItem ? 'restricted->kept_existing' : 'no public coords';
+    reason = (restrictedItem || newestCoordsHidden) ? 'restricted->kept_existing' : 'no public coords';
   }
   const appliedLat = Number(row.lat);
   const appliedLon = Number(row.lon);
@@ -9489,12 +9552,34 @@ function buildPopupHtml(key, p){
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const lat = hasCoords ? p.lat.toFixed(5) : '';
   const lon = hasCoords ? p.lon.toFixed(5) : '';
+  // Coordinate provenance guard. When the newest observation has its coordinates hidden,
+  // _applyElurikkusPayloadToPoints falls back to an OLDER public-coords occurrence (or keeps
+  // the previous point) while date / koht / collectors still describe the newest one — so the
+  // marker lands where the bird was never reported on that date. Detected from positive
+  // evidence only; unknown provenance stays uncaveated (fail-quiet, no warning spam).
+  let coordsApprox = false;
+  try {
+    const _cs = String(p.coords_status || '').toLowerCase();
+    if (_cs && _cs !== 'public') coordsApprox = true;
+    if (/centroid|snapshot/i.test(String(p.coords_source || p.coordsSource || ''))) coordsApprox = true;
+    const _dec = p.lastCoordDecision || null;
+    if (_dec) {
+      if (/kept_existing|restricted|no public coords/i.test(String(_dec.reason || ''))) coordsApprox = true;
+      const _fdt = String((_dec.found && _dec.found.dt) || '').slice(0, 10);
+      const _pdt = String(p.t || '').slice(0, 10);
+      if (_fdt && _pdt && _fdt !== _pdt) coordsApprox = true;
+    }
+  } catch (_e) {}
+  const approxNote = coordsApprox
+    ? '<div style="margin-top:8px;padding:6px 8px;border-radius:6px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:11px;line-height:1.35">&#9888; T&auml;psed koordinaadid on peidetud &mdash; markeri asukoht on ligikaudne, p&auml;rineb varasemast vaatlusest.</div>'
+    : '';
   const actions = hasCoords ? `
+    ${approxNote}
     <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="popupBtn" onclick="copyCoords(${p.lat},${p.lon})">Copy coords</button>
-      <button class="popupBtn" onclick="openWaze(${p.lat},${p.lon})">Open in Waze</button>
+      ${coordsApprox ? '' : `<button class="popupBtn" onclick="openWaze(${p.lat},${p.lon})">Open in Waze</button>`}
     </div>
-    <div style="margin-top:6px;font-size:12px;opacity:.8">coords: ${lat},${lon}</div>
+    <div style="margin-top:6px;font-size:12px;opacity:.8">coords: ${lat},${lon}${coordsApprox ? ' (ligikaudne)' : ''}</div>
   ` : '';
   return `
     <div style="min-width:210px">

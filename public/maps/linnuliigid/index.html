@@ -10948,6 +10948,9 @@ setTimeout(autoDetectAvatarsForActive, 30000);
   function count(){ var l = document.getElementById('list'); return l ? l.querySelectorAll('.row').length : 0; }
   function paint(){
     var open = !!(window.__sbIsOpen && window.__sbIsOpen());
+    /* P40: keep body.sidebar-open truthful in the new branch (was stale since P37c); the shared
+       map-hamburger-control.js observer reports it to the React parent as SIDEBAR_STATE. */
+    try { document.body.classList.toggle('sidebar-open', open); } catch(e){}
     var n = count();
     if (headCount) headCount.textContent = n;
     pill.innerHTML = open ? (ICO_MAP + 'Kaart') : (ICO_LIST + 'Nimekiri · ' + n);

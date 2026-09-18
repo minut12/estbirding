@@ -48,3 +48,24 @@
     return control;
   };
 })();
+
+/* P40: report the map's mobile sidebar state to the React parent so it can hide the floating
+   map selector while the list covers the screen. All three maps toggle body.sidebar-open
+   (linnuliigid new UI since P40 Step 1). Posts only on ≤900px, matching each map's drawer breakpoint. */
+(function () {
+  if (window.parent === window || !window.MutationObserver) return;
+  var mq = window.matchMedia("(max-width: 900px)");
+  var last = null;
+  function post() {
+    var open = mq.matches && document.body.classList.contains("sidebar-open");
+    if (open === last) return;
+    last = open;
+    try { window.parent.postMessage({ type: "SIDEBAR_STATE", open: open }, "*"); } catch (e) {}
+  }
+  function start() {
+    new MutationObserver(post).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    if (mq.addEventListener) mq.addEventListener("change", post); else if (mq.addListener) mq.addListener(post);
+    post();
+  }
+  if (document.body) start(); else document.addEventListener("DOMContentLoaded", start);
+})();

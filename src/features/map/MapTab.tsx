@@ -44,6 +44,9 @@ import {
   updateSpeciesPredictionDebugContext,
 } from '@/lib/speciesPredictionDebug';
 
+/* P40: half the iframe sidebar width per map, so the floating selector centres over the map area on desktop. */
+const SIDEBAR_HALF: Record<string, number> = { 'linnuliigid-ee': 180, rariliin: 180, europe: 210 };
+
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 const MAP_ID_TO_SCOPE: Record<string, MapScope> = {
@@ -83,6 +86,11 @@ export type OpenUlevaadeMessage = {
   ebird_code?: string;
 };
 
+export type SidebarStateMessage = {
+  type: 'SIDEBAR_STATE';
+  open: boolean;
+};
+
 export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const { user, isAdmin, hasPermission, role, permissions, session } = useAuth();
   const navigate = useNavigate();
@@ -94,6 +102,16 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     [permissions, role],
   );
   const [selectedId, setSelectedId] = useState(initialMap.id);
+  // P40: true while the iframe's mobile species list covers the map (posted by map-hamburger-control.js).
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // P40: ≥901px = iframe desktop layout (sidebar beside the map). Below that the capsule is positioned by utilities.
+  const [isDesktopSelector, setIsDesktopSelector] = useState(() => (typeof window !== 'undefined' ? window.matchMedia('(min-width: 901px)').matches : true));
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 901px)');
+    const onChange = () => setIsDesktopSelector(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
   const fallbackMap = resolveAllowedMapSelection({ role, permissions, maps, requestedId: selectedId }) ?? availableMaps[0] ?? getActiveMap();
   const current = availableMaps.find((m) => m.id === selectedId) ?? fallbackMap;
   const mapScope = MAP_ID_TO_SCOPE[current.id] as MapScope | undefined;
@@ -1146,6 +1164,18 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     return () => window.removeEventListener('message', handler);
   }, [navigate]);
 
+  // P40: hide the floating map selector while the mobile list is open; reset on map switch.
+  useEffect(() => {
+    setSidebarOpen(false);
+    const handler = (ev: MessageEvent) => {
+      const d = ev.data as SidebarStateMessage | null | undefined;
+      if (!d || d.type !== 'SIDEBAR_STATE' || typeof d.open !== 'boolean') return;
+      setSidebarOpen(d.open);
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [current.id]);
+
   useEffect(() => {
     const onCustomSpeciesUpdated = () => sendCustomSpeciesToIframe();
     window.addEventListener('custom-species-updated', onCustomSpeciesUpdated as EventListener);
@@ -1174,32 +1204,39 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
 
   return (
     <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
-      <div className="px-3 py-1.5 border-b border-border bg-card shrink-0">
-        {/* P39: segmented map selector (mock A). Same state/handlers as the old Select. */}
-        <Tabs value={current.id} onValueChange={setSelectedId}>
-          <TabsList aria-label="Kaardi valik" className="h-9 w-full sm:w-auto rounded-full bg-muted p-1">
-            {availableMaps.map((m) => {
-              const shortName = m.name.replace(/\s*\([^)]*\)\s*$/, '');
-              return (
-                <TabsTrigger
-                  key={m.id}
-                  value={m.id}
-                  disabled={!m.enabled}
-                  title={m.enabled ? m.name : `${m.name} (varsti)`}
-                  className="group h-7 flex-1 sm:flex-none rounded-full px-3 sm:px-4 text-[13px] font-semibold gap-1.5 data-[state=active]:shadow-sm"
-                >
-                  <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-border group-data-[state=active]:bg-primary" />
-                  <span className="sm:hidden">{shortName}</span>
-                  <span className="hidden sm:inline">{m.name}</span>
-                  {!m.enabled && <span className="hidden sm:inline text-muted-foreground font-normal">(varsti)</span>}
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-        </Tabs>
-      </div>
-
       <div className="flex-1 relative" style={{ minHeight: 0 }}>
+        {/* P40: floating map selector (mock D2). Desktop: centred over the map area to the right of the
+            iframe sidebar (360px; Europe 420px) via inline left. ≤900px (iframe drawer mode): full-width
+            capsule clearing the hamburger (top-left) and Leaflet zoom (top-right); hidden while the list is open. */}
+        <div
+          className={`absolute top-2 z-10 left-14 right-14 min-[901px]:right-auto min-[901px]:-translate-x-1/2 transition-opacity ${sidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+          style={isDesktopSelector ? { left: `calc(50% + ${SIDEBAR_HALF[current.id] ?? 180}px)` } : undefined}
+        >
+          <Tabs value={current.id} onValueChange={setSelectedId}>
+            <TabsList
+              aria-label="Kaardi valik"
+              className="h-9 w-full min-[901px]:w-auto rounded-full bg-background/90 backdrop-blur-sm p-1 shadow-md border border-border/60"
+            >
+              {availableMaps.map((m) => {
+                const shortName = m.name.replace(/\s*\([^)]*\)\s*$/, '');
+                return (
+                  <TabsTrigger
+                    key={m.id}
+                    value={m.id}
+                    disabled={!m.enabled}
+                    title={m.enabled ? m.name : `${m.name} (varsti)`}
+                    className="group h-7 flex-1 min-[901px]:flex-none rounded-full px-1.5 min-[901px]:px-4 text-[12px] min-[901px]:text-[13px] font-semibold gap-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                  >
+                    <span aria-hidden="true" className="hidden min-[901px]:inline-block h-1.5 w-1.5 rounded-full bg-border group-data-[state=active]:bg-primary" />
+                    <span className="min-[901px]:hidden">{shortName}</span>
+                    <span className="hidden min-[901px]:inline">{m.name}</span>
+                    {!m.enabled && <span className="hidden min-[901px]:inline text-muted-foreground font-normal">(varsti)</span>}
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </Tabs>
+        </div>
         {error ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-destructive/10 p-6 text-center">
             <AlertTriangle className="w-10 h-10 text-destructive" />

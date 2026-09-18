@@ -1,8 +1,6 @@
 import { maps, getActiveMap } from './config';
 import { getAllowedMapsForRole, resolveAllowedMapSelection } from './access';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
@@ -1176,20 +1174,29 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
 
   return (
     <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
-      <div className="px-4 py-3 border-b border-border bg-card shrink-0">
-        <Select value={selectedId} onValueChange={setSelectedId}>
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {availableMaps.map((m) => (
-              <SelectItem key={m.id} value={m.id} disabled={!m.enabled}>
-                {m.name}
-                {!m.enabled && ' (varsti)'}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="px-3 py-1.5 border-b border-border bg-card shrink-0">
+        {/* P39: segmented map selector (mock A). Same state/handlers as the old Select. */}
+        <Tabs value={current.id} onValueChange={setSelectedId}>
+          <TabsList aria-label="Kaardi valik" className="h-9 w-full sm:w-auto rounded-full bg-muted p-1">
+            {availableMaps.map((m) => {
+              const shortName = m.name.replace(/\s*\([^)]*\)\s*$/, '');
+              return (
+                <TabsTrigger
+                  key={m.id}
+                  value={m.id}
+                  disabled={!m.enabled}
+                  title={m.enabled ? m.name : `${m.name} (varsti)`}
+                  className="group h-7 flex-1 sm:flex-none rounded-full px-3 sm:px-4 text-[13px] font-semibold gap-1.5 data-[state=active]:shadow-sm"
+                >
+                  <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-border group-data-[state=active]:bg-primary" />
+                  <span className="sm:hidden">{shortName}</span>
+                  <span className="hidden sm:inline">{m.name}</span>
+                  {!m.enabled && <span className="hidden sm:inline text-muted-foreground font-normal">(varsti)</span>}
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </Tabs>
       </div>
 
       <div className="flex-1 relative" style={{ minHeight: 0 }}>

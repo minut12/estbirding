@@ -393,7 +393,6 @@ html:not(.sb-classic) .sb-kevad{display:inline-flex;align-items:center;gap:8px;f
 html:not(.sb-classic) .sb-kevad-lbl{color:var(--sb-muted)}
 html:not(.sb-classic) .sb-kevad-val{padding:3px 9px;border-radius:999px;background:var(--sb-bg);border:1px solid var(--sb-line);font-weight:600;color:var(--sb-ink)}
 html:not(.sb-classic) .sb-row-detail .sb-kevad-edit{height:28px;padding:0 10px;font-size:12px}
-@media (max-width:900px){ html:not(.sb-classic) .sb-row-detail{padding-left:14px} }
 html:not(.sb-classic) .sb-acts{gap:0}
 html:not(.sb-classic) .sb-row-main{padding-left:12px;padding-right:6px}
 html:not(.sb-classic) .name-label{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:normal}
@@ -427,6 +426,20 @@ html:not(.sb-classic) #toggleWind{--sb-ico:url("data:image/svg+xml;utf8,<svg xml
 html:not(.sb-classic) #toggleSpring{--sb-ico:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'><path d='M5 19C5 9 11 4 20 4c0 9-5 15-15 15zM5 19l8-8'/></svg>")}
 html:not(.sb-classic) #toggleEbirdEE{--sb-ico:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 12l6 6L20 6'/></svg>")}
 html:not(.sb-classic) #ennustusBtn{--sb-ico:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'><circle cx='12' cy='12' r='8.5'/><circle cx='12' cy='12' r='4.5'/><circle cx='12' cy='12' r='1.2' fill='black'/></svg>")}
+/* P38a expanded row: actions line + Elurikkus details card */
+html:not(.sb-classic) .sb-row-detail{flex-direction:column;align-items:stretch;gap:10px;padding-left:14px}
+html:not(.sb-classic) .sb-detail-acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;align-self:flex-start}
+html:not(.sb-classic) .sb-info{border:1px solid var(--sb-line);border-radius:10px;background:var(--sb-bg);overflow:hidden;width:100%}
+html:not(.sb-classic) .sb-info-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:6px 10px;background:var(--sb-bg2);font:600 11px/1.3 system-ui;letter-spacing:.05em;text-transform:uppercase;color:var(--sb-ink2);border-top:1px solid var(--sb-line)}
+html:not(.sb-classic) .sb-info-h:first-child{border-top:0}
+html:not(.sb-classic) .sb-info-h span{font:500 11px system-ui;letter-spacing:0;text-transform:none;color:var(--sb-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+html:not(.sb-classic) .sb-kv{margin:0;padding:2px 0}
+html:not(.sb-classic) .sb-kvr{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;padding:4px 10px;font-size:12.5px;line-height:1.35}
+html:not(.sb-classic) .sb-kvr+.sb-kvr{border-top:1px solid var(--sb-line2)}
+html:not(.sb-classic) .sb-kvr dt{color:var(--sb-muted);margin:0}
+html:not(.sb-classic) .sb-kvr dd{margin:0;font-weight:500;color:var(--sb-ink);overflow-wrap:anywhere}
+html:not(.sb-classic) .sb-kvr.e dd{color:var(--sb-muted);font-weight:400}
+@media (max-width:900px){ html:not(.sb-classic) .sb-kvr{grid-template-columns:104px minmax(0,1fr)} }
 </style>
 </head>
 <body>
@@ -10231,6 +10244,17 @@ function rowHTML(obj) {
       '<div class="kvLabel">Collectors:</div>' +
       '<div class="kvValue"><span class="truncate" title="' + escapeHtml(collectorsFull) + '">' + escapeHtml(collectorsShort) + '</span></div>' +
     '</div>';
+  /* P38a: new-branch Elurikkus details card (full values, wraps); classic keeps extraBlock above */
+  var sbInfo = (function(){
+    if (!hasPoint) return '';
+    var loc = [['Municipality',x.municipality],['Locality',x.locality],['County',x.county],['Districts',x.districts],['Communes',x.communes],['Eesti omavalitsused',x.eestiOmavalitsused]];
+    var obs = [['Individual count',x.individualCount],['Behavior',x.behavior],['Collectors',x.collectors]];
+    function rows(a){ return a.map(function(r){ var v = get(r[1]); var e = (v === '-'); return '<div class="sb-kvr' + (e ? ' e' : '') + '"><dt>' + r[0] + '</dt><dd>' + (e ? '—' : escapeHtml(v)) + '</dd></div>'; }).join(''); }
+    return '<div class="sb-info">'
+      + '<div class="sb-info-h">Asukoht<span>lat ' + p.lat.toFixed(4) + ' · lon ' + p.lon.toFixed(4) + '</span></div><dl class="sb-kv">' + rows(loc) + '</dl>'
+      + '<div class="sb-info-h">Vaatlus</div><dl class="sb-kv">' + rows(obs) + '</dl>'
+      + '</div>';
+  })();
   const springVal = _springDisplayValue(_getSpringValue(key));
   const springTxt = '' +
     '<span class="kevadi-chip" style="display:inline-flex; gap:8px; align-items:center;">' +
@@ -10325,8 +10349,11 @@ function rowHTML(obj) {
       '</div>' +
     '</div>' +
     '<div class="sb-row-detail">' +
-      '<button type="button" class="btn prob-btn sb-arvuta" data-prob-species="' + key + '" title="Arvuta tõenäosus">' + SB_ICON.prob + 'Arvuta tõenäosus</button>' +
-      springTxtNew +
+      '<div class="sb-detail-acts">' +
+        '<button type="button" class="btn prob-btn sb-arvuta" data-prob-species="' + key + '" title="Arvuta tõenäosus">' + SB_ICON.prob + 'Arvuta tõenäosus</button>' +
+        springTxtNew +
+      '</div>' +
+      sbInfo +
     '</div>' +
   '</div>';
 }

@@ -310,21 +310,48 @@
 /* /P6b-iframe */
 
 </style>
+<style id="sbNewUi">
+/* P37a new sidebar header/toolbar. Scoped to html:not(.sb-classic); html.sb-classic rules only neutralise the new markup. */
+html:not(.sb-classic){--sb-bg:#fff;--sb-bg2:#f2f8f4;--sb-ink:#222a26;--sb-ink2:#4a5852;--sb-muted:#6c7f74;--sb-line:#dde4df;--sb-line2:#eef2ef;--sb-primary:#2d7a4b;--sb-primary-soft:#e4f1e8;--sb-warn:#b45309;--sb-crit:#b91c1c;--sb-r:10px}
+html.sb-classic .sb-titlebar{display:none}
+html.sb-classic .sb-filters{display:contents}
+html.sb-classic .sb-filters>summary{display:none}
+html:not(.sb-classic) #sidebar .panel-header{padding:12px 14px 10px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--sb-line)}
+html:not(.sb-classic) #sidebar .sidebar-header{display:none}
+html:not(.sb-classic) .sb-titlebar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+html:not(.sb-classic) .sb-titlebar h2{margin:0;font-size:16px;font-weight:650;color:var(--sb-ink);flex:1 1 auto;min-width:0}
+html:not(.sb-classic) .sb-counts{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+html:not(.sb-classic) .sb-counts .active7d-badge{font-size:12px;padding:3px 9px;border-radius:999px;background:var(--sb-bg2);border:1px solid var(--sb-line);color:var(--sb-ink2)}
+html:not(.sb-classic) .sb-titlebar #closeSidebarBtn{flex:0 0 auto;width:36px;height:36px;border-radius:9px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink);box-shadow:none}
+@media (min-width:901px){
+  html:not(.sb-classic) .sb-titlebar #closeSidebarBtn{display:none}
+}
+html:not(.sb-classic) #filterBox{height:40px;border:1px solid var(--sb-line);border-radius:var(--sb-r);padding:0 12px;font-size:14px;margin:0}
+html:not(.sb-classic) #windToggleBar{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:0 14px;flex-wrap:nowrap}
+html:not(.sb-classic) #windToggleBar::-webkit-scrollbar{display:none}
+html:not(.sb-classic) #windToggleBar .btn{flex:0 0 auto;height:32px;padding:0 11px;border-radius:999px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink2);font:500 12.5px system-ui}
+html:not(.sb-classic) #windToggleBar .btn.on{background:var(--sb-primary);border-color:var(--sb-primary);color:#fff}
+html:not(.sb-classic) .sb-filters>summary{padding:8px 10px;font:600 12.5px system-ui;background:var(--sb-bg2);border:1px solid var(--sb-line);border-radius:var(--sb-r);list-style:none;cursor:pointer}
+html:not(.sb-classic) .sb-filters>summary::-webkit-details-marker{display:none}
+html:not(.sb-classic) .sb-filters-body{padding:10px 0 0}
+</style>
 </head>
 <body>
 <div id="root">
 <div id="app">
   <aside id="sidebar">
     <div class="panel-header">
+    <div class="sb-titlebar"><h2>Linnuliigid</h2><div class="sb-counts"></div></div>
     <div class="sidebar-header"><button id="closeSidebarBtn" class="btn icon close-sidebar" style="margin-left:auto" title="Sulge" aria-label="Sulge"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
-    <input id="filterBox" type="text" placeholder="Filter..." />
+    <input id="filterBox" type="text" placeholder="Otsi liiki…" />
     </div>
     <div class="panel-content-scroll" style="position:relative;z-index:9999;pointer-events:auto">
 <div id="snapshotBanner" class="snapshot-banner" style="display:none !important"></div>
+<details class="sb-filters"><summary>Filtrid</summary><div class="sb-filters-body">
 <div class="fetch-controls">
   <button id="recentToggle" class="btn" title="7 päeva filter">7p: ...</button>
   <script>(function(){var b=document.getElementById('recentToggle');if(!b)return;var on=(localStorage.getItem('bm_recent_only')!=='0');b.textContent=on?'7p: ON':'7p: OFF';if(on)b.classList.add('on');else b.classList.remove('on');})()</script>
-  <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus">Refresh from Elurikkus</button>
+  <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus">Uuenda Elurikkusest</button>
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index" style="display:none">Resume</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
@@ -334,6 +361,7 @@
 <div id="fetchProgress" class="fetch-progress" style="display:none !important"></div>
 <div id="fetchProgressBar" class="fetch-progress-bar" style="display:none !important"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
 <div id="fetchError" class="fetch-error" style="display:none !important"></div>
+</div></details>
 <div id="debugContent" style="display:none"></div>
 <div id="debugProContent" style="display:none"></div>
     <div id="list"></div>
@@ -418,6 +446,54 @@ function clearOccurrence(key){
 </script>
 
 <script>
+/* P37 sidebar UI flag: 'classic' restores the pre-P37 sidebar. Same-origin localStorage, live via storage event. */
+(function(){
+  var KEY = 'estbirding.sidebarUi';
+  function apply(){
+    var v = null; try { v = localStorage.getItem(KEY); } catch(e){}
+    document.documentElement.classList.toggle('sb-classic', v === 'classic');
+  }
+  apply();
+  window.addEventListener('storage', function(ev){ if (!ev || ev.key === KEY || ev.key === null) apply(); });
+  window.__sbIsClassic = function(){ return document.documentElement.classList.contains('sb-classic'); };
+})();
+/* P37a: new branch moves the 7p/peidetud badges + close X into .sb-titlebar; classic puts them back.
+   Idempotent (moves only when the parent differs), re-runs on a live flag flip. Classic also forces the
+   Filtrid <details> open, since display:contents does not reveal a closed <details>' content. */
+(function(){
+  if (window.__sbSyncLayout) return;
+  var filtersOpenInNew = false;
+  function sync(){
+    var classic = window.__sbIsClassic();
+    var sb = document.getElementById('sidebar');
+    if (!sb) return;
+    var bar = document.getElementById('windToggleBar');
+    var counts = sb.querySelector('.sb-counts');
+    var titlebar = sb.querySelector('.sb-titlebar');
+    var closeHome = sb.querySelector('.sidebar-header');
+    var closeBtn = document.getElementById('closeSidebarBtn');
+    var filters = sb.querySelector('.sb-filters');
+    ['active7dBadge', 'hiddenSpeciesBadge'].forEach(function(id){
+      var el = document.getElementById(id);
+      var target = classic ? bar : counts;
+      if (el && target && el.parentElement !== target) target.appendChild(el);
+    });
+    var closeTarget = classic ? closeHome : titlebar;
+    if (closeBtn && closeTarget && closeBtn.parentElement !== closeTarget) closeTarget.appendChild(closeBtn);
+    if (filters){
+      if (!filters.__sbWired){
+        filters.addEventListener('toggle', function(){ if (!window.__sbIsClassic()) filtersOpenInNew = filters.open; });
+        filters.__sbWired = true;
+      }
+      filters.open = classic ? true : filtersOpenInNew;
+    }
+    if (typeof window.__placeSidebarTools === 'function') window.__placeSidebarTools();
+  }
+  window.__sbSyncLayout = sync;
+  sync();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', sync);
+  window.addEventListener('storage', function(ev){ if (!ev || ev.key === 'estbirding.sidebarUi' || ev.key === null) sync(); });
+})();
 // ---- Event log helper: bubble events up to parent window ----
 function _log(msg) {
   try {
@@ -11622,6 +11698,12 @@ document.addEventListener('DOMContentLoaded', function(){
     const filterBox = document.getElementById('filterBox');
     try{
       if(!bar || !host) return;
+      // P37a new branch: chip row sits in the sticky header right after #filterBox; spring panel stays in the scroll area.
+      if(typeof window.__sbIsClassic === 'function' && !window.__sbIsClassic() && filterBox){
+        if(filterBox.nextElementSibling !== bar) filterBox.after(bar);
+        if(spring && spring.parentElement !== host) host.prepend(spring);
+        return;
+      }
       if(bar.parentElement !== host){
         if(filterBox && filterBox.parentElement === host) host.insertBefore(bar, filterBox);
         else host.prepend(bar);
@@ -11933,7 +12015,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function updateActive7dBadge(){
     try{
       const el = document.getElementById('active7dBadge');
-      if (el) el.textContent = '7p liigid: ' + computeActiveSpecies7d();
+      if (el) el.textContent = '7p ' + computeActiveSpecies7d();
     }catch(e){}
   }
   try{
@@ -11974,7 +12056,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function updateHiddenBadge(){
     try{
       const el = document.getElementById('hiddenSpeciesBadge');
-      if (el) el.textContent = 'Peidetud: ' + computeHiddenSpeciesCount();
+      if (el) el.textContent = 'peidetud ' + computeHiddenSpeciesCount();
     }catch(e){}
   }
   try{

@@ -52,6 +52,7 @@ type SettingsPage = 'home' | 'news' | 'translations' | 'species' | 'rariliin' | 
 const LS_RESOLVED_PROXY_BASE = 'resolved_proxy_base_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
+const SIDEBAR_UI_KEY = 'estbirding.sidebarUi';
 
 // --- SAFE proxy translate derivation ---
 // Never throws, always returns '' on failure.
@@ -226,6 +227,14 @@ export default function SettingsTab() {
   const [storedEndpointView, setStoredEndpointView] = useState('');
   const [proxyBaseUrl, setProxyBaseUrl] = useState('');
   const [storedProxyBaseView, setStoredProxyBaseView] = useState('');
+  const [classicSidebar, setClassicSidebar] = useState<boolean>(() => {
+    try { return localStorage.getItem(SIDEBAR_UI_KEY) === 'classic'; } catch { return false; }
+  });
+  const handleClassicSidebarToggle = (checked: boolean) => {
+    setClassicSidebar(checked);
+    try { localStorage.setItem(SIDEBAR_UI_KEY, checked ? 'classic' : 'new'); } catch {}
+    toast.success(checked ? 'Klassikaline külgriba sees' : 'Uus külgriba sees');
+  };
   const envEndpoint = getEnvEndpoint();
   const resolvedEndpoint = resolveEndpoint(translationApiUrl);
   const resolvedProxyTranslateEndpoint = getProxyTranslateEndpointFromSupabaseProxyBase() || getProxyTranslateEndpoint();
@@ -1017,6 +1026,18 @@ export default function SettingsTab() {
             </p>
           </div>
           <Switch id="gpsEnabled" checked={form.gpsEnabled} onCheckedChange={handleGpsToggle} />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="classicSidebar">Klassikaline külgriba</Label>
+            <p className="text-xs text-muted-foreground">
+              Näita Linnuliigid (EE) kaardil vana külgriba ja nuppe.
+            </p>
+          </div>
+          <Switch id="classicSidebar" checked={classicSidebar} onCheckedChange={handleClassicSidebarToggle} />
         </div>
       </div>
 

@@ -368,6 +368,18 @@ html:not(.sb-classic) .sb-acts{gap:0}
 html:not(.sb-classic) .sb-row-main{padding-left:12px;padding-right:6px}
 html:not(.sb-classic) .name-label{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:normal}
 @media (prefers-reduced-motion:reduce){ html:not(.sb-classic) .sb-chev svg{transition:none} }
+/* P37c mobile full-screen list + floating pill */
+#sbPill{display:none}
+@media (max-width:900px){
+  html:not(.sb-classic) #sbPill{display:inline-flex;position:fixed;left:50%;bottom:calc(16px + var(--appBottomNav,0px) + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:4100;height:40px;padding:0 16px;border-radius:999px;border:0;background:var(--sb-ink);color:#fff;font:600 13px system-ui;align-items:center;gap:8px;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer;white-space:nowrap}
+  html:not(.sb-classic) #sidebar{position:fixed;left:0;right:0;top:var(--appHeader,0px);bottom:var(--appBottomNav,0px);height:auto;width:100%;max-width:none;transform:translateX(100%);transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:none;border-right:0;z-index:4000}
+  html:not(.sb-classic) #sidebar.open{transform:translateX(0)}
+  html:not(.sb-classic) .sidebar-backdrop,html:not(.sb-classic) .sidebar-backdrop.show{display:none!important}
+  html:not(.sb-classic) #closeSidebarBtn{display:none}
+  html:not(.sb-classic) .map-hamburger-leaflet{display:none!important}
+  html:not(.sb-classic) .panel-content-scroll{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+}
+@media (prefers-reduced-motion:reduce){ html:not(.sb-classic) #sidebar{transition:none} }
 </style>
 </head>
 <body>
@@ -10311,6 +10323,7 @@ function render() {
       }
     }
   } catch(e){ /* ignore logging errors */ }
+  if (window.__sbPaintPill) window.__sbPaintPill();
 }
 
 /* P37b: row expand (new UI only) */
@@ -10589,6 +10602,9 @@ setTimeout(autoDetectAvatarsForActive, 30000);
     document.body.classList.remove('sidebar-open');
     invalidateSoon();
   }
+  window.__sbOpen = openSidebar;
+  window.__sbClose = closeSidebar;
+  window.__sbIsOpen = function(){ return sidebar.classList.contains('open'); };
 
   initMapHamburgerControl({
     map,
@@ -10609,6 +10625,30 @@ setTimeout(autoDetectAvatarsForActive, 30000);
 
   window.addEventListener('resize', invalidateSoon);
   window.addEventListener('orientationchange', invalidateSoon);
+})();
+
+/* P37c: mobile floating pill (new UI only). Repaints via a class observer on #sidebar, so paths that
+   toggle .open directly (Prob button, top3 row) keep the label in sync without touching them. */
+(function(){
+  var wrap = document.getElementById('mapWrap'); if(!wrap || document.getElementById('sbPill')) return;
+  var pill = document.createElement('button');
+  pill.id = 'sbPill'; pill.type = 'button'; pill.className = 'hidden-in-export';
+  wrap.appendChild(pill);
+  var ICO_MAP = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14"/></svg>';
+  var ICO_LIST = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>';
+  function count(){ var l = document.getElementById('list'); return l ? l.querySelectorAll('.row').length : 0; }
+  function paint(){
+    var open = !!(window.__sbIsOpen && window.__sbIsOpen());
+    pill.innerHTML = open ? (ICO_MAP + 'Kaart') : (ICO_LIST + 'Nimekiri · ' + count());
+    pill.setAttribute('aria-label', open ? 'Näita kaarti' : 'Näita nimekirja');
+  }
+  pill.addEventListener('click', function(){
+    if (window.__sbIsOpen && window.__sbIsOpen()) window.__sbClose(); else window.__sbOpen();
+  });
+  var sb = document.getElementById('sidebar');
+  if (sb && window.MutationObserver) new MutationObserver(paint).observe(sb, { attributes: true, attributeFilter: ['class'] });
+  window.__sbPaintPill = paint;
+  paint();
 })();
 
 // === Listen for parent APP_INSETS ===

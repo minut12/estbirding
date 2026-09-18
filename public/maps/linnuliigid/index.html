@@ -327,13 +327,18 @@ html:not(.sb-classic) .sb-titlebar #closeSidebarBtn{flex:0 0 auto;width:36px;hei
   html:not(.sb-classic) .sb-titlebar #closeSidebarBtn{display:none}
 }
 html:not(.sb-classic) #filterBox{height:40px;border:1px solid var(--sb-line);border-radius:var(--sb-r);padding:0 12px;font-size:14px;margin:0}
-html:not(.sb-classic) #windToggleBar{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:0 14px;flex-wrap:nowrap}
+html:not(.sb-classic) #windToggleBar{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:0 7px 0 14px;flex-wrap:nowrap}
 html:not(.sb-classic) #windToggleBar::-webkit-scrollbar{display:none}
-html:not(.sb-classic) #windToggleBar .btn{flex:0 0 auto;height:32px;padding:0 11px;border-radius:999px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink2);font:500 12.5px system-ui}
+html:not(.sb-classic) #windToggleBar .btn{flex:0 0 auto;height:30px;padding:0 9px;gap:4px;border-radius:999px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink2);font:500 12px system-ui}
 html:not(.sb-classic) #windToggleBar .btn.on{background:var(--sb-primary);border-color:var(--sb-primary);color:#fff}
 html:not(.sb-classic) .sb-filters>summary{padding:8px 10px;font:600 12.5px system-ui;background:var(--sb-bg2);border:1px solid var(--sb-line);border-radius:var(--sb-r);list-style:none;cursor:pointer}
 html:not(.sb-classic) .sb-filters>summary::-webkit-details-marker{display:none}
-html:not(.sb-classic) .sb-filters-body{padding:10px 0 0}
+html:not(.sb-classic) .sb-filters-body{padding:10px 10px 8px;display:flex;flex-direction:column;gap:8px}
+html:not(.sb-classic) .sb-filters-body .fetch-controls{margin:0;gap:6px;z-index:auto}
+html:not(.sb-classic) .sb-filters-body .fetch-controls .btn{height:30px;padding:0 10px;border-radius:999px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink2);font:500 12px system-ui}
+html:not(.sb-classic) .sb-filters-body .fetch-controls .btn.on{background:var(--sb-primary);border-color:var(--sb-primary);color:#fff}
+html:not(.sb-classic) .sb-filters-body .fetch-controls .btn.stop{background:var(--sb-crit);border-color:var(--sb-crit);color:#fff}
+html:not(.sb-classic) .sb-filters-body .elu-updated{margin:0;font-size:11.5px;color:var(--sb-muted)}
 /* P37b compact rows + action-only expand */
 html:not(.sb-classic) .panel-content-scroll{padding-left:0;padding-right:0}
 html:not(.sb-classic) .row{display:block;grid-template-columns:none;gap:0;padding:0;border-bottom:1px solid var(--sb-line2)}
@@ -345,15 +350,15 @@ html:not(.sb-classic) .sb-row-text{min-width:0}
 html:not(.sb-classic) .name-label{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 html:not(.sb-classic) .name-label.muted{text-decoration:line-through;color:var(--sb-muted);opacity:1}
 html:not(.sb-classic) .sb-meta{font-size:12px;color:var(--sb-muted);display:flex;gap:8px;align-items:center;margin-top:2px;min-width:0;font-variant-numeric:tabular-nums}
-html:not(.sb-classic) .sb-meta span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html:not(.sb-classic) .sb-meta span{white-space:nowrap;flex-shrink:0}
 html:not(.sb-classic) .sb-meta .sb-fresh{color:var(--sb-primary);font-weight:600;flex-shrink:0}
 html:not(.sb-classic) .sb-sep{width:3px;height:3px;border-radius:50%;background:var(--sb-line);flex-shrink:0}
 html:not(.sb-classic) .sb-acts{display:flex;gap:2px;align-items:center}
 html:not(.sb-classic) .sb-ib{width:34px;height:34px;min-width:0;padding:0;border-radius:9px;border:0;background:transparent;color:var(--sb-ink2);display:inline-flex;align-items:center;justify-content:center;font-size:16px;box-shadow:none;cursor:pointer}
 html:not(.sb-classic) .sb-ib:hover{background:var(--sb-bg2);color:var(--sb-ink)}
 html:not(.sb-classic) .sb-ib.prob-active,html:not(.sb-classic) .notify-bell.active.sb-ib{background:var(--sb-primary-soft);color:var(--sb-primary)}
-html:not(.sb-classic) .notify-bell.sb-ib{opacity:1;color:var(--sb-muted)}
-html:not(.sb-classic) .notify-bell.sb-ib.active{color:var(--sb-primary)}
+html:not(.sb-classic) .notify-bell.sb-ib{opacity:1;color:var(--sb-muted);background:transparent}
+html:not(.sb-classic) .notify-bell.sb-ib.active{color:var(--sb-primary);background:var(--sb-primary-soft)}
 html:not(.sb-classic) .sb-chev svg{transition:transform .2s}
 html:not(.sb-classic) .row.sb-open .sb-chev svg{transform:rotate(180deg)}
 html:not(.sb-classic) .sb-row-detail{display:none;padding:0 14px 12px 68px;gap:6px;flex-wrap:wrap;align-items:center;background:var(--sb-bg2);border-top:1px dashed var(--sb-line)}
@@ -363,7 +368,7 @@ html:not(.sb-classic) .sb-row-detail .gbif-btn{background:var(--sb-bg)!important
 html:not(.sb-classic) .sb-row-detail .gbif-btn.active{background:var(--sb-primary-soft)!important;color:var(--sb-primary);border-color:var(--sb-primary)}
 html:not(.sb-classic) .sb-row-detail .ennusta-btn,html:not(.sb-classic) .sb-row-detail .ennusta-btn:hover{background:var(--sb-primary)!important;border-color:var(--sb-primary);color:#fff}
 html:not(.sb-classic) .sb-row-detail .kevadi-chip .pill{background:var(--sb-bg);border:1px solid var(--sb-line);border-radius:999px;font-size:12px}
-@media (max-width:900px){ html:not(.sb-classic) .sb-muni,html:not(.sb-classic) .sb-sep-muni{display:none} html:not(.sb-classic) .sb-ib{width:32px;height:32px} html:not(.sb-classic) .sb-row-detail{padding-left:14px} }
+@media (max-width:900px){ html:not(.sb-classic) .sb-ib{width:32px;height:32px} html:not(.sb-classic) .sb-row-detail{padding-left:14px} }
 html:not(.sb-classic) .sb-acts{gap:0}
 html:not(.sb-classic) .sb-row-main{padding-left:12px;padding-right:6px}
 html:not(.sb-classic) .name-label{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:normal}
@@ -507,7 +512,9 @@ function clearOccurrence(key){
 var SB_ICON = {
   open: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>',
   prob: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>',
-  chev: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'
+  chev: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+  bellOn: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg>',
+  bellOff: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 5.2A6 6 0 0 1 18 11v5l1.5 2H9M6 11v5l-1.5 2h6M10 20a2 2 0 0 0 4 0M3 3l18 18"/></svg>'
 };
 window.__sbOpenKey = null;
 /* P37a: new branch moves the 7p/peidetud badges + close X into .sb-titlebar; classic puts them back.
@@ -10228,12 +10235,14 @@ function rowHTML(obj) {
   }
 
   var isOpen = (window.__sbOpenKey === key);
-  var muniTxt = get(x.municipality);
   var metaNew = hasPoint
     ? '<span class="sb-fresh">' + (p.t ? formatDateEE(p.t) : '') + '</span>'
-      + (occ7 !== null ? '<i class="sb-sep"></i><span>7d ' + occ7 + '</span>' : '')
-      + (muniTxt !== '-' ? '<i class="sb-sep sb-sep-muni"></i><span class="sb-muni">' + escapeHtml(muniTxt) + '</span>' : '')
+      + (occ7 !== null ? '<i class="sb-sep"></i><span class="sb-occ">7d ' + occ7 + '</span>' : '')
     : '<span>' + ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub') + '</span>';
+  var bellBtnNew = '<button class="notify-bell sb-ib' + (isNotified ? ' active' : '') + '" '
+    + 'onclick="event.stopPropagation();toggleNotification(\'' + key.replace(/'/g, "\\'") + '\')" '
+    + 'title="' + (isNotified ? 'Teavitus sees' : 'Teavitus väljas') + '">'
+    + (isNotified ? SB_ICON.bellOn : SB_ICON.bellOff) + '</button>';
   var rarityCorner = rarityText ? '<span class="sb-rarity" title="Haruldus">' + rarityText + '</span>' : '';
   var gbifBtnNew = (function(){
     var isGbifActive = gbifMarkers.has(key) && gbifMarkers.get(key).length > 0;
@@ -10252,7 +10261,7 @@ function rowHTML(obj) {
       '<div class="sb-acts">' +
         '<button class="btn open-occ-btn sb-ib" data-open-url="' + openUrl.replace(/"/g,'&quot;') + '" title="Ava Elurikkuses" aria-label="Ava Elurikkuses">' + SB_ICON.open + '</button>' +
         '<button class="btn secondary prob-btn sb-ib hidden-in-export' + (activeProbSpecies===key ? ' prob-active' : '') + '" data-prob-species="' + key + '" title="Tõenäosuse kaart" aria-label="Tõenäosuse kaart">' + SB_ICON.prob + '</button>' +
-        bellBtn +
+        bellBtnNew +
         '<button type="button" class="sb-ib sb-chev" data-sb-toggle="' + keyAttr + '" title="Rohkem" aria-label="Rohkem" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' + SB_ICON.chev + '</button>' +
       '</div>' +
     '</div>' +

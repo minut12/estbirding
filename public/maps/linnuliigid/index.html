@@ -321,7 +321,19 @@ html:not(.sb-classic) #sidebar .sidebar-header{display:none}
 html:not(.sb-classic) .sb-titlebar{display:flex;align-items:center;justify-content:space-between;gap:8px}
 html:not(.sb-classic) .sb-titlebar h2{margin:0;font-size:16px;font-weight:650;color:var(--sb-ink);flex:1 1 auto;min-width:0}
 html:not(.sb-classic) .sb-counts{display:flex;align-items:center;gap:6px;flex:0 0 auto}
-html:not(.sb-classic) .sb-counts .active7d-badge{font-size:12px;padding:3px 9px;border-radius:999px;background:var(--sb-bg2);border:1px solid var(--sb-line);color:var(--sb-ink2)}
+/* P38b: brand row (icon · EstBirds · ?) with the 7p/peidetud counters as a plain subline (variant A) */
+html:not(.sb-classic) .sb-brand{display:flex;align-items:center;gap:10px;flex:1 1 auto;min-width:0}
+html:not(.sb-classic) .sb-brand-ico{width:44px;height:44px;border-radius:12px;flex:0 0 auto;display:block}
+html:not(.sb-classic) .sb-brand-txt{min-width:0}
+html:not(.sb-classic) .sb-titlebar h2{font-size:17px;font-weight:700;letter-spacing:-.01em;line-height:1.1;display:flex;align-items:center;gap:6px}
+html:not(.sb-classic) .sb-help{width:28px;height:28px;border-radius:999px;border:0;padding:0;background:var(--sb-primary-soft);color:var(--sb-primary);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
+html:not(.sb-classic) .sb-help:hover{background:#d3e8da}
+html:not(.sb-classic) .sb-help:focus-visible{outline:2px solid var(--sb-primary);outline-offset:2px}
+html:not(.sb-classic) .sb-counts{gap:0;margin-top:2px}
+html:not(.sb-classic) .sb-counts .active7d-badge{background:none;border:0;padding:0;color:var(--sb-muted);font-size:12.5px;font-weight:500;white-space:nowrap}
+html:not(.sb-classic) .sb-counts .active7d-badge:first-child::before{content:"";display:inline-block;width:7px;height:7px;border-radius:999px;background:var(--sb-primary);margin-right:6px;vertical-align:1px}
+html:not(.sb-classic) .sb-counts .active7d-badge+.active7d-badge::before{content:"·";margin:0 6px;color:var(--sb-line)}
+html.sb-classic .sb-help{display:none}
 html:not(.sb-classic) .sb-titlebar #closeSidebarBtn{flex:0 0 auto;width:36px;height:36px;border-radius:9px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink);box-shadow:none}
 @media (min-width:901px){
   html:not(.sb-classic) .sb-titlebar #closeSidebarBtn{display:none}
@@ -440,6 +452,82 @@ html:not(.sb-classic) .sb-kvr dt{color:var(--sb-muted);margin:0}
 html:not(.sb-classic) .sb-kvr dd{margin:0;font-weight:500;color:var(--sb-ink);overflow-wrap:anywhere}
 html:not(.sb-classic) .sb-kvr.e dd{color:var(--sb-muted);font-weight:400}
 @media (max-width:900px){ html:not(.sb-classic) .sb-kvr{grid-template-columns:104px minmax(0,1fr)} }
+/* P38b: help modal (#sbHelp). z 10000: above .panel-content-scroll (9999) and the pill (4100), below toasts (99999) / springEditModal (100000). */
+#sbHelp{display:none}
+html:not(.sb-classic) #sbHelp.open{display:flex;position:fixed;inset:0;z-index:10000;background:rgba(20,30,25,.42);align-items:center;justify-content:center;padding:20px;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--sb-ink)}
+html:not(.sb-classic) .sbh{background:var(--sb-bg);border-radius:16px;width:1040px;max-width:100%;max-height:100%;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden}
+html:not(.sb-classic) .sbh-head{padding:24px 26px 0;position:relative}
+html:not(.sb-classic) .sbh-head h2{margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em}
+html:not(.sb-classic) .sbh-head p{margin:4px 0 0;color:var(--sb-ink2);font-size:13.5px}
+html:not(.sb-classic) .sbh-x{position:absolute;right:16px;top:16px;width:36px;height:36px;border-radius:9px;border:0;background:transparent;color:var(--sb-ink2);font-size:22px;line-height:1;cursor:pointer;display:grid;place-items:center}
+html:not(.sb-classic) .sbh-x:hover{background:var(--sb-bg2)}
+html:not(.sb-classic) .sbh-x:focus-visible{outline:2px solid var(--sb-primary);outline-offset:2px}
+html:not(.sb-classic) .sbh-tabs{margin:18px 26px 0;display:grid;grid-template-columns:repeat(3,1fr);background:var(--sb-bg2);border-radius:12px;padding:4px;gap:4px}
+html:not(.sb-classic) .sbh-tabs button{border:0;background:transparent;border-radius:9px;height:36px;font:600 13.5px system-ui;color:var(--sb-ink2);cursor:pointer}
+html:not(.sb-classic) .sbh-tabs button[aria-selected="true"]{background:#fff;color:var(--sb-ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+html:not(.sb-classic) .sbh-tabs button:focus-visible{outline:2px solid var(--sb-primary);outline-offset:-2px}
+html:not(.sb-classic) .sbh-body{padding:18px 26px 26px;overflow:auto;display:flex;flex-direction:column;gap:14px;-webkit-overflow-scrolling:touch}
+html:not(.sb-classic) .sbh-body[hidden]{display:none}
+html:not(.sb-classic) .sbh-body>*{flex:0 0 auto}
+html:not(.sb-classic) .sbh-qs{background:linear-gradient(180deg,var(--sb-bg2),#fff);border:1px solid var(--sb-line);border-radius:14px;padding:18px 20px}
+html:not(.sb-classic) .sbh-eyebrow{font:700 11px system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--sb-primary)}
+html:not(.sb-classic) .sbh-qs h3{margin:4px 0 14px;font-size:17px;font-weight:650}
+html:not(.sb-classic) .sbh-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+html:not(.sb-classic) .sbh-step{display:flex;gap:10px;align-items:flex-start;background:#fff;border:1px solid var(--sb-line);border-radius:12px;padding:12px}
+html:not(.sb-classic) .sbh-step b{flex:0 0 28px;height:28px;border-radius:999px;background:var(--sb-primary);color:#fff;display:grid;place-items:center;font-size:13px}
+html:not(.sb-classic) .sbh-step strong{display:block;font-size:13.5px;font-weight:600}
+html:not(.sb-classic) .sbh-step small{color:var(--sb-muted);font-size:12px}
+html:not(.sb-classic) .sbh-acc{border:1px solid var(--sb-line);border-radius:14px;overflow:hidden}
+html:not(.sb-classic) .sbh-acc summary{list-style:none;display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer}
+html:not(.sb-classic) .sbh-acc summary::-webkit-details-marker{display:none}
+html:not(.sb-classic) .sbh-acc summary i{width:38px;height:38px;border-radius:10px;background:var(--sb-primary-soft);color:var(--sb-primary);display:grid;place-items:center;flex:0 0 auto}
+html:not(.sb-classic) .sbh-acc summary strong{display:block;font-size:15px;font-weight:650}
+html:not(.sb-classic) .sbh-acc summary small{color:var(--sb-muted);font-size:12.5px}
+html:not(.sb-classic) .sbh-acc summary .sbh-chev{margin-left:auto;color:var(--sb-muted);transition:transform .2s}
+html:not(.sb-classic) .sbh-acc[open] summary .sbh-chev{transform:rotate(180deg)}
+html:not(.sb-classic) .sbh-acc-body{padding:0 16px 16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+html:not(.sb-classic) .sbh-col{border:1px solid var(--sb-line);border-radius:12px;padding:14px 16px;background:#fff}
+html:not(.sb-classic) .sbh-col h4{margin:0 0 8px;font-size:14px;font-weight:650}
+html:not(.sb-classic) .sbh-col ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;color:var(--sb-ink2);font-size:13.5px}
+html:not(.sb-classic) .sbh-col li::before{content:"✓";color:var(--sb-primary);font-weight:700;margin-right:8px}
+html:not(.sb-classic) .sbh-col p{margin:4px 0 0;color:var(--sb-ink2);font-size:13.5px}
+html:not(.sb-classic) .sbh-why{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+html:not(.sb-classic) .sbh-why .sbh-col{padding:18px}
+html:not(.sb-classic) .sbh-why i{width:40px;height:40px;border-radius:10px;background:var(--sb-primary-soft);color:var(--sb-primary);display:grid;place-items:center;margin-bottom:10px}
+html:not(.sb-classic) .sbh-contact{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+html:not(.sb-classic) .sbh-ccard{background:linear-gradient(180deg,var(--sb-bg2),#fff);border:1px solid var(--sb-line);border-radius:14px;padding:20px}
+html:not(.sb-classic) .sbh-who{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+html:not(.sb-classic) .sbh-who i{width:44px;height:44px;border-radius:12px;background:var(--sb-primary-soft);color:var(--sb-primary);display:grid;place-items:center}
+html:not(.sb-classic) .sbh-who strong{display:block;font-size:15px}
+html:not(.sb-classic) .sbh-who small{color:var(--sb-muted)}
+html:not(.sb-classic) .sbh-ccard p{margin:0 0 14px;color:var(--sb-ink2)}
+html:not(.sb-classic) .sbh-btns{display:flex;gap:8px;flex-wrap:wrap}
+html:not(.sb-classic) .sbh-btn{display:inline-flex;align-items:center;height:38px;padding:0 16px;border-radius:9px;border:1px solid var(--sb-line);background:#fff;font:600 13.5px system-ui;color:var(--sb-ink);text-decoration:none;cursor:pointer}
+html:not(.sb-classic) .sbh-btn.pri{background:var(--sb-primary);border-color:var(--sb-primary);color:#fff}
+html:not(.sb-classic) .sbh-best{margin-top:14px;background:#fff;border:1px solid var(--sb-line);border-radius:12px;padding:12px 14px}
+html:not(.sb-classic) .sbh-best .sbh-eyebrow{color:var(--sb-ink2)}
+html:not(.sb-classic) .sbh-best div{margin-top:4px;color:var(--sb-ink2);font-size:13.5px}
+html:not(.sb-classic) .sbh-cgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+html:not(.sb-classic) .sbh-cl{border:1px solid var(--sb-line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;background:#fff;text-decoration:none;color:inherit}
+html:not(.sb-classic) .sbh-cl:hover{border-color:var(--sb-primary)}
+html:not(.sb-classic) .sbh-cl .sbh-top{display:flex;justify-content:space-between;align-items:flex-start}
+html:not(.sb-classic) .sbh-cl .sbh-top i{width:40px;height:40px;border-radius:10px;background:var(--sb-primary-soft);color:var(--sb-primary);display:grid;place-items:center}
+html:not(.sb-classic) .sbh-cl .sbh-top small{color:var(--sb-muted);font-size:12px}
+html:not(.sb-classic) .sbh-cl strong{display:block;font-size:14px}
+html:not(.sb-classic) .sbh-cl small.v{color:var(--sb-muted);font-size:12.5px;overflow-wrap:anywhere}
+@media (max-width:900px){
+  html:not(.sb-classic) #sbHelp.open{padding:0;top:var(--appHeader,0px);bottom:var(--appBottomNav,0px);align-items:stretch;background:var(--sb-bg)}
+  html:not(.sb-classic) .sbh{width:100%;border-radius:0;max-height:none;box-shadow:none}
+  html:not(.sb-classic) .sbh-head{padding:18px 16px 0}
+  html:not(.sb-classic) .sbh-head h2{font-size:19px}
+  html:not(.sb-classic) .sbh-tabs{margin:14px 16px 0}
+  html:not(.sb-classic) .sbh-tabs button{font-size:12.5px;height:34px}
+  html:not(.sb-classic) .sbh-body{padding:14px 16px calc(20px + env(safe-area-inset-bottom,0px))}
+  html:not(.sb-classic) .sbh-steps{grid-template-columns:1fr 1fr}
+  html:not(.sb-classic) .sbh-acc-body,html:not(.sb-classic) .sbh-why,html:not(.sb-classic) .sbh-contact,html:not(.sb-classic) .sbh-cgrid{grid-template-columns:1fr}
+  html:not(.sb-classic) .sbh-qs{padding:14px}
+}
+@media (prefers-reduced-motion:reduce){ html:not(.sb-classic) .sbh-acc summary .sbh-chev{transition:none} }
 </style>
 </head>
 <body>
@@ -447,7 +535,7 @@ html:not(.sb-classic) .sb-kvr.e dd{color:var(--sb-muted);font-weight:400}
 <div id="app">
   <aside id="sidebar">
     <div class="panel-header">
-    <div class="sb-titlebar"><h2>Linnuliigid</h2><div class="sb-counts"></div></div>
+    <div class="sb-titlebar"><div class="sb-brand"><img class="sb-brand-ico" src="/icons/estbirds-96.png" alt="" width="44" height="44"><div class="sb-brand-txt"><h2>EstBirds <button id="sbHelpBtn" class="sb-help hidden-in-export" type="button" aria-label="Juhend" title="Juhend" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M9.6 9.3a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1 .9-1 1.7"/><circle cx="12" cy="16.6" r=".6" fill="currentColor"/></svg></button></h2><div class="sb-counts"></div></div></div></div>
     <div class="sidebar-header"><button id="closeSidebarBtn" class="btn icon close-sidebar" style="margin-left:auto" title="Sulge" aria-label="Sulge"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
     <input id="filterBox" type="text" placeholder="Otsi liiki…" />
     </div>
@@ -572,6 +660,123 @@ var SB_ICON = {
   bellOff: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 5.2A6 6 0 0 1 18 11v5l1.5 2H9M6 11v5l-1.5 2h6M10 20a2 2 0 0 0 4 0M3 3l18 18"/></svg>'
 };
 window.__sbOpenKey = null;
+/* P38b: help modal (new UI only). Built lazily on first open, appended to <body>. Esc / backdrop / × close.
+   Exposes window.__sbHelpOpen / __sbHelpClose / __sbHelpIsOpen. Never touches #sidebar, the pill, or render(). */
+(function(){
+  if (window.__sbHelpOpen) return;
+  var EMAIL = 'estbirds@gmail.com';
+  var INSTAGRAM = 'estbirds';
+  var I = {
+    layers: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/></svg>',
+    sliders: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
+    row: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h6M7 14h10"/></svg>',
+    gear: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>',
+    pin: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 22s7-5.5 7-12a7 7 0 0 0-14 0c0 6.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+    list: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>',
+    shield: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>',
+    mail: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+    ig: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor"/></svg>',
+    chev: '<svg class="sbh-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>'
+  };
+  function acc(icon, title, sub, body, open){
+    return '<details class="sbh-acc"' + (open ? ' open' : '') + '><summary><i>' + icon + '</i><div><strong>' + title + '</strong><small>' + sub + '</small></div>' + I.chev + '</summary><div class="sbh-acc-body">' + body + '</div></details>';
+  }
+  function col(title, items){
+    return '<div class="sbh-col"><h4>' + title + '</h4><ul>' + items.map(function(t){ return '<li>' + t + '</li>'; }).join('') + '</ul></div>';
+  }
+  function html(){
+    var guide =
+      '<div class="sbh-qs"><div class="sbh-eyebrow">15 sekundi kiirstart</div><h3>Alusta kaardiga kiiresti</h3><div class="sbh-steps">' +
+      '<div class="sbh-step"><b>1</b><div><strong>Otsi liiki</strong><small>Kirjuta nimi otsingusse</small></div></div>' +
+      '<div class="sbh-step"><b>2</b><div><strong>Vajuta reale</strong><small>Avanevad üksikasjad ja tegevused</small></div></div>' +
+      '<div class="sbh-step"><b>3</b><div><strong>Vali kihid</strong><small>Tuulekaart, kevadränne, eBird EE</small></div></div>' +
+      '<div class="sbh-step"><b>4</b><div><strong>Telli teavitus</strong><small>Kell liigi real</small></div></div>' +
+      '</div></div>' +
+      acc(I.layers, 'Kihid', 'Vaatlused ja ennustus ühel kaardil',
+        col('Vaatlused', ['Elurikkuse vaatlused viimase 7 päeva jooksul', 'Haruldused märgitud R ja RR', 'Tundlikud liigid ainult valla täpsusega', 'eBird EE vaatlused eraldi kihina']) +
+        col('Ennustus', ['Tõenäosus iga liigi kohta eraldi', 'Kevadrände saabumisaeg', 'Tuulekaart rände hindamiseks', 'Ennusta-nupp avab ennustuse vaate']), true) +
+      acc(I.sliders, 'Filtrid ja nupud', 'Otsing, 7 päeva, andmete uuendamine',
+        col('Filtrid', ['Otsing leiab liigi nime järgi', '7p näitab ainult viimase nädala liike', 'Peidetud liikide arv on päises']) +
+        col('Andmed', ['Uuenda Elurikkusest laeb kõik liigid uuesti', 'Viimase uuenduse aeg on Filtrid all'])) +
+      acc(I.row, 'Liigi rida', 'Elurikkus, GBIF, teavitus, kevadine saabumisaeg',
+        col('Real', ['Ava vaatlus Elurikkuses', 'Arvuta tõenäosus', 'Kell lülitab teavituse sisse']) +
+        col('Avatud real', ['GBIF ja Ennusta', 'Kevadine saabumisaeg ja Muuda', 'Asukoht ja vaatlus Elurikkusest'])) +
+      acc(I.gear, 'Seaded', 'Klassikaline külgriba, teavitused',
+        col('Seaded', ['Klassikaline külgriba lülitab vana vaate tagasi', 'Teavitused tulevad ka siis, kui rakendus on suletud']));
+    var why =
+      '<div class="sbh-why">' +
+      '<div class="sbh-col"><i>' + I.pin + '</i><strong>Eesti andmed ühes vaates</strong><p>Elurikkus ja eBird EE koos, ilma vahelehtede vahel hüppamata.</p></div>' +
+      '<div class="sbh-col"><i>' + I.list + '</i><strong>Liigipõhine, mitte koondnumbrid</strong><p>Iga liik eraldi real, oma tõenäosuse ja saabumisajaga.</p></div>' +
+      '<div class="sbh-col"><i>' + I.shield + '</i><strong>Tundlikud liigid kaitstud</strong><p>Pesapaiku ei näidata, ainult vald või paik.</p></div>' +
+      '</div>';
+    var contact =
+      '<div class="sbh-contact">' +
+      '<div class="sbh-ccard"><div class="sbh-who"><i>' + I.mail + '</i><div><strong>Kirjuta Kristianile</strong><small>Loen iga kirja.</small></div></div>' +
+      '<p>Tagasiside, koostöö või lihtsalt tere — e-kiri on kiireim viis.</p>' +
+      '<div class="sbh-btns"><a class="sbh-btn pri" href="mailto:' + EMAIL + '">Saada e-kiri</a><a class="sbh-btn" href="https://www.instagram.com/' + INSTAGRAM + '/" target="_blank" rel="noopener">Ava Instagram</a></div>' +
+      '<div class="sbh-best"><div class="sbh-eyebrow">Sobib kõige paremini</div><div>Ideed, vead, meediapäringud.</div></div></div>' +
+      '<div class="sbh-cgrid">' +
+      '<a class="sbh-cl" href="mailto:' + EMAIL + '"><div class="sbh-top"><i>' + I.mail + '</i><small>Ava</small></div><div><strong>E-post</strong><small class="v">' + EMAIL + '</small></div></a>' +
+      '<a class="sbh-cl" href="https://www.instagram.com/' + INSTAGRAM + '/" target="_blank" rel="noopener"><div class="sbh-top"><i>' + I.ig + '</i><small>Ava</small></div><div><strong>Instagram</strong><small class="v">@' + INSTAGRAM + '</small></div></a>' +
+      '</div></div>';
+    return '<div class="sbh" role="dialog" aria-modal="true" aria-labelledby="sbHelpTitle">' +
+      '<div class="sbh-head"><h2 id="sbHelpTitle">EstBirds — juhend</h2><p>Õpi kaart mõne sekundiga selgeks, seejärel uuri kõiki võimalusi.</p><button type="button" class="sbh-x" aria-label="Sulge">×</button></div>' +
+      '<div class="sbh-tabs" role="tablist">' +
+      '<button type="button" role="tab" aria-selected="true" data-t="guide">Juhend</button>' +
+      '<button type="button" role="tab" aria-selected="false" data-t="why">Miks EstBirds</button>' +
+      '<button type="button" role="tab" aria-selected="false" data-t="contact">Kontakt</button>' +
+      '</div>' +
+      '<div class="sbh-body" data-panel="guide">' + guide + '</div>' +
+      '<div class="sbh-body" data-panel="why" hidden>' + why + '</div>' +
+      '<div class="sbh-body" data-panel="contact" hidden>' + contact + '</div>' +
+      '</div>';
+  }
+  var root = null, lastFocus = null;
+  function build(){
+    if (root) return root;
+    root = document.createElement('div');
+    root.id = 'sbHelp';
+    root.className = 'hidden-in-export';
+    root.innerHTML = html();
+    document.body.appendChild(root);
+    root.addEventListener('click', function(e){
+      if (e.target === root || e.target.closest('.sbh-x')) { close(); return; }
+      var tab = e.target.closest('[role="tab"]');
+      if (tab){
+        root.querySelectorAll('[role="tab"]').forEach(function(t){ t.setAttribute('aria-selected', t === tab ? 'true' : 'false'); });
+        root.querySelectorAll('[data-panel]').forEach(function(p){ p.hidden = p.dataset.panel !== tab.dataset.t; });
+      }
+    });
+    return root;
+  }
+  function onKey(e){ if (e.key === 'Escape' || e.key === 'Esc'){ e.preventDefault(); close(); } }
+  function open(){
+    if (window.__sbIsClassic && window.__sbIsClassic()) return;
+    var r = build();
+    lastFocus = document.activeElement;
+    r.classList.add('open');
+    var btn = document.getElementById('sbHelpBtn'); if (btn) btn.setAttribute('aria-expanded', 'true');
+    document.addEventListener('keydown', onKey);
+    var x = r.querySelector('.sbh-x'); if (x) x.focus();
+  }
+  function close(){
+    if (!root) return;
+    root.classList.remove('open');
+    var btn = document.getElementById('sbHelpBtn'); if (btn) btn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('keydown', onKey);
+    try{ if (lastFocus && lastFocus.focus) lastFocus.focus(); }catch(e){}
+  }
+  window.__sbHelpOpen = open;
+  window.__sbHelpClose = close;
+  window.__sbHelpIsOpen = function(){ return !!(root && root.classList.contains('open')); };
+  function wire(){
+    var btn = document.getElementById('sbHelpBtn');
+    if (btn && !btn.__sbhWired){ btn.addEventListener('click', function(e){ e.preventDefault(); open(); }); btn.__sbhWired = true; }
+  }
+  wire();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
+  window.addEventListener('storage', function(ev){ if ((!ev || ev.key === 'estbirding.sidebarUi' || ev.key === null) && window.__sbIsClassic && window.__sbIsClassic()) close(); });
+})();
 /* P37a: new branch moves the 7p/peidetud badges + close X into .sb-titlebar; classic puts them back.
    Idempotent (moves only when the parent differs), re-runs on a live flag flip. Classic also forces the
    Filtrid <details> open, since display:contents does not reveal a closed <details>' content. */

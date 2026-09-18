@@ -331,14 +331,24 @@ html:not(.sb-classic) #windToggleBar{display:flex;gap:4px;overflow-x:auto;scroll
 html:not(.sb-classic) #windToggleBar::-webkit-scrollbar{display:none}
 html:not(.sb-classic) #windToggleBar .btn{flex:0 0 auto;height:30px;padding:0 9px;gap:4px;border-radius:999px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink2);font:500 12px system-ui}
 html:not(.sb-classic) #windToggleBar .btn.on{background:var(--sb-primary);border-color:var(--sb-primary);color:#fff}
-html:not(.sb-classic) .sb-filters>summary{padding:8px 10px;font:600 12.5px system-ui;background:var(--sb-bg2);border:1px solid var(--sb-line);border-radius:var(--sb-r);list-style:none;cursor:pointer}
+html:not(.sb-classic) .sb-filters{border:1px solid var(--sb-line);border-radius:10px;overflow:hidden;background:var(--sb-bg)}
+html:not(.sb-classic) .sb-filters>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;padding:8px 10px;font:600 12.5px system-ui;color:var(--sb-ink2);cursor:pointer;background:var(--sb-bg2)}
 html:not(.sb-classic) .sb-filters>summary::-webkit-details-marker{display:none}
-html:not(.sb-classic) .sb-filters-body{padding:10px 10px 8px;display:flex;flex-direction:column;gap:8px}
-html:not(.sb-classic) .sb-filters-body .fetch-controls{margin:0;gap:6px;z-index:auto}
-html:not(.sb-classic) .sb-filters-body .fetch-controls .btn{height:30px;padding:0 10px;border-radius:999px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink2);font:500 12px system-ui}
-html:not(.sb-classic) .sb-filters-body .fetch-controls .btn.on{background:var(--sb-primary);border-color:var(--sb-primary);color:#fff}
-html:not(.sb-classic) .sb-filters-body .fetch-controls .btn.stop{background:var(--sb-crit);border-color:var(--sb-crit);color:#fff}
-html:not(.sb-classic) .sb-filters-body .elu-updated{margin:0;font-size:11.5px;color:var(--sb-muted)}
+html:not(.sb-classic) .sb-filters>summary::after{content:"";width:8px;height:8px;border-right:2px solid var(--sb-muted);border-bottom:2px solid var(--sb-muted);transform:rotate(45deg);margin-right:4px;transition:transform .2s}
+html:not(.sb-classic) .sb-filters[open]>summary::after{transform:rotate(-135deg);margin-top:4px}
+html:not(.sb-classic) .sb-filters-body{padding:10px;display:flex;flex-direction:column;gap:10px}
+html:not(.sb-classic) .sb-filters-body .fetch-controls{margin:0;gap:10px;z-index:auto;display:grid;grid-template-columns:1fr auto;align-items:center}
+html:not(.sb-classic) .sb-filters-body .fetch-controls::before{content:"Ainult viimased 7 päeva";font:500 13px system-ui;color:var(--sb-ink);grid-column:1}
+/* 7p button becomes a switch: text hidden, state via .on */
+html:not(.sb-classic) #recentToggle{grid-column:2;width:42px;height:24px;padding:0;border-radius:12px;border:0;background:var(--sb-line);position:relative;font-size:0;color:transparent;cursor:pointer;box-shadow:none}
+html:not(.sb-classic) #recentToggle::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--sb-bg);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .18s}
+html:not(.sb-classic) #recentToggle.on{background:var(--sb-primary)}
+html:not(.sb-classic) #recentToggle.on::after{transform:translateX(18px)}
+html:not(.sb-classic) .sb-filters-body .fetch-controls #btnRefreshData,html:not(.sb-classic) .sb-filters-body .fetch-controls #btnResumeFetch,html:not(.sb-classic) .sb-filters-body .fetch-controls #btnStopFetch{grid-column:1 / -1;justify-self:start;height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink);font:500 12.5px system-ui}
+html:not(.sb-classic) .sb-filters-body .fetch-controls #btnStopFetch{background:var(--sb-crit);border-color:var(--sb-crit);color:#fff}
+html:not(.sb-classic) .sb-filters-body .elu-updated{margin:0;font-size:11.5px;color:var(--sb-muted);display:flex;align-items:center;gap:6px}
+html:not(.sb-classic) .sb-filters-body .elu-updated::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--sb-primary);flex-shrink:0}
+@media (prefers-reduced-motion:reduce){ html:not(.sb-classic) #recentToggle::after,html:not(.sb-classic) .sb-filters>summary::after{transition:none} }
 /* P37b compact rows + action-only expand */
 html:not(.sb-classic) .panel-content-scroll{padding-left:0;padding-right:0}
 html:not(.sb-classic) .row{display:block;grid-template-columns:none;gap:0;padding:0;border-bottom:1px solid var(--sb-line2)}
@@ -385,6 +395,10 @@ html:not(.sb-classic) .name-label{white-space:normal;display:-webkit-box;-webkit
   html:not(.sb-classic) .panel-content-scroll{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
 }
 @media (prefers-reduced-motion:reduce){ html:not(.sb-classic) #sidebar{transition:none} }
+/* P37f list label */
+html:not(.sb-classic) #sbListHead{display:flex;align-items:center;padding:10px 14px 4px;font:500 11.5px system-ui;color:var(--sb-muted);letter-spacing:.03em;text-transform:uppercase}
+html:not(.sb-classic) #sbListHead b{font-weight:600;color:var(--sb-ink2);margin-left:3px}
+html.sb-classic #sbListHead{display:none}
 </style>
 </head>
 <body>
@@ -548,6 +562,18 @@ window.__sbOpenKey = null;
       filters.open = classic ? true : filtersOpenInNew;
     }
     if (typeof window.__placeSidebarTools === 'function') window.__placeSidebarTools();
+    /* P37f: new branch hosts Filtrid in the sticky header right after the chip bar; classic puts it back
+       before #debugContent. Waits until the bar itself is in the header (not yet true at first boot sync). */
+    if (filters){
+      var header = sb.querySelector('.panel-header');
+      var scroll = sb.querySelector('.panel-content-scroll');
+      var dbg = document.getElementById('debugContent');
+      if (!classic){
+        if (bar && header && bar.parentElement === header && bar.nextElementSibling !== filters) bar.after(filters);
+      } else if (scroll && dbg && dbg.parentElement === scroll && filters.nextElementSibling !== dbg){
+        scroll.insertBefore(filters, dbg);
+      }
+    }
   }
   window.__sbSyncLayout = sync;
   sync();
@@ -4760,6 +4786,7 @@ function setRecentOnly(val){
   if(btn){
     btn.textContent = '7p: ' + (on ? 'ON' : 'OFF');
     if(on) btn.classList.add('on'); else btn.classList.remove('on');
+    btn.setAttribute('role', 'switch'); btn.setAttribute('aria-checked', on ? 'true' : 'false');
   }
   rebuildAllMarkers();
   render();
@@ -8703,6 +8730,7 @@ function _wireSidebarSettingsRow(){
   if(btn){
     btn.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
     if(window.__recentOnly) btn.classList.add('on'); else btn.classList.remove('on');
+    btn.setAttribute('role', 'switch'); btn.setAttribute('aria-checked', window.__recentOnly ? 'true' : 'false');
   }
 }
 
@@ -10643,12 +10671,24 @@ setTimeout(autoDetectAvatarsForActive, 30000);
   var pill = document.createElement('button');
   pill.id = 'sbPill'; pill.type = 'button'; pill.className = 'hidden-in-export';
   wrap.appendChild(pill);
+  /* P37f: "Liigid · n" label above the list; count shares paint() with the pill. */
+  var listEl = document.getElementById('list');
+  var head = document.getElementById('sbListHead');
+  if (!head && listEl){
+    head = document.createElement('div');
+    head.id = 'sbListHead';
+    head.innerHTML = '<span>Liigid · <b>0</b></span>';
+    listEl.parentNode.insertBefore(head, listEl);
+  }
+  var headCount = head ? head.querySelector('b') : null;
   var ICO_MAP = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14"/></svg>';
   var ICO_LIST = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>';
   function count(){ var l = document.getElementById('list'); return l ? l.querySelectorAll('.row').length : 0; }
   function paint(){
     var open = !!(window.__sbIsOpen && window.__sbIsOpen());
-    pill.innerHTML = open ? (ICO_MAP + 'Kaart') : (ICO_LIST + 'Nimekiri · ' + count());
+    var n = count();
+    if (headCount) headCount.textContent = n;
+    pill.innerHTML = open ? (ICO_MAP + 'Kaart') : (ICO_LIST + 'Nimekiri · ' + n);
     pill.setAttribute('aria-label', open ? 'Näita kaarti' : 'Näita nimekirja');
   }
   pill.addEventListener('click', function(){

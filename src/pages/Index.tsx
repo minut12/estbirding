@@ -7,7 +7,6 @@ import EventsTab from '@/features/events/EventsTab';
 import OverviewTab from '@/features/overview/OverviewTab';
 
 import SettingsTab from '@/features/settings/SettingsTab';
-import CacheResetFab from '@/components/CacheResetFab';
 import VersionBanner from '@/components/VersionBanner';
 import { cn } from '@/lib/utils';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
@@ -122,8 +121,6 @@ export default function Index() {
           </button>
         ))}
       </nav>
-
-      {active === 'kaart' && selectedMapId === 'linnuliigid-ee' && <CacheResetFab />}
     </div>
   );
 }

@@ -362,9 +362,10 @@ html:not(.sb-classic) .name-label.muted{text-decoration:line-through;color:var(-
 html:not(.sb-classic) .sb-meta{font-size:12px;color:var(--sb-muted);display:flex;gap:8px;align-items:center;margin-top:2px;min-width:0;font-variant-numeric:tabular-nums}
 html:not(.sb-classic) .sb-meta span{white-space:nowrap;flex-shrink:0}
 html:not(.sb-classic) .sb-meta .sb-fresh{color:var(--sb-primary);font-weight:600;flex-shrink:0}
+html:not(.sb-classic) .sb-meta .sb-occ{color:var(--sb-ink);font-weight:600}
 html:not(.sb-classic) .sb-sep{width:3px;height:3px;border-radius:50%;background:var(--sb-line);flex-shrink:0}
 html:not(.sb-classic) .sb-acts{display:flex;gap:2px;align-items:center}
-html:not(.sb-classic) .sb-ib{width:34px;height:34px;min-width:0;padding:0;border-radius:9px;border:0;background:transparent;color:var(--sb-ink2);display:inline-flex;align-items:center;justify-content:center;font-size:16px;box-shadow:none;cursor:pointer}
+html:not(.sb-classic) .sb-ib{width:32px;height:32px;min-width:0;padding:0;border-radius:9px;border:0;background:transparent;color:var(--sb-ink2);display:inline-flex;align-items:center;justify-content:center;font-size:16px;box-shadow:none;cursor:pointer}
 html:not(.sb-classic) .sb-ib:hover{background:var(--sb-bg2);color:var(--sb-ink)}
 html:not(.sb-classic) .sb-ib.prob-active,html:not(.sb-classic) .notify-bell.active.sb-ib{background:var(--sb-primary-soft);color:var(--sb-primary)}
 html:not(.sb-classic) .notify-bell.sb-ib{opacity:1;color:var(--sb-muted);background:transparent}
@@ -374,18 +375,33 @@ html:not(.sb-classic) .row.sb-open .sb-chev svg{transform:rotate(180deg)}
 html:not(.sb-classic) .sb-row-detail{display:none;padding:0 14px 12px 68px;gap:6px;flex-wrap:wrap;align-items:center;background:var(--sb-bg2);border-top:1px dashed var(--sb-line)}
 html:not(.sb-classic) .row.sb-open .sb-row-detail{display:flex;padding-top:8px}
 html:not(.sb-classic) .sb-row-detail .btn{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink);font:500 12px system-ui}
-html:not(.sb-classic) .sb-row-detail .gbif-btn{background:var(--sb-bg)!important;color:var(--sb-ink)}
-html:not(.sb-classic) .sb-row-detail .gbif-btn.active{background:var(--sb-primary-soft)!important;color:var(--sb-primary);border-color:var(--sb-primary)}
-html:not(.sb-classic) .sb-row-detail .ennusta-btn,html:not(.sb-classic) .sb-row-detail .ennusta-btn:hover{background:var(--sb-primary)!important;border-color:var(--sb-primary);color:#fff}
+/* P37h GBIF + Ennusta row icons: text kept but hidden, icon via mask so state lives in classes. !important only to beat the global .gbif-btn / .ennusta-btn backgrounds */
+html:not(.sb-classic) .sb-ib-gbif,html:not(.sb-classic) .sb-ib-enn{font-size:0;color:transparent;position:relative}
+html:not(.sb-classic) .sb-ib-gbif::before,html:not(.sb-classic) .sb-ib-enn::before{content:"";position:absolute;inset:0;margin:auto;width:18px;height:18px;background:var(--sb-ink2);-webkit-mask:var(--sb-ico) center/contain no-repeat;mask:var(--sb-ico) center/contain no-repeat}
+html:not(.sb-classic) .sb-ib-gbif{--sb-ico:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'><circle cx='12' cy='12' r='9'/><path d='M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18'/></svg>")}
+html:not(.sb-classic) .sb-ib-enn{--sb-ico:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z'/></svg>")}
+html:not(.sb-classic) .sb-ib-gbif{background:transparent!important}
+html:not(.sb-classic) .sb-ib-gbif:hover{background:var(--sb-bg2)!important}
+html:not(.sb-classic) .sb-ib-gbif:hover::before,html:not(.sb-classic) .sb-ib-enn:hover::before{background:var(--sb-ink)}
+html:not(.sb-classic) .sb-ib-gbif.active{background:var(--sb-primary-soft)!important}
+html:not(.sb-classic) .sb-ib-gbif.active::before{background:var(--sb-primary)}
+html:not(.sb-classic) .sb-ib-gbif[disabled]::before{opacity:.4}
+html:not(.sb-classic) .sb-ib-enn{background:var(--sb-primary-soft)!important}
+html:not(.sb-classic) .sb-ib-enn::before{background:var(--sb-primary)}
 html:not(.sb-classic) .sb-row-detail .sb-arvuta svg{width:14px;height:14px;margin-right:5px;vertical-align:-2px}
 html:not(.sb-classic) .sb-kevad{display:inline-flex;align-items:center;gap:8px;font-size:12.5px}
 html:not(.sb-classic) .sb-kevad-lbl{color:var(--sb-muted)}
 html:not(.sb-classic) .sb-kevad-val{padding:3px 9px;border-radius:999px;background:var(--sb-bg);border:1px solid var(--sb-line);font-weight:600;color:var(--sb-ink)}
 html:not(.sb-classic) .sb-row-detail .sb-kevad-edit{height:28px;padding:0 10px;font-size:12px}
-@media (max-width:900px){ html:not(.sb-classic) .sb-ib{width:32px;height:32px} html:not(.sb-classic) .sb-row-detail{padding-left:14px} }
+@media (max-width:900px){ html:not(.sb-classic) .sb-row-detail{padding-left:14px} }
 html:not(.sb-classic) .sb-acts{gap:0}
 html:not(.sb-classic) .sb-row-main{padding-left:12px;padding-right:6px}
 html:not(.sb-classic) .name-label{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:normal}
+html:not(.sb-classic) .name-label{overflow-wrap:break-word}
+html:not(.sb-classic) .sb-six .name-label{overflow-wrap:anywhere}
+html:not(.sb-classic) .sb-meta{flex-wrap:wrap;row-gap:0}
+html:not(.sb-classic) .sb-meta span:only-child{white-space:normal;flex-shrink:1;min-width:0}
+html:not(.sb-classic) .sb-six .sb-sep{display:none}
 @media (prefers-reduced-motion:reduce){ html:not(.sb-classic) .sb-chev svg{transition:none} }
 /* P37c mobile full-screen list + floating pill */
 #sbPill{display:none}
@@ -10287,13 +10303,13 @@ function rowHTML(obj) {
   var gbifBtnNew = (function(){
     var isGbifActive = gbifMarkers.has(key) && gbifMarkers.get(key).length > 0;
     var isGbifLoading = gbifLoadingSpecies.has(key);
-    return '<button class="btn gbif-btn' + (isGbifActive ? ' active' : '') + '" data-species="' + key + '"' + (isGbifLoading ? ' disabled' : '') + ' title="Näita GBIF andmeid. Shift+click = muuda liigi vastet">' + (isGbifLoading ? 'GBIF...' : (isGbifActive ? 'GBIF ✕' : 'GBIF')) + '</button>';
+    return '<button class="btn gbif-btn sb-ib sb-ib-gbif' + (isGbifActive ? ' active' : '') + '" data-species="' + key + '"' + (isGbifLoading ? ' disabled' : '') + ' title="Näita GBIF andmeid. Shift+click = muuda liigi vastet" aria-label="GBIF">' + (isGbifLoading ? 'GBIF...' : (isGbifActive ? 'GBIF ✕' : 'GBIF')) + '</button>';
   })();
   var keyAttr = key.replace(/"/g,'&quot;');
   var keyJs = String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   var springTxtNew = '<span class="sb-kevad"><span class="sb-kevad-lbl">Kevad</span><span class="sb-kevad-val">' + escapeHtml(springVal || '-') + '</span>' + (_canEditKevadranne() ? '<button type="button" class="btn secondary sb-kevad-edit" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDateDirect && window.editSpringDateDirect(\'' + keyJs + '\'); return false;">Muuda</button>' : '') + '</span>';
   return '<div class="row' + (activeProbSpecies===key ? ' prob-row-active' : '') + (isOpen ? ' sb-open' : '') + '" data-key="' + key + '">' +
-    '<div class="sb-row-main" data-sb-toggle="' + keyAttr + '">' +
+    '<div class="sb-row-main' + (window.__predictionFeatureOn ? ' sb-six' : '') + '" data-sb-toggle="' + keyAttr + '">' +
       '<div class="avatar" style="background-image:url(\'' + getDisplayAvatar(key) + '\');border-color:' + bcol + '">' + rarityCorner + '</div>' +
       '<div class="sb-row-text">' +
         '<div class="name-label clickable ' + muted + '" onclick="event.stopPropagation();toggleVisibility(\'' + keyJs + '\')">' + key + '</div>' +
@@ -10301,14 +10317,14 @@ function rowHTML(obj) {
       '</div>' +
       '<div class="sb-acts">' +
         '<button class="btn open-occ-btn sb-ib" data-open-url="' + openUrl.replace(/"/g,'&quot;') + '" title="Ava Elurikkuses" aria-label="Ava Elurikkuses">' + SB_ICON.open + '</button>' +
+        gbifBtnNew +
         '<button class="btn secondary prob-btn sb-ib hidden-in-export' + (activeProbSpecies===key ? ' prob-active' : '') + '" data-prob-species="' + key + '" title="Tõenäosuse kaart" aria-label="Tõenäosuse kaart">' + SB_ICON.prob + '</button>' +
+        (window.__predictionFeatureOn ? '<button type="button" class="btn ennusta-btn sb-ib sb-ib-enn" title="Ennusta" aria-label="Ennusta" onclick="event.preventDefault();event.stopPropagation();window.__selectAsPredictionSpecies && window.__selectAsPredictionSpecies(\'linnuliigid\',\'' + keyJs + '\');return false;">Ennusta</button>' : '') +
         bellBtnNew +
         '<button type="button" class="sb-ib sb-chev" data-sb-toggle="' + keyAttr + '" title="Rohkem" aria-label="Rohkem" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' + SB_ICON.chev + '</button>' +
       '</div>' +
     '</div>' +
     '<div class="sb-row-detail">' +
-      (window.__predictionFeatureOn ? '<button type="button" class="btn ennusta-btn" title="Vali ennustuse liik" onclick="event.preventDefault();event.stopPropagation();window.__selectAsPredictionSpecies && window.__selectAsPredictionSpecies(\'linnuliigid\',\'' + keyJs + '\');return false;">Ennusta</button>' : '') +
-      gbifBtnNew +
       '<button type="button" class="btn prob-btn sb-arvuta" data-prob-species="' + key + '" title="Arvuta tõenäosus">' + SB_ICON.prob + 'Arvuta tõenäosus</button>' +
       springTxtNew +
     '</div>' +

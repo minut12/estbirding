@@ -1,0 +1,9 @@
+# P39/P40 — map selector: segmented tabs → floating capsule (released 442e9a3)
+
+Shipped in `src/features/map/MapTab.tsx`: P39 (4677eaf) replaced the full-width shadcn `Select` with Radix Tabs pills (same `current.id` / `setSelectedId` wiring, `aria-label="Kaardi valik"`); P40 (442e9a3) removed the bar entirely and floats the pills as a capsule over the map, first child of the `flex-1 relative` container (`absolute top-2 z-10`, above the unindexed `absolute inset-0` iframe and error overlay, so maps stay switchable on the load-error screen). Desktop (≥901px, matching the iframes' `max-width:900px` drawer breakpoint via `min-[901px]:`, not Tailwind `sm`): inline `left: calc(50% + SIDEBAR_HALF)` centres it over the map area right of the iframe sidebar — 180 for linnuliigid/rariliin (`#sidebar` 360px), 210 for Europe (`--sidebar-w: 420px`); change `SIDEBAR_HALF` if a sidebar width changes. ≤900px: full-width capsule inset 56px (`left-14 right-14`) clearing the hamburger and Leaflet zoom, short names, and hidden (`opacity-0 pointer-events-none`) while the iframe's list is open — see [[2026-09-18-p40-sidebar-state-contract]].
+
+Behaviour notes: Radix Tabs activates on **mousedown** (not click) and ←/→ moves the active map (`activationMode="automatic"`), so scripted checks must dispatch pointer/mouse-down, not `click()`. `sendAppInsets` queries `.shrink-0` but sends `headerPx: 0`, so removing the bar changed no inset.
+
+Verification: tsc 0 errors and `vite build` OK locally; local browser checks are login-gated (`ProtectedRoute` → `/login`), so runtime was verified by Kristian on main-- at desktop 1280 and 542px. Released fast-forward `ef51f3f..442e9a3`.
+
+Follow-up: the "Uus versioon saadaval" update banner (`fixed top-0 z-60`) overlaps the capsule until Värskenda is pressed — needs an offset or a capsule `top` that accounts for the banner.

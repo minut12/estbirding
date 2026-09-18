@@ -47,5 +47,7 @@ Commits (4): `56f65ea` P1 (settings+helper) → `d7f8d6e` P2 (toggle+propagation
 ## Known pre-existing blocker (unrelated to this feature)
 `@lovable.dev/mcp-js` missing from `node_modules` breaks local `vite build`/`dev`. Sole source of the 4 pre-existing `tsc` errors in `src/lib/mcp/*`. Separate one-concern fix if wanted.
 
+> **Resolved (2026-09-18, verified at P39):** `vite.config.ts` no longer imports `@lovable.dev/mcp-js` and `src/lib/mcp/` is gone — `tsc --noEmit -p tsconfig.app.json` 0 errors, `vite build` and `vite` dev both start with the package still absent from `node_modules`.
+
 ## Open follow-up
 Native Android geolocation wiring (AndroidManifest permission + WebView `onGeolocationPermissionsShowPrompt`). Tracking issue to be filed on the repo.

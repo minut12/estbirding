@@ -42,6 +42,7 @@ Verified GBIF numbers (American Crow / `taxonKey=2482507`): global 29,073,659 ·
 ## Pre-existing issues to track separately (NOT caused by either change; confirmed against `main`)
 1. **`src/test/speciesPredictionBackendSummary.test.ts` fails** — `expected +0 to be 3` (foreign-cluster canonicalization, backend prediction finalization). Fails in isolation; no import overlap with the settings UI.
 2. **`@lovable.dev/mcp-js@^0.20.0` in `package.json` but not installed** → 4 × TS2307 in `src/lib/mcp/*` under `tsc`. Fix: `npm install` / verify lockfile in the build/typecheck env.
+   - **Resolved (2026-09-18):** `src/lib/mcp/` removed and `vite.config.ts` no longer imports the package — `tsc` 0 errors, `vite build`/dev work without it.
 
 ## Minor follow-up (non-blocking test hygiene)
 `avatarManagerRarityHydration.test.tsx` doesn't mock `gbifOccurrenceCount`, so the real lib runs there against that test's generic `fetch` mock (returns `[]` → `null` → line shows "—", zero network). Suite stays green, but the rarity spec should mock the lib to stay isolated from future lib changes.

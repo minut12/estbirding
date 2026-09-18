@@ -334,6 +334,40 @@ html:not(.sb-classic) #windToggleBar .btn.on{background:var(--sb-primary);border
 html:not(.sb-classic) .sb-filters>summary{padding:8px 10px;font:600 12.5px system-ui;background:var(--sb-bg2);border:1px solid var(--sb-line);border-radius:var(--sb-r);list-style:none;cursor:pointer}
 html:not(.sb-classic) .sb-filters>summary::-webkit-details-marker{display:none}
 html:not(.sb-classic) .sb-filters-body{padding:10px 0 0}
+/* P37b compact rows + action-only expand */
+html:not(.sb-classic) .panel-content-scroll{padding-left:0;padding-right:0}
+html:not(.sb-classic) .row{display:block;grid-template-columns:none;gap:0;padding:0;border-bottom:1px solid var(--sb-line2)}
+html:not(.sb-classic) .sb-row-main{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 12px 9px 14px;min-height:60px;cursor:pointer}
+html:not(.sb-classic) .sb-row-main:hover,html:not(.sb-classic) .row.sb-open .sb-row-main{background:var(--sb-bg2)}
+html:not(.sb-classic) .avatar{width:44px;height:44px;border-width:3px;border-style:solid;position:relative;background-color:var(--sb-bg2)}
+html:not(.sb-classic) .sb-rarity{position:absolute;right:-6px;top:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--sb-ink);color:#fff;font:800 10px/17px system-ui;text-align:center;border:2px solid var(--sb-bg)}
+html:not(.sb-classic) .sb-row-text{min-width:0}
+html:not(.sb-classic) .name-label{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html:not(.sb-classic) .name-label.muted{text-decoration:line-through;color:var(--sb-muted);opacity:1}
+html:not(.sb-classic) .sb-meta{font-size:12px;color:var(--sb-muted);display:flex;gap:8px;align-items:center;margin-top:2px;min-width:0;font-variant-numeric:tabular-nums}
+html:not(.sb-classic) .sb-meta span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html:not(.sb-classic) .sb-meta .sb-fresh{color:var(--sb-primary);font-weight:600;flex-shrink:0}
+html:not(.sb-classic) .sb-sep{width:3px;height:3px;border-radius:50%;background:var(--sb-line);flex-shrink:0}
+html:not(.sb-classic) .sb-acts{display:flex;gap:2px;align-items:center}
+html:not(.sb-classic) .sb-ib{width:34px;height:34px;min-width:0;padding:0;border-radius:9px;border:0;background:transparent;color:var(--sb-ink2);display:inline-flex;align-items:center;justify-content:center;font-size:16px;box-shadow:none;cursor:pointer}
+html:not(.sb-classic) .sb-ib:hover{background:var(--sb-bg2);color:var(--sb-ink)}
+html:not(.sb-classic) .sb-ib.prob-active,html:not(.sb-classic) .notify-bell.active.sb-ib{background:var(--sb-primary-soft);color:var(--sb-primary)}
+html:not(.sb-classic) .notify-bell.sb-ib{opacity:1;color:var(--sb-muted)}
+html:not(.sb-classic) .notify-bell.sb-ib.active{color:var(--sb-primary)}
+html:not(.sb-classic) .sb-chev svg{transition:transform .2s}
+html:not(.sb-classic) .row.sb-open .sb-chev svg{transform:rotate(180deg)}
+html:not(.sb-classic) .sb-row-detail{display:none;padding:0 14px 12px 68px;gap:6px;flex-wrap:wrap;align-items:center;background:var(--sb-bg2);border-top:1px dashed var(--sb-line)}
+html:not(.sb-classic) .row.sb-open .sb-row-detail{display:flex;padding-top:8px}
+html:not(.sb-classic) .sb-row-detail .btn{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink);font:500 12px system-ui}
+html:not(.sb-classic) .sb-row-detail .gbif-btn{background:var(--sb-bg)!important;color:var(--sb-ink)}
+html:not(.sb-classic) .sb-row-detail .gbif-btn.active{background:var(--sb-primary-soft)!important;color:var(--sb-primary);border-color:var(--sb-primary)}
+html:not(.sb-classic) .sb-row-detail .ennusta-btn,html:not(.sb-classic) .sb-row-detail .ennusta-btn:hover{background:var(--sb-primary)!important;border-color:var(--sb-primary);color:#fff}
+html:not(.sb-classic) .sb-row-detail .kevadi-chip .pill{background:var(--sb-bg);border:1px solid var(--sb-line);border-radius:999px;font-size:12px}
+@media (max-width:900px){ html:not(.sb-classic) .sb-muni,html:not(.sb-classic) .sb-sep-muni{display:none} html:not(.sb-classic) .sb-ib{width:32px;height:32px} html:not(.sb-classic) .sb-row-detail{padding-left:14px} }
+html:not(.sb-classic) .sb-acts{gap:0}
+html:not(.sb-classic) .sb-row-main{padding-left:12px;padding-right:6px}
+html:not(.sb-classic) .name-label{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:normal}
+@media (prefers-reduced-motion:reduce){ html:not(.sb-classic) .sb-chev svg{transition:none} }
 </style>
 </head>
 <body>
@@ -454,9 +488,16 @@ function clearOccurrence(key){
     document.documentElement.classList.toggle('sb-classic', v === 'classic');
   }
   apply();
-  window.addEventListener('storage', function(ev){ if (!ev || ev.key === KEY || ev.key === null) apply(); });
+  window.addEventListener('storage', function(ev){ if (!ev || ev.key === KEY || ev.key === null) { apply(); try{ if (typeof render === 'function') render(); }catch(e){} } });
   window.__sbIsClassic = function(){ return document.documentElement.classList.contains('sb-classic'); };
 })();
+/* P37b: new-row helpers */
+var SB_ICON = {
+  open: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>',
+  prob: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>',
+  chev: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'
+};
+window.__sbOpenKey = null;
 /* P37a: new branch moves the 7p/peidetud badges + close X into .sb-titlebar; classic puts them back.
    Idempotent (moves only when the parent differs), re-runs on a live flag flip. Classic also forces the
    Filtrid <details> open, since display:contents does not reveal a closed <details>' content. */
@@ -10087,7 +10128,7 @@ function rowHTML(obj) {
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
   var isNotified = __notifySpecies.indexOf(key) >= 0;
-  var bellBtn = '<button class="notify-bell' + (isNotified ? ' active' : '') + '" '
+  var bellBtn = '<button class="notify-bell sb-ib' + (isNotified ? ' active' : '') + '" '
     + 'onclick="event.stopPropagation();toggleNotification(\'' + key.replace(/'/g, "\\'") + '\')" '
     + 'title="' + (isNotified ? 'Teavitus sees' : 'Teavitus väljas') + '">'
     + (isNotified ? '🔔' : '🔕') + '</button>';
@@ -10138,6 +10179,7 @@ function rowHTML(obj) {
     return '<div class="small" style="color:#6366f1">GBIF: ' + gbifStat.count + ' vaatlust (' + (gbifStat.minYear || '?') + '–' + (gbifStat.maxYear || '?') + ')' + sciSpan + warnIcon + '</div>';
   })();
 
+  if (window.__sbIsClassic && window.__sbIsClassic()) {
   return '<div class="row'+(activeProbSpecies===key?' prob-row-active':'')+'" data-key="'+key+'">' +
     '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +
     '<div class="row-main">' +
@@ -10169,6 +10211,43 @@ function rowHTML(obj) {
         ? '<button type="button" class="btn ennusta-btn" title="Vali ennustuse liik" onclick="event.preventDefault();event.stopPropagation();window.__selectAsPredictionSpecies && window.__selectAsPredictionSpecies(\'linnuliigid\',\'' + String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\');return false;">Ennusta</button>'
         : '') +
       '</div>' +
+    '</div>' +
+  '</div>';
+  }
+
+  var isOpen = (window.__sbOpenKey === key);
+  var muniTxt = get(x.municipality);
+  var metaNew = hasPoint
+    ? '<span class="sb-fresh">' + (p.t ? formatDateEE(p.t) : '') + '</span>'
+      + (occ7 !== null ? '<i class="sb-sep"></i><span>7d ' + occ7 + '</span>' : '')
+      + (muniTxt !== '-' ? '<i class="sb-sep sb-sep-muni"></i><span class="sb-muni">' + escapeHtml(muniTxt) + '</span>' : '')
+    : '<span>' + ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub') + '</span>';
+  var rarityCorner = rarityText ? '<span class="sb-rarity" title="Haruldus">' + rarityText + '</span>' : '';
+  var gbifBtnNew = (function(){
+    var isGbifActive = gbifMarkers.has(key) && gbifMarkers.get(key).length > 0;
+    var isGbifLoading = gbifLoadingSpecies.has(key);
+    return '<button class="btn gbif-btn' + (isGbifActive ? ' active' : '') + '" data-species="' + key + '"' + (isGbifLoading ? ' disabled' : '') + ' title="Näita GBIF andmeid. Shift+click = muuda liigi vastet">' + (isGbifLoading ? 'GBIF...' : (isGbifActive ? 'GBIF ✕' : 'GBIF')) + '</button>';
+  })();
+  var keyAttr = key.replace(/"/g,'&quot;');
+  var keyJs = String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  return '<div class="row' + (activeProbSpecies===key ? ' prob-row-active' : '') + (isOpen ? ' sb-open' : '') + '" data-key="' + key + '">' +
+    '<div class="sb-row-main" data-sb-toggle="' + keyAttr + '">' +
+      '<div class="avatar" style="background-image:url(\'' + getDisplayAvatar(key) + '\');border-color:' + bcol + '">' + rarityCorner + '</div>' +
+      '<div class="sb-row-text">' +
+        '<div class="name-label clickable ' + muted + '" onclick="event.stopPropagation();toggleVisibility(\'' + keyJs + '\')">' + key + '</div>' +
+        '<div class="sb-meta">' + metaNew + '</div>' +
+      '</div>' +
+      '<div class="sb-acts">' +
+        '<button class="btn open-occ-btn sb-ib" data-open-url="' + openUrl.replace(/"/g,'&quot;') + '" title="Ava Elurikkuses" aria-label="Ava Elurikkuses">' + SB_ICON.open + '</button>' +
+        '<button class="btn secondary prob-btn sb-ib hidden-in-export' + (activeProbSpecies===key ? ' prob-active' : '') + '" data-prob-species="' + key + '" title="Tõenäosuse kaart" aria-label="Tõenäosuse kaart">' + SB_ICON.prob + '</button>' +
+        bellBtn +
+        '<button type="button" class="sb-ib sb-chev" data-sb-toggle="' + keyAttr + '" title="Rohkem" aria-label="Rohkem" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' + SB_ICON.chev + '</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="sb-row-detail">' +
+      (window.__predictionFeatureOn ? '<button type="button" class="btn ennusta-btn" title="Vali ennustuse liik" onclick="event.preventDefault();event.stopPropagation();window.__selectAsPredictionSpecies && window.__selectAsPredictionSpecies(\'linnuliigid\',\'' + keyJs + '\');return false;">Ennusta</button>' : '') +
+      gbifBtnNew +
+      springTxt +
     '</div>' +
   '</div>';
 }
@@ -10233,6 +10312,25 @@ function render() {
     }
   } catch(e){ /* ignore logging errors */ }
 }
+
+/* P37b: row expand (new UI only) */
+(function(){
+  var list = document.getElementById('list'); if(!list || list.__sbWired) return; list.__sbWired = true;
+  list.addEventListener('click', function(ev){
+    if (window.__sbIsClassic && window.__sbIsClassic()) return;
+    var t = ev.target;
+    if (t.closest('.sb-acts button:not(.sb-chev)') || t.closest('.name-label') || t.closest('.sb-row-detail')) return;
+    var host = t.closest('[data-sb-toggle]'); if(!host) return;
+    var key = host.getAttribute('data-sb-toggle');
+    window.__sbOpenKey = (window.__sbOpenKey === key) ? null : key;
+    var rows = list.querySelectorAll('.row');
+    for (var i=0;i<rows.length;i++){
+      var r = rows[i]; var on = r.getAttribute('data-key') === window.__sbOpenKey;
+      r.classList.toggle('sb-open', on);
+      var c = r.querySelector('.sb-chev'); if(c) c.setAttribute('aria-expanded', on ? 'true' : 'false');
+    }
+  });
+})();
 
 function getPredictionSpeciesPreference(){
   try{

@@ -1,4 +1,4 @@
-# P41–P43b — Ennustus / Tõenäosus UI (released 64cc427)
+# P41–P43c — Ennustus / Tõenäosus UI (released 0acdf54)
 
 Shipped in `public/maps/linnuliigid/index.html` (+ `public/maps/shared/map-hamburger-control.js` in P43b): P41 (11ae7fb) turned the Ennustus map control into a 40px icon button with a predicted-sites badge; P42 (da86070) rebuilt the probability-cell popup (stat tiles, best-time block, 12-column month chart); P43 (62e53e8) redesigned the Tõenäosus panel per mock v4 §2 A: band chips with counts, section headers in %-sort, conic % rings, eBird/eElu/kevad meta line, status under the ring, whole row opens `__ennProb`, sort moved into a `<details>` menu, and the admin Skaneeri/Jaga buttons moved to the footer (held verbatim in hidden `#ennAdminHold` and echoed by `render()`, because `render()` rewrites `#ennFt`); P43b (64cc427) hides the map selector while the panel is open, shortens the best-period caption and stops horizontal scroll in the list; P43c (0acdf54) makes the band chips wrap (`flex-wrap:wrap`) instead of scrolling off-screen in a hidden-scrollbar row.
 

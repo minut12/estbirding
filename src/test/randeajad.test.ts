@@ -7,7 +7,8 @@ import fixtures from "./fixtures/P46-randeajad-fixtures.json";
 type Pair = [number, number];
 type Win = { a: number; b: number; pk?: number };
 type Randeajad = {
-  analyse: (pairs?: Pair[]) => Record<string, unknown>;
+  analyse: (pairs?: Pair[], opts?: { resident?: boolean }) => Record<string, unknown>;
+  isResident: (name: string) => boolean;
   weekToDoy: (w: number) => number;
   fmtDoy: (doy: number) => string;
   fmtRange: (win: Win) => string;
@@ -45,6 +46,24 @@ describe("randeajad module", () => {
         expect(R.analyse(histograms[species])).toEqual(expected[species]);
       });
     }
+  });
+
+  it("curated resident list wins over data", () => {
+    expect(R.analyse(histograms["Laanepüü"], { resident: true })).toEqual({ kind: "resident" });
+  });
+
+  it("few still wins over the curated resident list", () => {
+    expect(R.analyse(histograms["Roherähn"], { resident: true })).toEqual({ kind: "few" });
+  });
+
+  it("isResident matches the curated list case-insensitively", () => {
+    expect(R.isResident("Laanepüü")).toBe(true);
+    expect(R.isResident("LAANEPÜÜ")).toBe(true);
+    expect(R.isResident("Sookurg")).toBe(false);
+  });
+
+  it("isNow is false for a diffuse half", () => {
+    expect(R.isNow({ diffuse: true } as unknown as Win, 38)).toBe(false);
   });
 
   it("returns few for empty or undefined histogram", () => {

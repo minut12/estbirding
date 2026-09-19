@@ -10510,11 +10510,12 @@ window.toggleNotification = async function(speciesName) {
     }catch(e){ console.warn('[randeajad]', e); }
   };
 
+  /* Returns {key, pairs} with the payload key actually matched (direct hit or via the slug map), or null. */
   function lookup(key){
     if(!hist) return null;
-    if(Object.prototype.hasOwnProperty.call(hist, key)) return hist[key];
+    if(Object.prototype.hasOwnProperty.call(hist, key)) return { key: key, pairs: hist[key] };
     var k = slugToKey[slug(key)];
-    return k ? hist[k] : null;
+    return k ? { key: k, pairs: hist[k] } : null;
   }
   function todayDoy(){
     var d = new Date();
@@ -10530,6 +10531,8 @@ window.toggleNotification = async function(speciesName) {
     while(s.length > 3){ out = NBSP + s.slice(-3) + out; s = s.slice(0, -3); }
     return s + out;
   }
+  /* A real window (not null, not {diffuse:true}). */
+  function isReal(win){ return !!win && !win.diffuse; }
   function pct(weeks){ return (weeks / WEEKS * 100).toFixed(2); }
   function band(a, b, cls){ return '<span class="sb-rand-band ' + cls + '" style="left:' + pct(a - 1) + '%;width:' + pct(b - a + 1) + '%"></span>'; }
   function winClass(R, res, wk){
@@ -10541,7 +10544,8 @@ window.toggleNotification = async function(speciesName) {
   }
 
   function stripHTML(R, pairs, res, nowPct){
-    if(res.kind !== 'migrant' && res.kind !== 'winter') return '';
+    var hasWindow = res.kind === 'winter' || (res.kind === 'migrant' && (isReal(res.spring) || isReal(res.autumn)));
+    if(!hasWindow) return '';
     var cells = R.monthBuckets(pairs, res).map(function(c){
       var cls = (c.cls || '') + (c.lo ? ' lo' : '');
       return '<i' + (cls ? ' class="' + cls + '"' : '') + '></i>';
@@ -10551,8 +10555,8 @@ window.toggleNotification = async function(speciesName) {
   function chartHTML(R, res, w, mx, nowPct){
     var bands = '';
     if(res.kind === 'migrant'){
-      if(res.spring) bands += band(res.spring.a, res.spring.b, 's');
-      if(res.autumn) bands += band(res.autumn.a, res.autumn.b, 'a');
+      if(isReal(res.spring)) bands += band(res.spring.a, res.spring.b, 's');
+      if(isReal(res.autumn)) bands += band(res.autumn.a, res.autumn.b, 'a');
     } else if(res.kind === 'winter'){
       var wi = res.winter;
       if(wi.a <= wi.b) bands += band(wi.a, wi.b, 'a');
@@ -10575,6 +10579,12 @@ window.toggleNotification = async function(speciesName) {
       + (win.pk ? '<span class="sb-rand-pk">tipp ' + R.fmtDoy(R.weekToDoy(win.pk) + 3) + '</span>' : '')
       + (live ? '<em>k\u00E4ib</em>' : '') + '</div>';
   }
+  /* One migrant half: real window -> dated line; diffuse -> "selget tippu ei ole"; null -> nothing. */
+  function halfHTML(R, label, cls, win, wkNow){
+    if(!win) return '';
+    if(win.diffuse) return '<div class="sb-rand-l"><b class="' + cls + '">' + label + '</b><span class="sb-rand-pk">selget tippu ei ole</span></div>';
+    return lineHTML(R, label, cls, win, R.isNow(win, wkNow));
+  }
   function cardHTML(R, res, w, tot, mx, wkNow, nowPct){
     var body;
     if(res.kind === 'few'){
@@ -10584,16 +10594,16 @@ window.toggleNotification = async function(speciesName) {
     } else if(res.kind === 'winter'){
       body = chartHTML(R, res, w, mx, nowPct) + lineHTML(R, 'Talvek\u00FClaline', 'a', res.winter, R.isNowWinter(res.winter, wkNow));
     } else {
-      body = chartHTML(R, res, w, mx, nowPct);
-      if(res.spring) body += lineHTML(R, 'Kevad', 's', res.spring, R.isNow(res.spring, wkNow));
-      if(res.autumn) body += lineHTML(R, 'S\u00FCgis', 'a', res.autumn, R.isNow(res.autumn, wkNow));
-      if(!res.spring && res.autumn) body += '<div class="sb-rand-note">Ainult s\u00FCgisel.</div>';
+      body = chartHTML(R, res, w, mx, nowPct)
+        + halfHTML(R, 'Kevad', 's', res.spring, wkNow)
+        + halfHTML(R, 'S\u00FCgis', 'a', res.autumn, wkNow);
+      if(res.spring === null && isReal(res.autumn)) body += '<div class="sb-rand-note">Ainult s\u00FCgisel.</div>';
     }
     return '<div class="sb-info sb-rand"><div class="sb-info-h">R\u00E4ndeajad<span>' + groupThousands(tot) + ' vaatlust \u00b7 Elurikkus</span></div>'
       + '<div class="sb-rand-body">' + body + '</div></div>';
   }
-  function buildParts(R, pairs, doy){
-    var res = R.analyse(pairs);
+  function buildParts(R, pairs, doy, resident){
+    var res = R.analyse(pairs, { resident: resident });
     var w = [];
     var tot = 0;
     var mx = 0;
@@ -10614,12 +10624,18 @@ window.toggleNotification = async function(speciesName) {
   window.__randeajadRow = function(key){
     var R = window.__bmRandeajad;
     if(!R) return null;
-    var pairs = lookup(key);
-    if(!pairs || !pairs.length) return null;
+    var found = lookup(key);
+    if(!found || !found.pairs || !found.pairs.length) return null;
     var doy = todayDoy();
     var hit = memo[key];
     if(!hit || hit.doy !== doy){
-      try{ hit = memo[key] = { doy: doy, parts: buildParts(R, pairs, doy) }; }
+      var resident;
+      try{
+        /* Curated list checked on both the payload key and the sidebar key, so a variant spelling cannot defeat it.
+           A missing isResident degrades to "no curated list". */
+        resident = (typeof R.isResident === 'function') && (R.isResident(found.key) || R.isResident(key));
+        hit = memo[key] = { doy: doy, parts: buildParts(R, found.pairs, doy, resident) };
+      }
       catch(e){ console.warn('[randeajad] render failed for', key, e); return null; }
     }
     return hit.parts;

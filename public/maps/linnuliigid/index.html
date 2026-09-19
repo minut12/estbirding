@@ -271,6 +271,7 @@
 /* P42: probability-cell popup shell (rectangles + centre markers bound in renderProbabilityOverlay) */
 .bm-prob-popup .leaflet-popup-content-wrapper{border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.22)}
 .bm-prob-popup .leaflet-popup-content{margin:14px 16px 12px}
+@media(max-width:900px){.bm-prob-popup .leaflet-popup-content-wrapper{border-radius:12px}.bm-prob-popup .leaflet-popup-content{margin:10px 12px 10px;zoom:.8}.bm-prob-popup .leaflet-popup-content>div{max-width:300px!important}}
 .bm-pred-pop{min-width:0;max-width:205px;font-size:12px;line-height:1.3}
 /* padding-right clears Leaflet's close button: the default 24px content margin used to do it,
    and the reduced margin above would otherwise let the ✕ sit on top of the percentage. */

@@ -1,0 +1,9 @@
+# P41–P43b — Ennustus / Tõenäosus UI (released 64cc427)
+
+Shipped in `public/maps/linnuliigid/index.html` (+ `public/maps/shared/map-hamburger-control.js` in P43b): P41 (11ae7fb) turned the Ennustus map control into a 40px icon button with a predicted-sites badge; P42 (da86070) rebuilt the probability-cell popup (stat tiles, best-time block, 12-column month chart); P43 (62e53e8) redesigned the Tõenäosus panel per mock v4 §2 A: band chips with counts, section headers in %-sort, conic % rings, eBird/eElu/kevad meta line, status under the ring, whole row opens `__ennProb`, sort moved into a `<details>` menu, and the admin Skaneeri/Jaga buttons moved to the footer (held verbatim in hidden `#ennAdminHold` and echoed by `render()`, because `render()` rewrites `#ennFt`); P43b (64cc427) hides the map selector while the panel is open, shortens the best-period caption and stops horizontal scroll in the list.
+
+**Contract change:** `body.enn-open` joins `body.sidebar-open` as a SIDEBAR_STATE input — `open = enn-open || (≤900px && sidebar-open)`. `enn-open` counts at **any width** (the panel is a modal on desktop too) and is set only in `__openEnn` / removed only in `__closeEnn`; every close path (✕, backdrop, internal call) must go through `__closeEnn` or the selector stays hidden. Extends [[2026-09-18-p40-sidebar-state-contract]].
+
+**Bands are display-only:** high ≥80, mid 50–79, low 20–49, rare <20 **including unscored** (`score===null`), applied after the existing sort via the `band` var; scores, boosts and the sort are untouched. **Caption:** the ★ status shows only the Estonian abbreviation of the *first* month in the best-period label (`28 Apr – 10 May` → `★ apr 42%`); the full label and % stay in the `title`.
+
+Edits to escaped JS strings in this file follow [[2026-09-19-linnuliigid-unicode-escapes-in-edits]]. Released fast-forward `442e9a3..64cc427` after Kristian's main-- check.

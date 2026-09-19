@@ -15593,39 +15593,65 @@ document.addEventListener('click', function(e) {
 
 <!-- === ENNUSTUS: Puuduvad liigid / Missing species probability === -->
 <style>
-#ennBg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:9999}
-#ennBox{background:#fff;max-width:560px;width:92vw;max-height:80vh;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);display:flex;flex-direction:column;overflow:hidden}
-.ennHdr{padding:12px 16px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center}
-.ennHdr h3{margin:0;font-size:15px;font-weight:600}
-.ennHdr .sub{margin:2px 0 0;font-size:12px;color:#64748b}
-.ennSum{display:flex;gap:12px;padding:8px 16px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#64748b;flex-wrap:wrap}
-.ennSum b{font-weight:600;color:#1e293b}
-.ennSrch{padding:8px 16px}
-.ennSrch input{width:100%;box-sizing:border-box;padding:6px 10px;border-radius:6px;border:1px solid #e5e7eb;font-size:13px;background:#f8fafc}
+/* P43: Toenaosus panel (mock v4 s.2 A). Tokens match the sidebar/help modal; prediction accent #6d4fd8. */
+#ennBg{position:fixed;inset:0;background:rgba(20,30,25,.42);display:none;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#222a26}
+#ennBox{background:#fff;max-width:560px;width:92vw;max-height:84vh;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden}
+.ennHdr{padding:16px 20px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.ennHdr h3{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+.ennHdr .sub{margin:2px 0 0;font-size:12.5px;color:#6c7f74}
+.ennHdr .ennX{width:34px;height:34px;border-radius:9px;border:0;background:transparent;color:#4a5852;font-size:20px;cursor:pointer;flex:0 0 auto}
+.ennHdr .ennX:hover{background:#f2f8f4}
+.ennFresh{margin:2px 20px 0;padding:0;background:none;border:0;font-size:12.5px;color:#6c7f74;line-height:1.5}
+.ennFresh #ennFreshTs,.ennFresh #ennFreshNext,.ennFresh #ennFreshCount{font-weight:600;color:#4a5852}
+.ennTools{display:flex;gap:8px;padding:12px 20px 0;flex:0 0 auto}
+.ennSrch{flex:1 1 auto;position:relative}
+.ennSrch svg{position:absolute;left:12px;top:12px;color:#6c7f74;pointer-events:none}
+.ennSrch input{width:100%;box-sizing:border-box;height:40px;padding:0 12px 0 36px;border-radius:12px;border:1px solid transparent;background:#f2f8f4;font-size:14px;color:#222a26}
+.ennSrch input:focus{outline:none;border-color:#2d7a4b;background:#fff}
+.ennMenu{position:relative;flex:0 0 auto}
+.ennMenu>summary{list-style:none;width:40px;height:40px;border-radius:12px;background:#f2f8f4;color:#4a5852;display:grid;place-items:center;cursor:pointer}
+.ennMenu>summary::-webkit-details-marker{display:none}
+.ennMenu[open]>summary{background:#e4f1e8;color:#2d7a4b}
+.ennMenuBox{position:absolute;right:0;top:46px;z-index:5;min-width:180px;background:#fff;border:1px solid #dde4df;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:6px}
+.ennMenuBox .lbl{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6c7f74;padding:6px 10px 2px}
+.ennMenuBox button{display:flex;width:100%;align-items:center;gap:8px;border:0;background:transparent;border-radius:8px;padding:8px 10px;font:500 13px system-ui;color:#222a26;cursor:pointer;text-align:left}
+.ennMenuBox button:hover{background:#f2f8f4}
+.ennMenuBox button.eSA{background:#e4f1e8;color:#2d7a4b;font-weight:600}
+.ennBand{display:flex;gap:6px;padding:10px 20px 8px;overflow-x:auto;scrollbar-width:none;flex:0 0 auto}
+.ennBand button{flex:0 0 auto;height:30px;padding:0 12px;border-radius:999px;border:1px solid #dde4df;background:#fff;font:600 12px system-ui;color:#4a5852;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.ennBand button i{width:8px;height:8px;border-radius:999px}
+.ennBand button b{font-weight:500;opacity:.7}
+.ennBand button[aria-pressed="true"]{background:#222a26;color:#fff;border-color:#222a26}
+.ennBand button[aria-pressed="true"] b{opacity:.85}
+.g1{background:#2d7a4b}.g2{background:#6aa84f}.g3{background:#6d4fd8}.g4{background:#b8b0d9}
 .ennLst{overflow-y:auto;flex:1;padding:0 8px 8px}
-.eR{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;margin-bottom:2px}
-.eR:nth-child(odd){background:#f8fafc}
-.eAv{width:38px;height:38px;border-radius:50%;flex-shrink:0;background-size:cover;background-position:center;background-color:#f1f5f9;border:2px solid #cbd5e1}
-.eInf{flex:1;min-width:0}
-.eNm{font-size:14px;font-weight:600;color:#1e293b;display:flex;align-items:center;gap:6px}
-.eLt{font-size:11px;color:#94a3b8}
-.eBar{height:3px;background:#e5e7eb;border-radius:2px;margin-top:4px}
-.eBf{height:100%;border-radius:2px}
-.eRt{text-align:right;flex-shrink:0;min-width:55px}
-.ePct{font-size:18px;font-weight:600}
-.eObs{font-size:11px;color:#94a3b8;margin-top:1px}
-.ePrb{font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid #cbd5e1;background:#f0fdf4;color:#16a34a;cursor:pointer;margin-left:4px;vertical-align:middle}
-.ePrb:hover{background:#dcfce7}
-.eBdg{font-size:11px;padding:1px 6px;border-radius:4px}
-.eBH{background:#dcfce7;color:#166534}
-.eBM{background:#fef3c7;color:#92400e}
-.ennFt{padding:8px 16px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#94a3b8}
+.eSec{display:flex;align-items:center;gap:8px;padding:10px 12px 6px;font:700 11px system-ui;letter-spacing:.06em;text-transform:uppercase;color:#6c7f74}
+.eSec i{width:8px;height:8px;border-radius:999px}
+.eSec b{font-weight:600;color:#4a5852;letter-spacing:0;text-transform:none;font-size:11.5px}
+.eSec::after{content:"";flex:1;height:1px;background:#eef2ef}
+.eR{display:grid;grid-template-columns:44px minmax(0,1fr) 52px;gap:12px;align-items:center;padding:8px 12px;border-radius:12px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.eR:hover{background:#f2f8f4}
+.eR:focus-visible{outline:2px solid #2d7a4b;outline-offset:-2px}
+.eAv{width:44px;height:44px;border-radius:12px;flex-shrink:0;background-size:cover;background-position:center;background-color:#d7e3d9;border:0}
+.eInf{min-width:0}
+.eNm{font-size:14.5px;font-weight:650;color:#222a26;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+.eLt{font-size:12px;color:#6c7f74;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eLt b{font-weight:600;color:#4a5852}
+.eLt .eb{color:#1d6fb8}.eLt .el{color:#4c35b3}.eLt .dim{color:#dde4df;font-weight:500}
+.eNb{display:inline;font-size:12px;color:#6c7f74}.eNbB{font-weight:600;color:#2d7a4b}
+.eRt{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0}
+.eRing{width:44px;height:44px;border-radius:999px;display:grid;place-items:center;position:relative;font:700 12px system-ui}
+.eRing::before{content:"";position:absolute;inset:4px;border-radius:999px;background:#fff}
+.eRing span{position:relative}
+.eSt{font-size:9.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap}
+.eSt.now{color:#2d7a4b}.eSt.best{color:#b45309}.eSt.scan{color:#b45309;font-weight:600}.eSt.stale{color:#6c7f74;font-weight:600}
+.ePrb{display:none}
+.ennFt{padding:8px 20px;border-top:1px solid #dde4df;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:#6c7f74;flex:0 0 auto}
+.ennFt .btn.secondary{font-size:12px;padding:4px 10px}
 .eSP{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:none}
-.eSA{background:#dbeafe;color:#1e40af}
-.eSO{background:#f1f5f9;color:#64748b}
-.eNb{margin-top:2px;font-size:11px;color:#475569}
-.eNbB{font-weight:600;color:#047857}
-@media(max-width:600px){#ennBox{width:96vw;max-height:85vh}.eAv{width:30px;height:30px}.eNm{font-size:13px}.ePct{font-size:15px}.eR{gap:7px;padding:6px}}
+.eSA{background:#e4f1e8;color:#2d7a4b}
+.eSO{background:#f2f8f4;color:#6c7f74}
+@media(max-width:900px){#ennBg{align-items:stretch;top:var(--appHeader,0px);bottom:var(--appBottomNav,0px);background:#fff}#ennBox{max-width:none;width:100%;max-height:none;border-radius:0;box-shadow:none}.ennHdr{padding:14px 16px 0}.ennHdr h3{font-size:18px}.ennFresh{margin:2px 16px 0}.ennTools{padding:10px 12px 0}.ennBand{padding:10px 12px 8px}.eR{grid-template-columns:40px minmax(0,1fr) 52px;padding:7px 8px}.eAv{width:40px;height:40px}.eNm{font-size:14px}.ennLst{padding-bottom:calc(8px + env(safe-area-inset-bottom,0px))}}
 body:not([data-admin="1"]) .bm-admin-only { display: none; }
 .bm-stale-pill {
   display: inline-block;
@@ -15672,14 +15698,19 @@ body:not([data-admin="1"]) .bm-admin-only { display: none; }
 <div id="ennBox">
 <div class="ennHdr">
 <div><h3>Tõenäosus<span class="bm-admin-only bm-admin-pill">ADMIN</span></h3><p class="sub">Tõenäosus praegusel perioodil</p></div>
-<div style="display:flex;gap:8px;align-items:center">
+<button class="ennX" type="button" onclick="window.__closeEnn()" aria-label="Sulge">&#10005;</button>
+</div>
+<p class="ennFresh"><span id="ennFreshCount">—</span> liiki · uuendatud <span id="ennFreshTs">—</span> · järgmine <span id="ennFreshNext">—</span></p>
+<div id="ennAdminHold" style="display:none">
 <button class="btn secondary bm-admin-only" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnnAll(this,{skipEluRefresh:true})" title="Kiire skaneerimine (kasutab vahemällu salvestatud eElurikkuse andmeid)">Skaneeri</button>
 <button id="ennJagaBtn" class="btn secondary bm-admin-only" style="font-size:12px;padding:4px 10px" onclick="window.__ennJagaClick(this)" title="Jaga skaneeritud andmeid teistele seadmetele pilve kaudu">&#9729; Jaga</button>
-<button class="btn small" onclick="window.__closeEnn()">&#10005;</button>
 </div>
+<div class="ennTools">
+<div class="ennSrch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="ennQ" type="text" placeholder="Otsi liiki…" oninput="window.__renderEnn()" autocomplete="off"></div>
+<details class="ennMenu"><summary title="Sorteeri" aria-label="Sorteeri"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M7 12h10M10 17h4"/></svg></summary>
+<div class="ennMenuBox"><div class="lbl">Sorteeri</div><div id="ennSortMenu"></div></div></details>
 </div>
-<p class="ennFresh">Uuendatud <span id="ennFreshTs">—</span> · järgmine <span id="ennFreshNext">—</span> · <span id="ennFreshCount">—</span> liiki</p>
-<div class="ennSrch"><input id="ennQ" type="text" placeholder="Otsi liiki..." oninput="window.__renderEnn()"></div>
+<div class="ennBand" id="ennBand" role="group" aria-label="Tõenäosuse vahemik"></div>
 <div class="ennLst" id="ennLst"></div>
 <div class="ennFt" id="ennFt"></div>
 </div>
@@ -16051,6 +16082,8 @@ function missing(){
 }
 
 var sort='prob';
+var band='all'; /* P43: display-only band filter: all | high (>=80) | mid (50-79) | low (20-49) | rare (<20, incl. unscored) */
+var _ennAdminBtns='';
 var _ennScanAbort=false;
 
 function getCurrentProbScore(name){
@@ -16170,73 +16203,83 @@ function render(){
 
   var lst=document.getElementById('ennLst');
   if(!lst) return;
-  var h='';
+  // P43: band bucketing (display only). null score -> 'rare'.
+  function _bandOf(sc){ if(sc===null) return 'rare'; return sc>=80?'high':sc>=50?'mid':sc>=20?'low':'rare'; }
+  var _bc={all:displayList.length,high:0,mid:0,low:0,rare:0};
+  for(var _bi=0;_bi<displayList.length;_bi++){ _bc[_bandOf(displayList[_bi].score)]++; }
+  var _bandDefs=[
+    {id:'all',  lbl:'K\u00F5ik',                cls:''},
+    {id:'high', lbl:'V\u00E4ga t\u00F5en\u00E4oline', cls:'g1'},
+    {id:'mid',  lbl:'T\u00F5en\u00E4oline',      cls:'g2'},
+    {id:'low',  lbl:'V\u00F5imalik',             cls:'g3'},
+    {id:'rare', lbl:'Ebat\u00F5en\u00E4oline',   cls:'g4'}
+  ];
+  var _bandEl=document.getElementById('ennBand');
+  if(_bandEl){
+    var _bh='';
+    for(var _bd=0;_bd<_bandDefs.length;_bd++){ var _d=_bandDefs[_bd];
+      _bh+='<button type="button" aria-pressed="'+(band===_d.id?'true':'false')+'" onclick="window.__bandEnn(\''+_d.id+'\')">'+(_d.cls?'<i class="'+_d.cls+'"></i>':'')+_d.lbl+' <b>'+_bc[_d.id]+'</b></button>';
+    }
+    _bandEl.innerHTML=_bh;
+  }
+  var _sortMenu=document.getElementById('ennSortMenu');
+  if(_sortMenu){
+    _sortMenu.innerHTML='<button type="button" class="'+(sort==='prob'?'eSA':'')+'" onclick="window.__sortEnn(\'prob\')">% laskuv</button>'
+      +'<button type="button" class="'+(sort==='spring'?'eSA':'')+'" onclick="window.__sortEnn(\'spring\')">Kevad kp</button>'
+      +'<button type="button" class="'+(sort==='az'?'eSA':'')+'" onclick="window.__sortEnn(\'az\')">A-Z</button>';
+  }
+  var _secTitle={high:['g1','V\u00E4ga t\u00F5en\u00E4oline','80\u2013100 %'],mid:['g2','T\u00F5en\u00E4oline','50\u201379 %'],low:['g3','V\u00F5imalik','20\u201349 %'],rare:['g4','Ebat\u00F5en\u00E4oline','< 20 %']};
+  var h='', _lastBand=null, _shown=0;
   for(var k=0;k<displayList.length;k++){
-    var s=displayList[k],nm=dn(s.name),aurl=av(s.name);
+    var s=displayList[k];
+    var _b=_bandOf(s.score);
+    if(band!=='all'&&_b!==band) continue;
+    _shown++;
+    if(sort==='prob'&&_b!==_lastBand){ var _st=_secTitle[_b]; h+='<div class="eSec"><i class="'+_st[0]+'"></i>'+_st[1]+' <b>\u00b7 '+_st[2]+' \u00b7 '+_bc[_b]+'</b></div>'; _lastBand=_b; }
+    var nm=dn(s.name),aurl=av(s.name);
     var hasScore=s.score!==null;
     var sc=hasScore?s.score:0;
-    var bc=hasScore?(sc>=50?'#16a34a':sc>=20?'#d97706':'#cbd5e1'):'#e5e7eb';
-    var pc=hasScore?(sc>=50?'#16a34a':sc>=20?'#d97706':sc>=5?'#94a3b8':'#cbd5e1'):'#cbd5e1';
-    var sty=aurl?'background-image:url(\''+aurl+'\');border-color:'+bc:'border-color:'+bc;
-    var _isSpringFmt=s.spring&&/^\d{1,2}\.\d{2}$/.test(String(s.spring).trim());
-    var sl=_isSpringFmt?'Kevad: '+s.spring:'Kevadkuupäev puudub';
+    var sty=aurl?'background-image:url(\''+aurl+'\')':'';
     var escName=s.name.replace(/'/g,"\\'");
-    var ebLabel='';
-    var _ebTxt=s.ebirdScanned?'eBird: '+s.occ7Ebird:'eBird: \u2014';
-    var _ebClr=s.ebirdScanned?(s.occ7Ebird>0?'#16a34a':'#94a3b8'):'#cbd5e1';
-    ebLabel+='<span style="color:'+_ebClr+';font-size:10px;margin-left:6px">'+_ebTxt+'</span>';
-    var _elTxt=s.eluScanned?'eElu: '+s.occ7Elu:'eElu: \u2014';
-    var _elClr=s.eluScanned?(s.occ7Elu>0?'#3b82f6':'#94a3b8'):'#cbd5e1';
-    ebLabel+='<span style="color:'+_elClr+';font-size:10px;margin-left:4px">'+_elTxt+'</span>';
-    var pctHtml=hasScore?'<div class="ePct" style="color:'+pc+'">'+sc+'%</div>':
-      '<div class="ePct" style="color:#cbd5e1">&mdash;</div><div class="eObs" style="color:#d97706;font-size:10px">Vajab skaneerimist</div>';
-    // Best period line
-    var _bpLine='';
+    // meta line: eBird n \u00b7 eElu n \u00b7 kevad dd.mm (\u00b7 Naabrid \u2026)
+    var _ebTxt=s.ebirdScanned?('eBird <b>'+s.occ7Ebird+'</b>'):'eBird <b class="dim">\u2014</b>';
+    var _elTxt=s.eluScanned?('eElu <b>'+s.occ7Elu+'</b>'):'eElu <b class="dim">\u2014</b>';
+    var _isSpringFmt=s.spring&&/^\d{1,2}\.\d{2}$/.test(String(s.spring).trim());
+    var meta='<span class="eb">'+_ebTxt+'</span> \u00b7 <span class="el">'+_elTxt+'</span>'+(_isSpringFmt?' \u00b7 kevad '+s.spring:'');
+    var _nbPct=Number(s.neighborBoost)||0, _nbCCs=Array.isArray(s.neighborCountries)?s.neighborCountries:[];
+    if(_nbPct>0&&_nbCCs.length>0){ var _nbSeasonLbl=_neighborSeasonLabelEt(s.neighborSeason); meta+=' \u00b7 <span class="eNb">'+(_nbSeasonLbl?('Naabrid ('+_nbSeasonLbl+')'):'Naabrid')+' '+_nbCCs.join('\u00b7')+' <span class="eNbB">+'+_nbPct+'%</span></span>'; }
+    // status under the ring: praegu / parim <label> n% / stale / needs scan
     var _bpd=(window.__probDataBySpecies||{})[s.name];
+    var _bpBest=null, _isNow=false;
     if(_bpd&&!_bpd.noData){
-      var _bpBest=_bpd.bestPeriod||null;
-      if(!_bpBest&&_bpd.periods&&_bpd.periods.length>=1){
-        var _bpTop=null;for(var _bpi=0;_bpi<_bpd.periods.length;_bpi++){if(!_bpTop||(_bpd.periods[_bpi].pct||0)>(_bpTop.pct||0))_bpTop=_bpd.periods[_bpi];}
-        if(_bpTop&&(_bpTop.pct||0)>0) _bpBest={pct:_bpTop.pct,label:_bpTop.label};
-      }
-      if(_bpBest&&(_bpBest.pct||0)>0&&_bpBest.label&&_bpBest.label!=='current'&&_bpBest.label!=='best'){
-        _bpLine='<div style="color:#64748b;font-size:11px;margin-top:1px">Parim: '+_bpBest.label+' ('+_bpBest.pct+'%)'+_bmTimingPill(_bpBest.label)+'</div>';
-      }
+      _bpBest=_bpd.bestPeriod||null;
+      if(!_bpBest&&_bpd.periods&&_bpd.periods.length>=1){ var _bpTop=null;for(var _bpi=0;_bpi<_bpd.periods.length;_bpi++){if(!_bpTop||(_bpd.periods[_bpi].pct||0)>(_bpTop.pct||0))_bpTop=_bpd.periods[_bpi];} if(_bpTop&&(_bpTop.pct||0)>0) _bpBest={pct:_bpTop.pct,label:_bpTop.label}; }
+      if(_bpBest&&!(_bpBest.pct>0&&_bpBest.label&&_bpBest.label!=='current'&&_bpBest.label!=='best')) _bpBest=null;
+      if(_bpBest) _isNow=/Praegu/.test(_bmTimingPill(_bpBest.label));
     }
-    var _staleHtml='';
-    if(_bpd && _bpd.stale && _bpd.computedAt){
-      var _ageHours = Math.ceil((Date.now() - _bpd.computedAt) / 3600000);
-      _staleHtml = ' <span class="bm-stale-pill">' + _ageHours + ' t vanad</span>';
-    }
-    // Neighbour-country boost line
-    var _nbLine = '';
-    var _nbPct  = Number(s.neighborBoost) || 0;
-    var _nbCCs  = Array.isArray(s.neighborCountries) ? s.neighborCountries : [];
-    if (_nbPct > 0 && _nbCCs.length > 0) {
-      var _nbSeasonLbl = _neighborSeasonLabelEt(s.neighborSeason);
-      var _nbPrefix    = _nbSeasonLbl ? ('Naabrid (' + _nbSeasonLbl + ')') : 'Naabrid';
-      _nbLine = '<div class="eNb">' + _nbPrefix + ': ' + _nbCCs.join('·') +
-                ' <span class="eNbB">+' + _nbPct + '%</span></div>';
-    }
-    h+='<div class="eR"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
-      '<div class="eNm">'+nm+ebLabel+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+_bpLine+_staleHtml+_nbLine+'</div>'+
-      '<div class="eBar"><div class="eBf" style="width:'+(hasScore?Math.min(100,sc):0)+'%;background:'+bc+'"></div></div>'+
-      '</div><div class="eRt">'+pctHtml+'</div></div>';
+    var st='';
+    if(!hasScore) st='<span class="eSt scan">Vajab skaneerimist</span>';
+    else if(_bpd&&_bpd.stale&&_bpd.computedAt) st='<span class="eSt stale">'+Math.ceil((Date.now()-_bpd.computedAt)/3600000)+' t vanad</span>';
+    else if(_isNow) st='<span class="eSt now">\u25CF praegu</span>';
+    else if(_bpBest) st='<span class="eSt best" title="Parim: '+_bpBest.label+'">\u2605 '+_bpBest.label+' \u00b7 '+_bpBest.pct+'%</span>';
+    var ringCol=hasScore?(_isNow||sc>=50?'#2d7a4b':'#6d4fd8'):'#dde4df';
+    var pctCol=hasScore?(_isNow||sc>=50?'#2d7a4b':'#4c35b3'):'#6c7f74';
+    var ring='<div class="eRing" style="background:conic-gradient('+ringCol+' '+(hasScore?Math.min(100,sc):0)+'%, #eef2ef 0)"><span style="color:'+pctCol+'">'+(hasScore?sc+'%':'\u2014')+'</span></div>';
+    h+='<div class="eR" role="button" tabindex="0" onclick="window.__ennProb(\''+escName+'\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.__ennProb(\''+escName+'\')}">'
+      +'<div class="eAv" style="'+sty+'"></div>'
+      +'<div class="eInf"><div class="eNm">'+nm+'</div><div class="eLt">'+meta+'</div></div>'
+      +'<div class="eRt">'+ring+st+'</div></div>';
   }
   if(!h){
-    if(q) h='<div style="padding:16px;text-align:center;color:#94a3b8">Liiki "'+q+'" ei leitud</div>';
-    else h='<div style="padding:16px;text-align:center;color:#94a3b8">Kõik liigid on kaardil!</div>';
+    if(q) h='<div style="padding:16px;text-align:center;color:#6c7f74">Liiki "'+q+'" ei leitud</div>';
+    else if(band!=='all') h='<div style="padding:16px;text-align:center;color:#6c7f74">Selles vahemikus liike pole</div>';
+    else h='<div style="padding:16px;text-align:center;color:#6c7f74">K\u00F5ik liigid on kaardil!</div>';
   }
   lst.innerHTML=h;
-
   var ft=document.getElementById('ennFt');
   if(ft){
-    var footerLabel='Näitab '+displayList.length+' liiki';
-    ft.innerHTML='<span>'+footerLabel+'</span>'+
-      '<div style="display:flex;gap:6px;align-items:center"><span style="color:#64748b">Sorteeri:</span>'+
-      '<button class="eSP '+(sort==='prob'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'prob\')">% laskuv</button>'+
-      '<button class="eSP '+(sort==='spring'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'spring\')">Kevad kp</button>'+
-      '<button class="eSP '+(sort==='az'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'az\')">A-Z</button></div>';
+    if(!_ennAdminBtns){ var _hold=document.getElementById('ennAdminHold'); if(_hold) _ennAdminBtns=_hold.innerHTML; }
+    ft.innerHTML='<span>N\u00E4itab '+_shown+' liiki</span><div style="display:flex;gap:6px;align-items:center">'+_ennAdminBtns+'</div>';
   }
   try { if(typeof window.__ennRenderFresh === 'function') window.__ennRenderFresh(); } catch(e){}
 }
@@ -16267,7 +16310,8 @@ window.__openEnn=function(){
 };
 window.__closeEnn=function(){document.getElementById('ennBg').style.display='none';_ennScanAbort=true;};
 window.__renderEnn=render;
-window.__sortEnn=function(s){sort=s;render();};
+window.__sortEnn=function(s){sort=s;try{var _m=document.querySelector('.ennMenu');if(_m)_m.open=false;}catch(e){}render();};
+window.__bandEnn=function(b){band=b||'all';render();};
 
 window.__scanEnnAll=async function(btn,opts){
   if(window.__scanEnnAllRunning) return;

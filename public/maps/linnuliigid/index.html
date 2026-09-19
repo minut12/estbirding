@@ -324,7 +324,7 @@
 </style>
 <style id="sbNewUi">
 /* P37a new sidebar header/toolbar. Scoped to html:not(.sb-classic); html.sb-classic rules only neutralise the new markup. */
-html:not(.sb-classic){--sb-bg:#fff;--sb-bg2:#f2f8f4;--sb-ink:#222a26;--sb-ink2:#4a5852;--sb-muted:#6c7f74;--sb-line:#dde4df;--sb-line2:#eef2ef;--sb-primary:#2d7a4b;--sb-primary-soft:#e4f1e8;--sb-warn:#b45309;--sb-crit:#b91c1c;--sb-r:10px}
+html:not(.sb-classic){--sb-bg:#fff;--sb-bg2:#f2f8f4;--sb-ink:#222a26;--sb-ink2:#4a5852;--sb-muted:#6c7f74;--sb-line:#dde4df;--sb-line2:#eef2ef;--sb-primary:#2d7a4b;--sb-primary-soft:#e4f1e8;--sb-warn:#b45309;--sb-warn-soft:#fbeedd;--sb-crit:#b91c1c;--sb-r:10px}
 html.sb-classic .sb-titlebar{display:none}
 html.sb-classic .sb-filters{display:contents}
 html.sb-classic .sb-filters>summary{display:none}
@@ -540,6 +540,35 @@ html:not(.sb-classic) .sbh-cl small.v{color:var(--sb-muted);font-size:12.5px;ove
   html:not(.sb-classic) .sbh-qs{padding:14px}
 }
 @media (prefers-reduced-motion:reduce){ html:not(.sb-classic) .sbh-acc summary .sbh-chev{transition:none} }
+/* P46b: Randeajad strip (collapsed row) + card (expanded row) */
+html:not(.sb-classic) .sb-mig{position:relative;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:1px;height:6px;max-width:170px;margin-top:5px}
+html:not(.sb-classic) .sb-mig i{background:var(--sb-line2);border-radius:1px}
+html:not(.sb-classic) .sb-mig i.s{background:var(--sb-primary)}
+html:not(.sb-classic) .sb-mig i.a{background:var(--sb-warn)}
+html:not(.sb-classic) .sb-mig i.lo{opacity:.45}
+html:not(.sb-classic) .sb-mig b{position:absolute;top:-2px;bottom:-2px;width:2px;margin-left:-1px;background:var(--sb-ink);border-radius:1px}
+html:not(.sb-classic) .sb-rand-body{padding:10px 10px 8px}
+html:not(.sb-classic) .sb-rand-chart{position:relative;height:54px}
+html:not(.sb-classic) .sb-rand-band{position:absolute;top:0;bottom:0;border-radius:3px}
+html:not(.sb-classic) .sb-rand-band.s{background:var(--sb-primary-soft)}
+html:not(.sb-classic) .sb-rand-band.a{background:var(--sb-warn-soft)}
+html:not(.sb-classic) .sb-rand-bars{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:flex-end;gap:1px}
+html:not(.sb-classic) .sb-rand-bars i{flex:1 1 0;min-width:0;background:#b7c4bc;border-radius:1px 1px 0 0}
+html:not(.sb-classic) .sb-rand-bars i.s{background:var(--sb-primary)}
+html:not(.sb-classic) .sb-rand-bars i.a{background:var(--sb-warn)}
+html:not(.sb-classic) .sb-rand-now{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed var(--sb-ink)}
+html:not(.sb-classic) .sb-rand-now em{position:absolute;top:-2px;left:3px;font:600 9.5px system-ui;font-style:normal;color:var(--sb-ink2);background:var(--sb-bg);padding:0 2px;border-radius:3px;white-space:nowrap}
+html:not(.sb-classic) .sb-rand-now.r em{left:auto;right:3px}
+html:not(.sb-classic) .sb-rand-months{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));margin:3px 0 6px;font:500 9.5px system-ui;color:var(--sb-muted);text-align:center}
+html:not(.sb-classic) .sb-rand-l{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;font-size:12.5px;line-height:1.35;padding:2px 0}
+html:not(.sb-classic) .sb-rand-l b{font-weight:600;color:var(--sb-ink)}
+html:not(.sb-classic) .sb-rand-l b.s{color:var(--sb-primary)}
+html:not(.sb-classic) .sb-rand-l b.a{color:var(--sb-warn)}
+html:not(.sb-classic) .sb-rand-l span{color:var(--sb-ink);font-variant-numeric:tabular-nums}
+html:not(.sb-classic) .sb-rand-l .sb-rand-pk{color:var(--sb-muted)}
+html:not(.sb-classic) .sb-rand-l em{font:600 10.5px system-ui;font-style:normal;padding:1px 7px;border-radius:999px;background:var(--sb-primary-soft);color:var(--sb-primary)}
+html:not(.sb-classic) .sb-rand-l b.a ~ em{background:var(--sb-warn-soft);color:#7c3a06}
+html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);padding:2px 0}
 </style>
 </head>
 <body>
@@ -586,6 +615,7 @@ html:not(.sb-classic) .sbh-cl small.v{color:var(--sb-muted);font-size:12.5px;ove
 <script src="/maps/shared/rarity-style.js"></script>
 <script src="/maps/shared/et-strings.js"></script>
 <script src="/maps/shared/gps-locate.js"></script>
+<script src="/maps/shared/randeajad.js"></script>
 
 <script>
 // Define the prediction selector EARLY so popup onclick handlers can find it
@@ -9036,6 +9066,10 @@ window.addEventListener('message', function(ev){
         window.__ebirdCacheLoadedOnce = true;
         _loadEbirdCacheFromSupabase();
       }
+      if(!window.__randeajadLoadedOnce){
+        window.__randeajadLoadedOnce = true;
+        if(typeof window.__randeajadLoad === 'function') window.__randeajadLoad();
+      }
       _updateDebugPanel();
       return;
     }
@@ -10423,6 +10457,175 @@ window.toggleNotification = async function(speciesName) {
   } catch (e) {}
 })();
 
+/* P46b: R\u00E4ndeajad (migration windows) from rpc/get_species_week_histograms (P46a).
+   Cached in localStorage bm_randeajad_v1 for 7 days; fetched once from the SUPABASE_CONFIG handler. */
+(function(){
+  var LS_KEY = 'bm_randeajad_v1';
+  var TTL_MS = 7 * 24 * 3600 * 1000;
+  var WEEKS = 52;
+  var NOW_LABEL_FLIP_PCT = 85;
+  var MONTH_LETTERS = ['J','V','M','A','M','J','J','A','S','O','N','D'];
+  var NBSP = String.fromCharCode(160);
+  var hist = null;
+  var slugToKey = {};
+  var memo = {};
+
+  function slug(k){ return (typeof slugifySpeciesKey === 'function') ? slugifySpeciesKey(k) : String(k).toLowerCase(); }
+  function setData(h){
+    hist = h;
+    memo = {};
+    slugToKey = {};
+    Object.keys(h).forEach(function(k){ var s = slug(k); if(!(s in slugToKey)) slugToKey[s] = k; });
+  }
+  function readCache(){
+    try{
+      var o = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+      if(o && o.h && typeof o.h === 'object' && (Date.now() - Number(o.t)) < TTL_MS) return o.h;
+    }catch(e){ console.warn('[randeajad] cache read failed', e); }
+    return null;
+  }
+  function writeCache(h){
+    try{ localStorage.setItem(LS_KEY, JSON.stringify({ t: Date.now(), h: h })); }
+    catch(e){ console.warn('[randeajad] cache write failed', e); }
+  }
+  var cached = readCache();
+  if(cached) setData(cached);
+
+  window.__randeajadLoad = async function(){
+    if(hist) return;
+    try{
+      var cfg = resolveSupabaseConfig();
+      if(!cfg.supabaseUrl || !cfg.anonKey) return;
+      var res = await fetch(cfg.supabaseUrl + '/rest/v1/rpc/get_species_week_histograms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey },
+        body: '{}'
+      });
+      if(!res.ok){ console.warn('[randeajad] HTTP', res.status); return; }
+      var h = await res.json();
+      if(!h || typeof h !== 'object' || Array.isArray(h)){ console.warn('[randeajad] unexpected payload'); return; }
+      setData(h);
+      writeCache(h);
+      if(typeof render === 'function') render();
+    }catch(e){ console.warn('[randeajad]', e); }
+  };
+
+  function lookup(key){
+    if(!hist) return null;
+    if(Object.prototype.hasOwnProperty.call(hist, key)) return hist[key];
+    var k = slugToKey[slug(key)];
+    return k ? hist[k] : null;
+  }
+  function todayDoy(){
+    var d = new Date();
+    var y = d.getFullYear();
+    var doy = Math.round((new Date(y, d.getMonth(), d.getDate()) - new Date(y, 0, 1)) / 864e5) + 1;
+    var leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+    if(leap && doy > 59) doy--;
+    return Math.min(365, doy);
+  }
+  function groupThousands(n){
+    var s = String(n);
+    var out = '';
+    while(s.length > 3){ out = NBSP + s.slice(-3) + out; s = s.slice(0, -3); }
+    return s + out;
+  }
+  function pct(weeks){ return (weeks / WEEKS * 100).toFixed(2); }
+  function band(a, b, cls){ return '<span class="sb-rand-band ' + cls + '" style="left:' + pct(a - 1) + '%;width:' + pct(b - a + 1) + '%"></span>'; }
+  function winClass(R, res, wk){
+    if(res.kind === 'migrant'){
+      if(R.isNow(res.spring, wk)) return 's';
+      if(R.isNow(res.autumn, wk)) return 'a';
+    } else if(res.kind === 'winter' && R.isNowWinter(res.winter, wk)) return 'a';
+    return '';
+  }
+
+  function stripHTML(R, pairs, res, nowPct){
+    if(res.kind !== 'migrant' && res.kind !== 'winter') return '';
+    var cells = R.monthBuckets(pairs, res).map(function(c){
+      var cls = (c.cls || '') + (c.lo ? ' lo' : '');
+      return '<i' + (cls ? ' class="' + cls + '"' : '') + '></i>';
+    }).join('');
+    return '<div class="sb-mig" aria-hidden="true" title="R\u00E4ndeajad">' + cells + '<b style="left:' + nowPct + '%"></b></div>';
+  }
+  function chartHTML(R, res, w, mx, nowPct){
+    var bands = '';
+    if(res.kind === 'migrant'){
+      if(res.spring) bands += band(res.spring.a, res.spring.b, 's');
+      if(res.autumn) bands += band(res.autumn.a, res.autumn.b, 'a');
+    } else if(res.kind === 'winter'){
+      var wi = res.winter;
+      if(wi.a <= wi.b) bands += band(wi.a, wi.b, 'a');
+      else bands += band(wi.a, WEEKS, 'a') + band(1, wi.b, 'a');
+    }
+    var bars = '';
+    for(var wk = 1; wk <= WEEKS; wk++){
+      var h = w[wk] > 0 ? Math.max(4, w[wk] / mx * 100) : 0;
+      var c = winClass(R, res, wk);
+      bars += '<i' + (c ? ' class="' + c + '"' : '') + ' style="height:' + h.toFixed(1) + '%"></i>';
+    }
+    var months = MONTH_LETTERS.map(function(l){ return '<span>' + l + '</span>'; }).join('');
+    var flip = Number(nowPct) > NOW_LABEL_FLIP_PCT ? ' r' : '';
+    return '<div class="sb-rand-chart">' + bands + '<div class="sb-rand-bars">' + bars + '</div>'
+      + '<span class="sb-rand-now' + flip + '" style="left:' + nowPct + '%"><em>t\u00E4na</em></span></div>'
+      + '<div class="sb-rand-months">' + months + '</div>';
+  }
+  function lineHTML(R, label, cls, win, live){
+    return '<div class="sb-rand-l"><b class="' + cls + '">' + label + '</b><span>' + R.fmtRange(win) + '</span>'
+      + (win.pk ? '<span class="sb-rand-pk">tipp ' + R.fmtDoy(R.weekToDoy(win.pk) + 3) + '</span>' : '')
+      + (live ? '<em>k\u00E4ib</em>' : '') + '</div>';
+  }
+  function cardHTML(R, res, w, tot, mx, wkNow, nowPct){
+    var body;
+    if(res.kind === 'few'){
+      body = '<div class="sb-rand-note">Andmeid on liiga v\u00E4he, et r\u00E4ndeaegu n\u00E4idata.</div>';
+    } else if(res.kind === 'resident'){
+      body = chartHTML(R, res, w, mx, nowPct) + '<div class="sb-rand-l"><b>Paigalind</b><span class="sb-rand-pk">aasta ringi, r\u00E4ndeaega ei n\u00E4idata</span></div>';
+    } else if(res.kind === 'winter'){
+      body = chartHTML(R, res, w, mx, nowPct) + lineHTML(R, 'Talvek\u00FClaline', 'a', res.winter, R.isNowWinter(res.winter, wkNow));
+    } else {
+      body = chartHTML(R, res, w, mx, nowPct);
+      if(res.spring) body += lineHTML(R, 'Kevad', 's', res.spring, R.isNow(res.spring, wkNow));
+      if(res.autumn) body += lineHTML(R, 'S\u00FCgis', 'a', res.autumn, R.isNow(res.autumn, wkNow));
+      if(!res.spring && res.autumn) body += '<div class="sb-rand-note">Ainult s\u00FCgisel.</div>';
+    }
+    return '<div class="sb-info sb-rand"><div class="sb-info-h">R\u00E4ndeajad<span>' + groupThousands(tot) + ' vaatlust \u00b7 Elurikkus</span></div>'
+      + '<div class="sb-rand-body">' + body + '</div></div>';
+  }
+  function buildParts(R, pairs, doy){
+    var res = R.analyse(pairs);
+    var w = [];
+    var tot = 0;
+    var mx = 0;
+    var i;
+    for(i = 0; i <= WEEKS; i++) w[i] = 0;
+    for(i = 0; i < pairs.length; i++){
+      var wk = Number(pairs[i] && pairs[i][0]);
+      var c = Number(pairs[i] && pairs[i][1]);
+      if(wk >= 1 && wk <= WEEKS && c > 0) w[wk] += c;
+    }
+    for(i = 1; i <= WEEKS; i++){ tot += w[i]; if(w[i] > mx) mx = w[i]; }
+    var wkNow = Math.min(WEEKS, Math.floor((doy - 1) / 7) + 1);
+    var nowPct = (doy / 365 * 100).toFixed(1);
+    return { strip: stripHTML(R, pairs, res, nowPct), card: cardHTML(R, res, w, tot, mx, wkNow, nowPct) };
+  }
+
+  /* Returns {strip, card} for the new-UI row, or null when there is no data (row renders as before). */
+  window.__randeajadRow = function(key){
+    var R = window.__bmRandeajad;
+    if(!R) return null;
+    var pairs = lookup(key);
+    if(!pairs || !pairs.length) return null;
+    var doy = todayDoy();
+    var hit = memo[key];
+    if(!hit || hit.doy !== doy){
+      try{ hit = memo[key] = { doy: doy, parts: buildParts(R, pairs, doy) }; }
+      catch(e){ console.warn('[randeajad] render failed for', key, e); return null; }
+    }
+    return hit.parts;
+  };
+})();
+
 function rowHTML(obj) {
   const key = obj.est;
   const p = points[key] || {};
@@ -10532,6 +10735,7 @@ function rowHTML(obj) {
   }
 
   var isOpen = (window.__sbOpenKey === key);
+  var mig = (typeof window.__randeajadRow === 'function') ? window.__randeajadRow(key) : null;
   var metaNew = hasPoint
     ? '<span class="sb-fresh">' + (p.t ? formatDateEE(p.t) : '') + '</span>'
       + (occ7 !== null ? '<i class="sb-sep"></i><span class="sb-occ">7d ' + occ7 + '</span>' : '')
@@ -10555,6 +10759,7 @@ function rowHTML(obj) {
       '<div class="sb-row-text">' +
         '<div class="name-label clickable ' + muted + '" onclick="event.stopPropagation();toggleVisibility(\'' + keyJs + '\')">' + key + '</div>' +
         '<div class="sb-meta">' + metaNew + '</div>' +
+        (mig ? mig.strip : '') +
       '</div>' +
       '<div class="sb-acts">' +
         '<button class="btn open-occ-btn sb-ib" data-open-url="' + openUrl.replace(/"/g,'&quot;') + '" title="Ava Elurikkuses" aria-label="Ava Elurikkuses">' + SB_ICON.open + '</button>' +
@@ -10570,6 +10775,7 @@ function rowHTML(obj) {
         '<button type="button" class="btn prob-btn sb-arvuta" data-prob-species="' + key + '" title="Arvuta tõenäosus">' + SB_ICON.prob + 'Arvuta tõenäosus</button>' +
         springTxtNew +
       '</div>' +
+      (mig ? mig.card : '') +
       sbInfo +
     '</div>' +
   '</div>';

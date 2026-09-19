@@ -16209,6 +16209,10 @@ function render(){
   var el=document.getElementById('ennFreshCount');
   if(el) el.textContent=displayList.length;
 
+  // P44b: latest eBird obs date per species from the regional cache (one obs per species, so "count" is presence).
+  var _ebLast={};
+  try{ var _ebRaw=localStorage.getItem('bm_ebird_obs_v1'); if(_ebRaw){ var _ebBy=(JSON.parse(_ebRaw)||{}).bySpecies||{}; for(var _ebn in _ebBy){ if(!Object.prototype.hasOwnProperty.call(_ebBy,_ebn)) continue; var _ebArr=_ebBy[_ebn]||[]; var _ebBest=''; for(var _ebi=0;_ebi<_ebArr.length;_ebi++){ var _ebd=String(_ebArr[_ebi].obsDt||''); if(_ebd>_ebBest) _ebBest=_ebd; } if(_ebBest) _ebLast[_ebn]=_ebBest; } } }catch(e){}
+  function _ebFmt(dt){ var m=String(dt).match(/^(\d{4})-(\d{2})-(\d{2})/); return m?(m[3]+'.'+m[2]):''; }
   var lst=document.getElementById('ennLst');
   if(!lst) return;
   // P43: band bucketing (display only). null score -> 'rare'.
@@ -16250,7 +16254,10 @@ function render(){
     var sty=aurl?'background-image:url(\''+aurl+'\')':'';
     var escName=s.name.replace(/'/g,"\\'");
     // meta line: eBird n \u00b7 eElu n \u00b7 kevad dd.mm (\u00b7 Naabrid \u2026)
-    var _ebTxt=s.ebirdScanned?('eBird <b>'+s.occ7Ebird+'</b>'):'eBird <b class="dim">\u2014</b>';
+    var _ebLastDt=_ebLast[s.name]||_ebLast[_fix(s.name)]||'';
+    var _ebTxt=!s.ebirdScanned?'eBird <b class="dim">\u2014</b>'
+      :(s.occ7Ebird>0?('<span title="eBird: viimane vaatlus '+_ebFmt(_ebLastDt)+'">eBird <b>\u2713'+(_ebLastDt?' '+_ebFmt(_ebLastDt):'')+'</b></span>')
+      :('<span title="eBird: 7 p\u00e4eva jooksul vaatlusi pole">eBird <b class="dim">0</b></span>'));
     var _elTxt=s.eluScanned?('eElu <b>'+s.occ7Elu+'</b>'):'eElu <b class="dim">\u2014</b>';
     var _isSpringFmt=s.spring&&/^\d{1,2}\.\d{2}$/.test(String(s.spring).trim());
     var meta='<span class="eb">'+_ebTxt+'</span> \u00b7 <span class="el">'+_elTxt+'</span>'+(_isSpringFmt?' \u00b7 kevad '+s.spring:'');

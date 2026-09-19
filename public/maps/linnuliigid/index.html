@@ -268,6 +268,9 @@
    .leaflet-popup-content plus 2px wrapper padding. Scoped via the bindPopup className so no
    other popup on the map changes. 205 inner + 24 margin + 2 padding = 231 < 240. */
 .bm-pred-popup .leaflet-popup-content{margin:9px 12px}
+/* P42: probability-cell popup shell (rectangles + centre markers bound in renderProbabilityOverlay) */
+.bm-prob-popup .leaflet-popup-content-wrapper{border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.22)}
+.bm-prob-popup .leaflet-popup-content{margin:14px 16px 12px}
 .bm-pred-pop{min-width:0;max-width:205px;font-size:12px;line-height:1.3}
 /* padding-right clears Leaflet's close button: the default 24px content margin used to do it,
    and the reduced margin above would otherwise let the ✕ sit on top of the percentage. */
@@ -14260,51 +14263,34 @@ var __sharedDefaults = {};
     var _maxPct = 0, _peakM = -1;
     for (var _k = 0; _k < 12; _k++) { if (_buck[_k].pct > _maxPct) { _maxPct = _buck[_k].pct; _peakM = _k; } }
     var _nowM = (_curBucket >= 0) ? _curBucket : new Date().getMonth();   // praegu = isCurrent period's month; calendar month only if none flagged
-    var html = '<div style="border-top:1px solid #eee;margin-top:6px;padding-top:6px">'
-      + '<div style="font-size:11px;font-weight:600;color:#555;margin-bottom:4px">T\u00F5en\u00E4osus perioodi kaupa</div>';
+    // P42: 12-column bar chart (mock v4). Heights are relative to the peak month; only the current
+    // and peak months carry a value label; empty months keep a 3px stub. All bucket maths above unchanged.
+    var _ML = ['J','V','M','A','M','J','J','A','S','O','N','D'];
+    var _ttl = '<div style="display:flex;justify-content:space-between;align-items:baseline;margin:10px 0 6px">'
+      + '<span style="font-size:10.5px;font-weight:700;color:#6c7f74;letter-spacing:.06em;text-transform:uppercase">T\u00F5en\u00E4osus perioodi kaupa</span>'
+      + '</div>';
+    var _bars = '', _labs = '';
     for (var m = 0; m < 12; m++) {
       var prob = _buck[m].pct || 0;
-      var _isNow = (m === _nowM);
-      var praeguPill = _isNow
-        ? '<span style="font-size:9px;font-weight:500;color:#92400e;background:#fef3c7;padding:2px 6px;border-radius:999px;flex-shrink:0">praegu</span>'
-        : '';
-      var rowBg = _isNow ? '#fffbeb' : 'transparent';
-      var rowBorder = _isNow ? 'border:0.5px solid #fde68a;' : '';
-      var star = (m === _peakM ? '\u2B50 ' : '');   // peak is always a data month -> empty rows get none
-
-      if (prob === 0) {
-        // Empty month -> shrunk row (font 9px, height 13px): muted name + 0%, no bar track and no
-        // obs count, so the data months dominate the list. The praegu month stays marked (amber
-        // pill + stronger, undimmed text) so "you are here" survives the empty stretch.
-        var _eDim  = _isNow ? '' : 'opacity:0.45;';
-        var _eName = _isNow ? '#92400e' : '#999';
-        html += '<div style="display:flex;align-items:center;gap:6px;height:13px;padding:0 5px;margin:1px 0;border-radius:6px;font-size:9px;' + _eDim + 'background:' + rowBg + ';' + rowBorder + '">'
-          + praeguPill
-          + '<span style="color:' + _eName + ';min-width:100px;white-space:nowrap">' + star + _MN[m] + '</span>'
-          + '<div style="flex:1"></div>'
-          + '<span style="color:#999;min-width:32px;text-align:right">0%</span>'
-          + '</div>';
-        continue;
-      }
-
-      // Data month -> full row: name, bar, %, obs, star if peak, praegu pill if current.
-      var barColor = prob > 60 ? '#E24B4A' : prob > 25 ? '#E88D2A' : '#7F77DD';
-      var pctColor = prob > 60 ? '#A32D2D' : prob > 25 ? '#854F0B' : '#534AB7';
-      var barWidth = _maxPct > 0 ? Math.round((prob / _maxPct) * 100) : 0;
+      var _isNow = (m === _nowM), _isPeak = (m === _peakM);
+      var h = _maxPct > 0 ? Math.max(3, Math.round((prob / _maxPct) * 60)) : 3;
+      var bg = _isNow ? '#6d4fd8' : (_isPeak ? '#b45309' : (prob > 0 ? '#d9d1f5' : '#eef2ef'));
       var cnt = Number(_buck[m].obs);
-      var cntHtml = (Number.isFinite(cnt) && cnt > 0)
-        ? '<span style="font-size:9px;color:#999;min-width:20px">(' + cnt + ')' + (cnt <= 2 ? ' ~' : '') + '</span>'
+      var tip = _MN[m] + ' \u00b7 ' + prob + '%' + ((Number.isFinite(cnt) && cnt > 0) ? ' (' + cnt + ')' + (cnt <= 2 ? ' ~' : '') : '');
+      var lab = (_isNow || _isPeak) && prob > 0
+        ? '<span style="position:absolute;top:-15px;left:50%;transform:translateX(-50%);font:600 10px system-ui;color:' + (_isNow ? '#4c35b3' : '#b45309') + ';white-space:nowrap">' + prob + '%</span>'
         : '';
-      html += '<div style="display:flex;align-items:center;gap:6px;padding:3px 5px;margin:1px 0;border-radius:6px;background:' + rowBg + ';' + rowBorder + '">'
-        + praeguPill
-        + '<span style="font-size:10px;color:#666;min-width:100px;white-space:nowrap">' + star + _MN[m] + '</span>'
-        + '<div style="flex:1;height:8px;background:#f1f1f1;border-radius:4px;overflow:hidden">'
-        + '<div style="width:' + barWidth + '%;height:100%;background:' + barColor + ';border-radius:4px"></div></div>'
-        + '<span style="font-size:10px;color:' + pctColor + ';min-width:32px;text-align:right;font-weight:500">' + prob + '%</span>'
-        + cntHtml
-        + '</div>';
+      _bars += '<div title="' + tip + '" style="position:relative;height:' + h + 'px;border-radius:4px 4px 2px 2px;background:' + bg + '">' + lab + '</div>';
+      var lc = _isNow ? '#4c35b3' : (_isPeak ? '#b45309' : '#6c7f74');
+      _labs += '<span style="color:' + lc + (_isNow || _isPeak ? ';font-weight:700' : '') + '">' + _ML[m] + '</span>';
     }
-    html += '</div>';
+    var html = '<div style="border-top:1px solid #eef2ef;margin-top:8px">' + _ttl
+      + '<div style="display:grid;grid-template-columns:repeat(12,1fr);gap:4px;align-items:end;height:74px;padding:0 2px">' + _bars + '</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(12,1fr);gap:4px;margin-top:4px;text-align:center;font-size:9.5px;color:#6c7f74">' + _labs + '</div>'
+      + '<div style="display:flex;gap:14px;margin-top:8px;font-size:11px;color:#6c7f74">'
+      + '<span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#6d4fd8;margin-right:5px;vertical-align:-1px"></i>praegu</span>'
+      + '<span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#b45309;margin-right:5px;vertical-align:-1px"></i>parim</span>'
+      + '</div></div>';
     return html;
   }
 
@@ -14467,27 +14453,31 @@ var __sharedDefaults = {};
     // Temporal breakdown
     var temporalHtml = buildTemporalBreakdown(cell);
 
-    return '<div style="font-family:system-ui;min-width:240px;max-width:360px">'
-      + '<div style="display:flex;align-items:center;gap:9px;margin-bottom:2px"><span style="font-size:22px;font-weight:600;color:' + probColor + '">' + cell.probability + '%</span>' + _trendChip + '</div>'
-      + '<div style="font-size:12px;color:#64748b;margin-bottom:8px">' + _subtitleText + '</div>'
-      + _bestBanner
+    // P42: popup layout (mock v4 s.3). Same inputs; best-time banner carries the season, "See ruut"
+    // becomes stat tiles, chips keep their existing conditions.
+    var _seasonTxt = _etDateLabel(seasonInfo && seasonInfo.label ? seasonInfo.label : formatSeasonWindow());
+    var _bigColor = cell.probability > 60 ? '#2d7a4b' : cell.probability > 25 ? '#b45309' : '#4c35b3';
+    var _tiles = '';
+    function _tile(n, cap, sub){ return '<div style="border:1px solid #dde4df;border-radius:10px;padding:7px 9px;min-width:0"><b style="display:block;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;color:#222a26">' + n + '</b><small style="display:block;color:#6c7f74;font-size:10px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + cap + '</small>' + (sub ? '<small style="display:block;color:#94a3b8;font-size:10px">' + sub + '</small>' : '') + '</div>'; }
+    _tiles += _tile(gbifSeason, 'GBIF \u00b7 hooajal', gbifTotal > gbifSeason ? gbifTotal + ' kokku' : '');
+    if (ebirdSpeciesWide > 0) _tiles += _tile(cellEbirdTotal, 'eBird \u00b7 ruudus', '');
+    if (cellEluTotal > 0 || globalEluRecent7d > 0) _tiles += _tile(cellEluTotal, 'eElurikkus \u00b7 ruudus', globalEluRecent7d > 0 ? globalEluRecent7d + ' \u00b7 7 p' : '');
+    if (Number.isFinite(totalObs) && totalObs > 0) _tiles += _tile(totalObs, 'k\u00F5ik ruudud', (Number.isFinite(totalInSeason) && totalInSeason > 0) ? totalInSeason + ' hooajal' : '');
+    var _bestBlock = '';
+    if (_bestBanner) {
+      _bestBlock = '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;background:#fdf3e3;border:1px solid #f3dfb8;border-radius:10px;padding:8px 10px">'
+        + '<span style="width:26px;height:26px;border-radius:8px;background:#fbe4b4;color:#b45309;display:grid;place-items:center;flex:0 0 auto;font-size:14px">\u2605</span>'
+        + '<div style="line-height:1.3;min-width:0"><b style="display:block;font-size:12.5px;color:#222a26">' + _bestLabel + ' \u00b7 ' + _etDateLabel(_peak.label) + ' \u00b7 ' + (_peak.probability || 1) + '%</b>'
+        + '<small style="color:#4a5852;font-size:11.5px">hooaeg ' + _seasonTxt + '</small></div></div>';
+    } else {
+      _bestBlock = '<div style="margin-top:8px;font-size:11.5px;color:#6c7f74">Hooaeg: ' + _seasonTxt + '</div>';
+    }
+    return '<div style="font-family:system-ui;min-width:260px;max-width:340px;color:#222a26">'
+      + '<div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:30px;font-weight:750;letter-spacing:-.02em;line-height:1;color:' + _bigColor + '">' + cell.probability + '%</span>' + _trendChip + '</div>'
+      + '<div style="font-size:12px;color:#6c7f74;margin-top:3px">' + _subtitleText + '</div>'
+      + _bestBlock
       + _chipsRow
-      + '<div style="border-top:1px solid #eee;padding-top:6px;margin-top:2px">'
-        + '<div style="font-size:10px;font-weight:600;color:#94a3b8;letter-spacing:.04em;text-transform:uppercase;margin-bottom:3px">See ruut</div>'
-        + '<div style="font-size:12px;color:#334155">\uD83D\uDCCD <b>GBIF ' + gbifSeason + '</b>'
-        + (gbifTotal > gbifSeason ? ' (' + gbifTotal + ' kokku)' : '')
-        + (ebirdSpeciesWide > 0 ? ' \u00b7 eBird ' + cellEbirdTotal : '')
-        + ' <span style="color:#94a3b8">hooajal</span>'
-        + '</div>'
-        + eluLine
-      + '</div>'
-      + (Number.isFinite(totalObs) && totalObs > 0
-          ? '<div style="font-size:12px;color:#94a3b8;margin-top:6px">'
-            + '\uD83D\uDCCA K\u00F5ik ruudud: ' + totalObs + ' vaatlust'
-            + (Number.isFinite(totalInSeason) && totalInSeason > 0 ? ' \u00b7 ' + totalInSeason + ' hooajal' : '')
-            + '</div>'
-          : '')
-      + '<div style="font-size:11px;color:#94a3b8;margin-top:2px">Hooaeg: ' + _etDateLabel(seasonInfo && seasonInfo.label ? seasonInfo.label : formatSeasonWindow()) + '</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:6px;margin-top:10px">' + _tiles + '</div>'
       + breakdownLine
       + temporalHtml
     + '</div>';
@@ -14517,7 +14507,7 @@ var __sharedDefaults = {};
       else { fillColor = '#7F77DD'; fillOpacity = 0.25; strokeColor = '#534AB7'; strokeOpacity = 0.3; }
 
       var rect = L.rectangle(bounds, { fillColor: fillColor, fillOpacity: fillOpacity, color: strokeColor, weight: 1, opacity: strokeOpacity, interactive: true });
-      rect.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo, _ebirdItems));
+      rect.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo, _ebirdItems), { className: 'bm-prob-popup', maxWidth: 360 });
       probLayerGroup.addLayer(rect);
 
       // Phase 3: crown the single best cell. interactive:false so clicks fall through to the rect popup.
@@ -14541,7 +14531,7 @@ var __sharedDefaults = {};
       var center = [(cell.latMin + cell.latMax)/2, (cell.lonMin + cell.lonMax)/2];
       var mc = cell.probability > 60 ? '#A32D2D' : cell.probability > 25 ? '#B06A1A' : '#534AB7';
       var marker = L.circleMarker(center, { radius: 5, fillColor: mc, fillOpacity: 1, color: 'white', weight: 1.5 });
-      marker.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo, _ebirdItems));
+      marker.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo, _ebirdItems), { className: 'bm-prob-popup', maxWidth: 360 });
       probLayerGroup.addLayer(marker);
     });
 

@@ -13413,7 +13413,7 @@ var __sharedDefaults = {};
     '.prob-btn.prob-loading svg{animation:prob-spin 1s linear infinite}' +
     '@keyframes prob-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}' +
     '.row.prob-row-active{border-left:3px solid #1D9E75;background:#f0fdf4}' +
-    '@media(max-width:768px){#probInfoPanel{max-width:180px!important;font-size:11px!important;padding:10px 12px!important}}';
+    '@media(max-width:900px){#probInfoPanel{top:auto!important;right:auto!important;left:10px!important;bottom:calc(72px + env(safe-area-inset-bottom,0px))!important;width:200px!important;max-width:calc(100vw - 80px)!important;padding:10px 12px!important;zoom:.84;box-shadow:0 4px 16px rgba(0,0,0,.18)!important}}';
   document.head.appendChild(style);
 
   // --- Info panel (injected into #mapWrap) ---

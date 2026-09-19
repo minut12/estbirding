@@ -1,0 +1,3 @@
+# linnuliigid — unicode escapes in edits
+
+The linnuliigid map writes non-ASCII in JS strings as \uXXXX escapes (e.g. Tõenäosus, ·). Claude's edit input decodes these to literal characters, so a normal edit fails to match text containing escapes and writes literal characters into new text. Edits that touch escaped JS strings go through a node script that anchors by line range with a hash check and re-escapes non-ASCII (match the file's case: õ ä uppercase, · lowercase). Static HTML in the same file uses literal UTF-8 and stays literal. Verify: `git diff -U0 -- public/maps/linnuliigid/index.html | grep '^+' | grep -cP '[^\x00-\x7F]'` must be 0 for JS-only edits.

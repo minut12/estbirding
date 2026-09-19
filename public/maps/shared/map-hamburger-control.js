@@ -51,13 +51,15 @@
 
 /* P40: report the map's mobile sidebar state to the React parent so it can hide the floating
    map selector while the list covers the screen. All three maps toggle body.sidebar-open
-   (linnuliigid new UI since P40 Step 1). Posts only on ≤900px, matching each map's drawer breakpoint. */
+   (linnuliigid new UI since P40 Step 1); that counts only at or below 900px, matching each map's
+   drawer breakpoint. P43b: body.enn-open = the Toenaosus panel (linnuliigid) and counts at any width. */
 (function () {
   if (window.parent === window || !window.MutationObserver) return;
   var mq = window.matchMedia("(max-width: 900px)");
   var last = null;
   function post() {
-    var open = mq.matches && document.body.classList.contains("sidebar-open");
+    // enn-open = the Toenaosus panel (any width); sidebar-open = mobile drawer (<=900px only)
+    var open = document.body.classList.contains("enn-open") || (mq.matches && document.body.classList.contains("sidebar-open"));
     if (open === last) return;
     last = open;
     try { window.parent.postMessage({ type: "SIDEBAR_STATE", open: open }, "*"); } catch (e) {}

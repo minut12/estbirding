@@ -16160,6 +16160,14 @@ function render(){
     var p=pts[n]||pts[clean]||{};
     var _srcLo=String(p.src||'').toLowerCase();
     var occ7Ebird=Number(p.occ7Ebird||0)||(!p.occ7Ebird&&_srcLo.indexOf('ebird')!==-1?Number(p.occ7||0):0);
+    // P44: no per-species scan value -> fall back to the regional eBird EE bulk (7-day count by eBird code),
+    // the same counts missing() reads. Admin scan values (p.occ7Ebird) still win when present.
+    var __ennEbirdFallback=false;
+    if(p.occ7Ebird==null&&window.__ennEbirdCountsUpdatedAt){
+      var _ebc=(typeof getEbirdCode==='function')?getEbirdCode(n):null;
+      if(!_ebc&&clean!==n&&typeof getEbirdCode==='function') _ebc=getEbirdCode(clean);
+      if(_ebc){ occ7Ebird=Number((window.__ennEbirdCounts||{})[_ebc])||0; __ennEbirdFallback=true; }
+    }
     var occ7Elu=Number(p.occ7Elu||0)||(!p.occ7Elu&&_srcLo.indexOf('elurikkus')!==-1?Number(p.occ7||0):0);
     var currentScore=getCurrentProbScore(n);
     if(currentScore===null) currentScore=getCurrentProbScore(clean);
@@ -16175,7 +16183,7 @@ function render(){
     var nbBoost   = Number(nbResult.boost) || 0;
     var finalScore = (currentScore !== null) ? Math.min(95, currentScore + boost + nbBoost) : null;
     if(finalScore!==null&&finalScore>=80){console.log('[PROB-FINAL]',n,{currentScore:currentScore,ebirdBoost:ebirdBoost,eluBoost:eluBoost,boost:boost,nbBoost:nbBoost,finalScore:finalScore});}
-    var ebirdScanned=p.occ7EbirdUpdated!=null;
+    var ebirdScanned=p.occ7EbirdUpdated!=null||__ennEbirdFallback;
     var eluScanned=p.occ7Elu!=null||_srcLo.indexOf('elurikkus')!==-1;
     displayList.push({
       name: n,
@@ -16308,6 +16316,15 @@ window.__openEnn=function(){
   if(bg) bg.style.display='flex';
   try{document.body.classList.add('enn-open');}catch(e){}
   render();
+  // P44: make sure the regional eBird counts exist (6h TTL, same as the scan gate) so rows can show eBird n
+  // without an admin scan. Non-blocking: the panel opens at once and re-renders when the bulk resolves.
+  try{
+    var _ebAge=window.__ennEbirdCountsUpdatedAt?(Date.now()-window.__ennEbirdCountsUpdatedAt):Infinity;
+    if(_ebAge>=6*60*60*1000&&typeof window.__refreshEbirdEEBulk==='function'&&!window.__ennEbirdKick){
+      window.__ennEbirdKick=true;
+      window.__refreshEbirdEEBulk().then(function(){ window.__ennEbirdKick=false; try{ if(document.getElementById('ennBg').style.display!=='none') render(); }catch(e){} },function(){ window.__ennEbirdKick=false; });
+    }
+  }catch(e){}
 };
 window.__closeEnn=function(){document.getElementById('ennBg').style.display='none';try{document.body.classList.remove('enn-open');}catch(e){}_ennScanAbort=true;};
 window.__renderEnn=render;

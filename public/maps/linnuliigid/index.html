@@ -254,8 +254,16 @@
 .bm-pred-nb.hot{background:#dc2626}
 .bm-pred-marker.wl{opacity:.6}
 .bm-pred-marker.wl .bm-pred-pct{background:#a78bfa}
-.bm-pred-pill{padding:6px 10px;border-radius:14px;border:1px solid #c4b5fd;background:#fff;color:#5b21b6;font-weight:600;font-size:12px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12)}
-.bm-pred-pill.on{background:#7c3aed;color:#fff;border-color:#7c3aed}
+/* P41: Ennustus as a 40px icon button (mock v4). Prediction accent #6d4fd8; on = filled; count badge = predicted sites. */
+.bm-pred-pill{position:relative;width:40px;height:40px;padding:0;border-radius:999px;border:0;background:rgba(255,255,255,.94);color:#6d4fd8;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.18);display:grid;place-items:center;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.bm-pred-pill:hover{background:#fff}
+.bm-pred-pill:focus-visible{outline:2px solid #6d4fd8;outline-offset:2px}
+.bm-pred-pill.on{background:#6d4fd8;color:#fff;box-shadow:0 2px 12px rgba(109,79,216,.45)}
+.bm-pred-pill.zero{color:#6c7f74}
+.bm-pred-pill .bm-pred-ico{display:block}
+.bm-pred-pill .bm-pred-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#222a26;color:#fff;font:700 10px/18px system-ui,sans-serif;text-align:center;border:2px solid #fff;box-sizing:content-box}
+.bm-pred-pill.on .bm-pred-badge{background:#fff;color:#4c35b3}
+.bm-pred-pill.zero .bm-pred-badge{display:none}
 /* Gate is the WRAPPER, not .bm-pred-pop: Leaflet adds margin:13px 24px 13px 20px (44px) to
    .leaflet-popup-content plus 2px wrapper padding. Scoped via the bindPopup className so no
    other popup on the map changes. 205 inner + 24 margin + 2 padding = 231 < 240. */
@@ -11754,7 +11762,12 @@ document.addEventListener('DOMContentLoaded', function(){
   function updatePillTooltip(count){
     try{
       if(!pillBtn) return;
-      pillBtn.title = count === 0 ? 'Ennustusi pole' : 'Ennustus';
+      var label = count === 0 ? 'Ennustusi pole' : ('Ennustus \u00B7 ' + count);
+      pillBtn.title = label;
+      pillBtn.setAttribute('aria-label', label);
+      pillBtn.classList.toggle('zero', count === 0);
+      var badge = pillBtn.querySelector('.bm-pred-badge');
+      if(badge) badge.textContent = String(count);
     }catch(e){}
   }
 
@@ -11805,14 +11818,18 @@ document.addEventListener('DOMContentLoaded', function(){
           var div = L.DomUtil.create('div', 'leaflet-bar');
           div.style.border = '0';
           var btn = document.createElement('button');
-          btn.className = 'bm-pred-pill' + (isLayerOn() ? ' on' : '');
-          btn.textContent = 'Ennustus';
+          btn.type = 'button';
+          btn.className = 'bm-pred-pill zero' + (isLayerOn() ? ' on' : '');
+          btn.innerHTML = '<svg class="bm-pred-ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg><span class="bm-pred-badge">0</span>';
           btn.title = 'Ennustus';
+          btn.setAttribute('aria-label', 'Ennustus');
+          btn.setAttribute('aria-pressed', isLayerOn() ? 'true' : 'false');
           btn.onclick = function(){
             try{
               var next = !isLayerOn();
               setLayerOn(next);
-              btn.className = 'bm-pred-pill' + (next ? ' on' : '');
+              btn.className = 'bm-pred-pill' + (next ? ' on' : '') + (btn.classList.contains('zero') ? ' zero' : '');
+              btn.setAttribute('aria-pressed', next ? 'true' : 'false');
               render(lastRow);
               applyLayerState();
             }catch(e){}

@@ -14,7 +14,7 @@
   var HALF_MIN_EXCESS = 15;
   var DIFFUSE_EXCESS_SHARE = 0.1;
   var WINDOW_EXCESS_SHARE = 0.5;
-  var MAX_WINDOW_WEEKS = 6;
+  var MAX_WINDOW_WEEKS = 8;
   var BASE_FROM = 23;
   var BASE_TO = 30;
   var LO_SHARE = 0.5;
@@ -50,7 +50,9 @@
     "Salutihane",
     "Sinitihane",
     "Suur-kirjur\u00e4hn",
+    "Talvike",
     "Tamme-kirjur\u00e4hn",
+    "Teder",
     "Tutt-tihane",
     "Tuttl\u00f5oke",
     "Valgeselg-kirjur\u00e4hn",

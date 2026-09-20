@@ -2471,7 +2471,9 @@
     "pk": 20
    },
    "autumn": {
-    "diffuse": true
+    "a": 35,
+    "b": 41,
+    "pk": 40
    }
   },
   "Kalakotkas": {

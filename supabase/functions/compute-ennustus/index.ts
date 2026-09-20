@@ -1,4 +1,5 @@
 // compute-ennustus
+// redeploy-marker: v10 · 2026-09-20 · fetchAllGbif filters country_code='EE' (Tõenäosus is Estonia-only; P3 widened gbif_occurrences)
 // redeploy-marker: v9 · 2026-07-15 · full-year 26-period template; source-gated Jan-1 (drop GBIF only, keep real elurikkus); grid from allOccs
 // redeploy-marker: v8 · 2026-07-13 · HISTORY folds ALL coord-bearing elurikkus (not just post-gbifMax tail); cross-source dedup now load-bearing
 // redeploy-marker: v7 · 2026-07-09 · HISTORY folds elurikkus GBIF-lag tail (obs postdating gbifMax); revives 0-GBIF species
@@ -526,8 +527,12 @@ function ymd(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// HISTORY: all GBIF occurrences for the taxon key. PostgREST caps at 1000 rows
-// per request, so page through until exhausted (page_cap ~3000/species).
+// HISTORY: all EE GBIF occurrences for the taxon key. gbif_occurrences is
+// multi-country since P3 (EE/FI/SE/LV/LT/RU); Tõenäosus is Estonia-only, so the
+// country_code filter is load-bearing -- without it foreign rows mint grid cells
+// outside Estonia and can win the top-cell crown. Foreign rows stay in the table
+// for the phenology RPC, which reads them deliberately. PostgREST caps at 1000
+// rows per request, so page through until exhausted (page_cap ~3000/species).
 async function fetchAllGbif(supabase: any, speciesName: string): Promise<any[]> {
   if (!speciesName) return [];
   const pageSize = 1000;
@@ -539,6 +544,7 @@ async function fetchAllGbif(supabase: any, speciesName: string): Promise<any[]> 
       .from('gbif_occurrences')
       .select('lat,lon,observed_at')
       .eq('species_name', speciesName)
+      .eq('country_code', 'EE')
       .not('lat', 'is', null)
       .not('lon', 'is', null)
       .range(from, from + pageSize - 1);

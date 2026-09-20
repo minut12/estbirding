@@ -1,5 +1,6 @@
-/* P46b/P46c: Randeajad (migration windows) from per-species [week,count] histograms.
-   Rule v3 (2026-09-19): passage peak above the summer baseline, curated residents.
+/* P46b/P46c/P46d: Randeajad (migration windows) from per-species week histograms.
+   Rows are [week, records, birds, sqrtBirds]; legacy [week, records] rows still work.
+   Rule v4 (2026-09-20): gates on records, passage windows on damped bird weight.
    Pure logic, ES5. Exposes window.__bmRandeajad and module.exports when present. */
 (function () {
   var MONTHS = ["jaan", "veebr", "m\u00e4rts", "apr", "mai", "juuni", "juuli", "aug", "sept", "okt", "nov", "dets"];
@@ -70,19 +71,44 @@
     return RESIDENT_SET.hasOwnProperty(normName(name));
   }
 
-  function toWeeks(pairs) {
-    var w = [];
+  /* Two week-indexed series from the same rows: n = records (row[1]), v = weight.
+     Weight is row[3] (sum of sqrt(individual_count)) when the row carries it, else
+     row[1], so 2-value rows from the old RPC reproduce rule v3 exactly.
+     birds is the summed row[2], or null when no row carries a count. */
+  function series(rows) {
+    var n = [];
+    var v = [];
     var i;
-    for (i = 0; i <= WEEKS; i++) w[i] = 0;
-    if (!pairs || !pairs.length) return w;
-    for (i = 0; i < pairs.length; i++) {
-      var p = pairs[i];
-      if (!p) continue;
-      var wk = Number(p[0]);
-      var c = Number(p[1]);
-      if (wk >= 1 && wk <= WEEKS && c > 0) w[wk] += c;
+    for (i = 0; i <= WEEKS; i++) {
+      n[i] = 0;
+      v[i] = 0;
     }
-    return w;
+    var records = 0;
+    var birds = 0;
+    var hasBirds = false;
+    var vmax = 0;
+    if (rows && rows.length) {
+      for (i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        if (!row) continue;
+        var wk = Number(row[0]);
+        if (!(wk >= 1 && wk <= WEEKS)) continue;
+        var c = Number(row[1]);
+        var wide = row.length >= 4;
+        var weight = wide ? Number(row[3]) : c;
+        if (c > 0) {
+          n[wk] += c;
+          records += c;
+        }
+        if (weight > 0) v[wk] += weight;
+        if (wide) {
+          hasBirds = true;
+          birds += Number(row[2]);
+        }
+      }
+      for (i = 1; i <= WEEKS; i++) if (v[i] > vmax) vmax = v[i];
+    }
+    return { n: n, v: v, records: records, birds: hasBirds ? birds : null, vmax: vmax };
   }
 
   function sumRange(w, from, to) {
@@ -113,7 +139,7 @@
     return { a: a, b: b };
   }
 
-  /* Median of w[23..30] (8 values: mean of the 4th and 5th sorted). */
+  /* Median of the weight series over weeks 23..30 (8 values: mean of the 4th and 5th sorted). */
   function summerBase(w) {
     var v = [];
     for (var i = BASE_FROM; i <= BASE_TO; i++) v.push(w[i]);
@@ -160,23 +186,26 @@
     return { a: a, b: b, pk: pk };
   }
 
-  function analyse(pairs, opts) {
-    var w = toWeeks(pairs);
-    var tot = sumRange(w, 1, WEEKS);
-    var mx = maxRange(w, 1, WEEKS);
+  /* Gates (few, resident, winter) read records; the migrant halves read weight. */
+  function analyse(rows, opts) {
+    var s = series(rows);
+    var n = s.n;
+    var v = s.v;
+    var tot = sumRange(n, 1, WEEKS);
+    var mx = maxRange(n, 1, WEEKS);
     if (tot < FEW_MIN_TOTAL || mx / tot > FEW_MAX_PEAK_SHARE) return { kind: "few" };
 
     if (opts && opts.resident === true) return { kind: "resident" };
 
     var active = 0;
-    for (var i = 1; i <= WEEKS; i++) if (w[i] >= mx * RESIDENT_LEVEL) active++;
+    for (var i = 1; i <= WEEKS; i++) if (n[i] >= mx * RESIDENT_LEVEL) active++;
     if (active >= WEEKS * RESIDENT_WEEK_SHARE) return { kind: "resident" };
 
-    var winterTot = sumRange(w, 1, 8) + sumRange(w, 49, WEEKS);
-    if (winterTot / tot > WINTER_SHARE) return { kind: "winter", winter: winterWindow(w, tot) };
+    var winterTot = sumRange(n, 1, 8) + sumRange(n, 49, WEEKS);
+    if (winterTot / tot > WINTER_SHARE) return { kind: "winter", winter: winterWindow(n, tot) };
 
-    var base = summerBase(w);
-    return { kind: "migrant", spring: halfWindow(w, 1, 26, base), autumn: halfWindow(w, 27, WEEKS, base) };
+    var base = summerBase(v);
+    return { kind: "migrant", spring: halfWindow(v, 1, 26, base), autumn: halfWindow(v, 27, WEEKS, base) };
   }
 
   function weekToDoy(wk) {
@@ -219,8 +248,8 @@
   }
 
   /* 12 month cells: {cls:'s'|'a'|'', lo:bool}. A week belongs to the month of its midpoint day. Only real windows colour. */
-  function monthBuckets(pairs, result) {
-    var w = toWeeks(pairs);
+  function monthBuckets(rows, result) {
+    var v = series(rows).v;
     var totals = [];
     var cls = [];
     var m;
@@ -233,7 +262,7 @@
     var winter = result && result.kind === "winter" ? result.winter : null;
     for (var wk = 1; wk <= WEEKS; wk++) {
       m = doyToMonthDay(weekToDoy(wk) + 3).m;
-      totals[m] += w[wk];
+      totals[m] += v[wk];
       if (isNow(spring, wk)) cls[m] = "s";
       else if (cls[m] !== "s" && (isNow(autumn, wk) || isNowWinter(winter, wk))) cls[m] = "a";
     }
@@ -248,6 +277,7 @@
 
   var api = {
     analyse: analyse,
+    series: series,
     isResident: isResident,
     weekToDoy: weekToDoy,
     fmtDoy: fmtDoy,

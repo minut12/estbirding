@@ -4,15 +4,17 @@ import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 import fixtures from "./fixtures/P46-randeajad-fixtures.json";
 
-type Pair = [number, number];
+type Row = number[];
 type Win = { a: number; b: number; pk?: number };
+type Series = { n: number[]; v: number[]; records: number; birds: number | null; vmax: number };
 type Randeajad = {
-  analyse: (pairs?: Pair[], opts?: { resident?: boolean }) => Record<string, unknown>;
+  analyse: (rows?: Row[], opts?: { resident?: boolean }) => Record<string, unknown>;
+  series: (rows?: Row[]) => Series;
   isResident: (name: string) => boolean;
   weekToDoy: (w: number) => number;
   fmtDoy: (doy: number) => string;
   fmtRange: (win: Win) => string;
-  monthBuckets: (pairs: Pair[], result: Record<string, unknown>) => unknown;
+  monthBuckets: (rows: Row[], result: Record<string, unknown>) => unknown;
   isNow: (win: Win, week: number) => boolean;
   isNowWinter: (win: Win, week: number) => boolean;
 };
@@ -28,8 +30,14 @@ function loadRandeajad(): { fromWindow: Randeajad; fromModule: Randeajad } {
   };
 }
 
-const histograms = fixtures.histograms as unknown as Record<string, Pair[]>;
+const histograms = fixtures.histograms as unknown as Record<string, Row[]>;
 const expected = fixtures.expected as unknown as Record<string, Record<string, unknown>>;
+const residentOverride = fixtures.residentOverride as unknown as { species: string[] };
+const legacyPairs = fixtures.legacyPairs as unknown as {
+  species: string;
+  rows: Row[];
+  expected: Record<string, unknown>;
+};
 
 describe("randeajad module", () => {
   const { fromWindow, fromModule } = loadRandeajad();
@@ -40,6 +48,11 @@ describe("randeajad module", () => {
     expect(typeof fromModule.analyse).toBe("function");
   });
 
+  it("exposes series on both window.__bmRandeajad and module.exports", () => {
+    expect(typeof fromWindow.series).toBe("function");
+    expect(typeof fromModule.series).toBe("function");
+  });
+
   describe("analyse() matches fixtures", () => {
     for (const species of Object.keys(expected)) {
       it(species, () => {
@@ -48,12 +61,57 @@ describe("randeajad module", () => {
     }
   });
 
-  it("curated resident list wins over data", () => {
-    expect(R.analyse(histograms["Laanepüü"], { resident: true })).toEqual({ kind: "resident" });
+  describe("curated resident list wins over data", () => {
+    for (const species of residentOverride.species) {
+      it(species, () => {
+        expect(R.analyse(histograms[species], { resident: true })).toEqual({ kind: "resident" });
+      });
+    }
   });
 
   it("few still wins over the curated resident list", () => {
     expect(R.analyse(histograms["Roherähn"], { resident: true })).toEqual({ kind: "few" });
+  });
+
+  it("two-value rows still reproduce the v3 window (" + legacyPairs.species + ")", () => {
+    expect(R.analyse(legacyPairs.rows)).toEqual(legacyPairs.expected);
+  });
+
+  describe("series()", () => {
+    const rows = histograms["Sookurg"];
+
+    it("records is the sum of row[1]", () => {
+      expect(R.series(rows).records).toBe(rows.reduce((acc, row) => acc + row[1], 0));
+    });
+
+    it("birds is the sum of row[2]", () => {
+      expect(R.series(rows).birds).toBe(rows.reduce((acc, row) => acc + row[2], 0));
+    });
+
+    it("vmax is the largest row[3]", () => {
+      expect(R.series(rows).vmax).toBe(rows.reduce((acc, row) => Math.max(acc, row[3]), 0));
+    });
+
+    it("n and v are 53-long, week-indexed", () => {
+      const s = R.series(rows);
+      expect(s.n).toHaveLength(53);
+      expect(s.v).toHaveLength(53);
+      for (const row of rows) {
+        expect(s.n[row[0]]).toBe(row[1]);
+        expect(s.v[row[0]]).toBe(row[3]);
+      }
+    });
+
+    it("birds is null when rows carry no count", () => {
+      expect(R.series(legacyPairs.rows).birds).toBeNull();
+    });
+
+    it("falls back to records as weight for two-value rows", () => {
+      const legacy = R.series(legacyPairs.rows);
+      for (const row of legacyPairs.rows) {
+        expect(legacy.v[row[0]]).toBe(row[1]);
+      }
+    });
   });
 
   it("isResident matches the curated list case-insensitively", () => {

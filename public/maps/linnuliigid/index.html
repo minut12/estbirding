@@ -10584,9 +10584,9 @@ window.toggleNotification = async function(speciesName) {
       + (win.pk ? '<span class="sb-rand-pk">tipp ' + R.fmtDoy(R.weekToDoy(win.pk) + 3) + '</span>' : '')
       + (live ? '<em>k\u00E4ib</em>' : '') + '</div>';
   }
-  /* One migrant half: real window -> dated line; diffuse -> "selget tippu ei ole"; null -> nothing. */
+  /* One migrant half: real window -> dated line; diffuse -> "selget tippu ei ole"; null -> "andmetes ei eristu". */
   function halfHTML(R, label, cls, win, wkNow){
-    if(!win) return '';
+    if(!win) return '<div class="sb-rand-l"><b class="' + cls + '">' + label + '</b><span class="sb-rand-pk">andmetes ei eristu</span></div>';
     if(win.diffuse) return '<div class="sb-rand-l"><b class="' + cls + '">' + label + '</b><span class="sb-rand-pk">selget tippu ei ole</span></div>';
     return lineHTML(R, label, cls, win, R.isNow(win, wkNow));
   }
@@ -10602,7 +10602,6 @@ window.toggleNotification = async function(speciesName) {
       body = chartHTML(R, res, s, nowPct)
         + halfHTML(R, 'Kevad', 's', res.spring, wkNow)
         + halfHTML(R, 'S\u00FCgis', 'a', res.autumn, wkNow);
-      if(res.spring === null && isReal(res.autumn)) body += '<div class="sb-rand-note">Ainult s\u00FCgisel.</div>';
     }
     /* P46d: bird count only when the payload carries it (4-value rows). */
     var head = groupThousands(s.records) + ' vaatlust'

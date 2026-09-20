@@ -10457,12 +10457,14 @@ window.toggleNotification = async function(speciesName) {
   } catch (e) {}
 })();
 
-/* P46b/P46d: R\u00E4ndeajad (migration windows) from rpc/get_species_week_histograms (P46a/P46d).
+/* P46b/P46d/P46f: R\u00E4ndeajad (migration windows) from rpc/get_species_week_histograms (P46a/P46d).
    Rows are [week, records, birds, sqrtBirds]; windows and bars follow the damped bird weight.
-   Cached in localStorage bm_randeajad_v2 for 7 days; fetched once from the SUPABASE_CONFIG handler. */
+   P46f: sqrtBirds is coverage-normalised in the RPC (scaled by max_coverage / coverage).
+   Cached in localStorage bm_randeajad_v3 for 7 days; fetched once from the SUPABASE_CONFIG handler. */
 (function(){
-  var LS_KEY = 'bm_randeajad_v2';
+  var LS_KEY = 'bm_randeajad_v3';
   var LS_KEY_V1 = 'bm_randeajad_v1';
+  var LS_KEY_V2 = 'bm_randeajad_v2';
   var TTL_MS = 7 * 24 * 3600 * 1000;
   var WEEKS = 52;
   var NOW_LABEL_FLIP_PCT = 85;
@@ -10490,8 +10492,8 @@ window.toggleNotification = async function(speciesName) {
     try{ localStorage.setItem(LS_KEY, JSON.stringify({ t: Date.now(), h: h })); }
     catch(e){ console.warn('[randeajad] cache write failed', e); }
   }
-  /* P46d: the v1 payload (2-value rows, ~110 KB) is dead once the key moves to v2. Best-effort only. */
-  try{ localStorage.removeItem(LS_KEY_V1); }catch(e){}
+  /* P46f: the v1 payload (2-value rows) and the v2 payload (pre-coverage-normalisation) are both dead once the key moves to v3. Best-effort only. */
+  try{ localStorage.removeItem(LS_KEY_V1); localStorage.removeItem(LS_KEY_V2); }catch(e){}
 
   var cached = readCache();
   if(cached) setData(cached);

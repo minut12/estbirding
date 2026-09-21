@@ -127,6 +127,19 @@
   .springDateBtn{cursor:pointer;display:inline-block;padding:2px 6px;border-radius:999px;border:1px solid #cbd5e1;background:#fff}
   .springSpeciesBtn{cursor:pointer;color:#0f172a;text-decoration:underline;text-underline-offset:2px}
   .springHint{margin-top:8px;font-size:11px;color:#64748b}
+  /* P51: Kevadranne panel reuses the Toenaosus classes (.ennHdr .ennSrch .ennBand .eSec .eR ...); only the tile is new. */
+  #springPanel .ennHdr{padding:14px 16px 0}
+  #springPanel .ennFresh{margin:2px 16px 0}
+  #springPanel .ennTools{padding:10px 16px 0}
+  #springPanel .ennBand{padding:10px 16px 6px}
+  #springPanel .ennLst{max-height:520px;padding:0 4px 8px}
+  .kCal{width:48px;box-sizing:border-box;border:2px solid #2d7a4b;border-radius:12px;text-align:center;line-height:1.05;padding:3px 0 2px}
+  .kCal b{display:block;font-size:17px;font-weight:700;color:#222a26}
+  .kCal span{display:block;font:700 9.5px system-ui;letter-spacing:.06em;text-transform:uppercase;color:#2d7a4b}
+  .kCal.w{border-style:dashed;border-color:#b8b0d9}
+  .kCal.w b{color:#6c7f74;font-size:15px}
+  .kCal.w span{color:#6d4fd8}
+  .eSec.kw{color:#6d4fd8}
   /* --- Fix Kevad overlap in sidebar cards --- */
   .meta-grid{
     display:flex;
@@ -9799,9 +9812,8 @@ function _dateToDdmm(dt){
   return dt.getDate()+'.'+String(dt.getMonth()+1).padStart(2,'0');
 }
 function _canEditKevadranne(){
-  try{
-    return !!(window.__appPermissions && window.__appPermissions.kevadranneEdit);
-  }catch(e){ return false; }
+  /* P51: Kevad dates are automatic (rpc/get_species_spring_arrivals). Manual editing is retired. */
+  return false;
 }
 window.editSpringDateDirect = function(key){
   try{
@@ -10705,6 +10717,19 @@ window.toggleNotification = async function(speciesName) {
     }
     return hit.parts;
   };
+
+  /* P51: classification for other panels. {kind, spring} or null when there is no histogram. */
+  window.__randeajadKind = function(key){
+    var R = window.__bmRandeajad;
+    if(!R) return null;
+    var found = lookup(key);
+    if(!found || !found.pairs || !found.pairs.length) return null;
+    try{
+      var resident = (typeof R.isResident === 'function') && (R.isResident(found.key) || R.isResident(key));
+      var res = R.analyse(found.pairs, { resident: resident });
+      return { kind: res.kind, spring: res.kind === 'migrant' ? res.spring : null };
+    }catch(e){ return null; }
+  };
 })();
 
 function rowHTML(obj) {
@@ -10756,7 +10781,7 @@ function rowHTML(obj) {
       + '<div class="sb-info-h">Vaatlus</div><dl class="sb-kv">' + rows(obs) + '</dl>'
       + '</div>';
   })();
-  const springVal = _springDisplayValue(_getSpringValue(key));
+  const springVal = (typeof window.__kevadArrival === 'function') ? window.__kevadArrival(key) : '';
   const springTxt = '' +
     '<span class="kevadi-chip" style="display:inline-flex; gap:8px; align-items:center;">' +
       '<span class="pill">Kevad:</span>' +
@@ -12405,31 +12430,16 @@ document.addEventListener('DOMContentLoaded', function(){
 </div>
 <div id="ebirdEEProgress" class="fetch-progress" style="display:none"></div>
 <div id="springPanel" class="hidden-in-export" style="display:none">
-  <div id="springHeader">
-    <div class="title">Kevadränne</div>
-    <div class="actions">
-      <button id="springRefresh" class="btn secondary" type="button">Värskenda kevadrännet</button>
-      <button id="springRefreshBtn" class="btn secondary" type="button"
-              title="Küsi elurikkus.ee-st käesoleva aasta esimesed vaatlused kõigi liikide kohta"
-              style="margin-left:6px;">Värskenda 2026 esmavaatlused</button>
-      <button id="springClose" class="btn icon" type="button" aria-label="Sulge">X</button>
-    </div>
+  <div class="ennHdr">
+    <div><h3>Kevadr&auml;nne</h3><p class="sub" id="kvSub">Saabumised &middot; Elurikkuse andmetel</p></div>
+    <button id="springClose" class="ennX" type="button" aria-label="Sulge">&#10005;</button>
   </div>
-  <div id="springBody">
-    <div class="springTopRow">
-      <input id="springSearch" type="text" placeholder="Otsi liiki..." />
-      <span id="springCount">0</span>
-    </div>
-    <div class="springTableWrap">
-      <table id="springTable">
-        <thead>
-          <tr><th>Kevad</th><th>Liik</th><th>2026</th></tr>
-        </thead>
-        <tbody id="springTableBody"></tbody>
-      </table>
-    </div>
-    <div class="springHint">Liigi nimel klikkimine kerib vastava liigi kaardini nimekirjas.</div>
+  <p class="ennFresh" id="kvFresh">Laadin&hellip;</p>
+  <div class="ennTools">
+    <div class="ennSrch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="springSearch" type="text" placeholder="Otsi liiki&hellip;" autocomplete="off"></div>
   </div>
+  <div class="ennBand" id="kvBand" role="group" aria-label="Kevadr&auml;nde filter"></div>
+  <div class="ennLst" id="kvLst"></div>
 </div>
 <div id="windPanel">
   <div id="windHeader">
@@ -12601,63 +12611,179 @@ document.addEventListener('DOMContentLoaded', function(){
     }catch(e){}
   }
 
+  /* P51: automatic spring arrivals from rpc/get_species_spring_arrivals (current year).
+     Payload { species: [arrival 'YYYY-MM-DD'|null, firstOfYear 'YYYY-MM-DD'] }. Cached 12 h in bm_kevad_arrivals_v1.
+     Only Randeajad migrants get a date. No manual dates, no scraping, no buttons. */
+  var KV_LS = 'bm_kevad_arrivals_v1';
+  var KV_TTL = 12 * 3600 * 1000;
+  var KV_RETRY_MS = 60 * 1000;
+  var KV_MON = ['jaan','veebr','m\u00e4rts','apr','mai','juuni','juuli','aug','sept','okt','nov','dets'];
+  var KV_MONFULL = ['Jaanuar','Veebruar','M\u00e4rts','Aprill','Mai','Juuni','Juuli','August','September','Oktoober','November','Detsember'];
+  var kvData = null, kvAt = 0, kvSlug = {}, kvBand = 'all', kvLoading = false, kvLastTry = 0;
+
+  function kvSlugOf(k){ return (typeof slugifySpeciesKey === 'function') ? slugifySpeciesKey(k) : String(k).toLowerCase(); }
+  function kvSet(d, at){
+    kvData = d; kvAt = at; kvSlug = {};
+    Object.keys(d).forEach(function(k){ var s = kvSlugOf(k); if(!(s in kvSlug)) kvSlug[s] = k; });
+  }
+  function kvRead(){
+    try{
+      var o = JSON.parse(localStorage.getItem(KV_LS) || 'null');
+      if(o && o.d && typeof o.d === 'object' && (Date.now() - Number(o.t)) < KV_TTL){ kvSet(o.d, Number(o.t)); return true; }
+    }catch(e){}
+    return false;
+  }
+  async function kvLoad(){
+    if(kvLoading || (Date.now() - kvLastTry) < KV_RETRY_MS) return;
+    kvLoading = true; kvLastTry = Date.now();
+    try{
+      var cfg = resolveSupabaseConfig();
+      if(!cfg.supabaseUrl || !cfg.anonKey){ kvLastTry = 0; return; }
+      var res = await fetch(cfg.supabaseUrl + '/rest/v1/rpc/get_species_spring_arrivals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey },
+        body: '{}'
+      });
+      if(!res.ok){ console.warn('[kevad] HTTP', res.status); return; }
+      var d = await res.json();
+      if(!d || typeof d !== 'object' || Array.isArray(d)){ console.warn('[kevad] unexpected payload'); return; }
+      var t = Date.now();
+      kvSet(d, t);
+      try{ localStorage.setItem(KV_LS, JSON.stringify({ t: t, d: d })); }catch(e){}
+      if(typeof window.render === 'function') window.render();
+    }catch(e){ console.warn('[kevad]', e); }
+    finally{ kvLoading = false; }
+  }
+  function kvRow(key){
+    if(!kvData) return null;
+    if(Object.prototype.hasOwnProperty.call(kvData, key)) return kvData[key];
+    var k = kvSlug[kvSlugOf(key)];
+    return k ? kvData[k] : null;
+  }
+  function kvKind(key){ var f = window.__randeajadKind; return (typeof f === 'function') ? f(key) : null; }
+  function kvParts(iso){ var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? { y: +m[1], m: +m[2], d: +m[3] } : null; }
+  function kvDdMm(iso){ var p = kvParts(iso); return p ? (String(p.d).padStart(2, '0') + '.' + String(p.m).padStart(2, '0')) : ''; }
+
+  /* Sidebar value: arrival 'DD.MM' for Randeajad migrants, '' otherwise. */
+  window.__kevadArrival = function(key){
+    if(!kvData && !kvRead()) kvLoad();
+    var r = kvRow(key);
+    if(!r || !r[0]) return '';
+    var k = kvKind(key);
+    return (k && k.kind === 'migrant') ? kvDdMm(r[0]) : '';
+  };
+  window.__kvBand = function(id){ kvBand = id; renderSpringPanel(); };
+
+  function kvAv(n){
+    var u = '';
+    try{ if(typeof window.getDisplayAvatar === 'function') u = window.getDisplayAvatar(n) || ''; }catch(e){}
+    return '<div class="eAv"' + (u ? ' style="background-image:url(\'' + String(u).replace(/'/g, '%27') + '\')"' : '') + '></div>';
+  }
+  function kvCal(iso){ var p = kvParts(iso); return '<div class="kCal"><b>' + p.d + '</b><span>' + KV_MON[p.m - 1] + '</span></div>'; }
+  function kvRowHTML(n, meta, right){
+    var e = escapeHtml(n);
+    return '<div class="eR" role="button" tabindex="0" data-kv="' + e + '">' + kvAv(n)
+      + '<div class="eInf"><div class="eNm">' + e + '</div><div class="eLt">' + meta + '</div></div>'
+      + '<div class="eRt">' + right + '</div></div>';
+  }
+  function kvSec(t, sub, cls){ return '<div class="eSec' + (cls ? ' ' + cls : '') + '"><i class="' + (cls === 'kw' ? 'g3' : 'g1') + '"></i>' + t + ' <b>\u00b7 ' + sub + '</b></div>'; }
+
   function renderSpringPanel(){
-    ensureSpringState();
     ensureSpringUiPlaced();
-    const body = document.getElementById('springTableBody');
-    const countEl = document.getElementById('springCount');
-    const refreshBtn = document.getElementById('springRefresh');
-    const q = (document.getElementById('springSearch')?.value || '').toLowerCase().trim();
-    if(!body || !countEl) return;
-    if(refreshBtn){
-      refreshBtn.disabled = springYearRefreshInFlight;
-      refreshBtn.textContent = springYearRefreshInFlight ? 'Värskendan…' : 'Värskenda kevadrännet';
-    }
-    const sd = getSpringDates();
-    const list = getSpeciesList();
-    const rows = [];
-    for(const name of list){
-      const raw = _getSpringValue(name);
-      if(!raw) continue;
-      if(q && !String(name).toLowerCase().includes(q)) continue;
-      const disp = _springDisplayValue(raw);
-      rows.push({name, disp, key: springSortKey(disp)});
-    }
-    rows.sort((a,b)=> (a.key-b.key) || String(a.name).localeCompare(String(b.name)));
-    body.innerHTML = rows.map(r => {
-      const safeName = String(r.name).replace(/"/g,'&quot;');
-      const yIso = springYearFirst[r.name];
-      const yDisp = yIso ? isoToDdMm(yIso) : '—';
-      const key = safeName;
-      const springDateText = r.disp;
-      const isEditing = (springEditRowKey === key);
-      const currentVal = _springDisplayValue(_getSpringValue(key));
-      const canEdit = _canEditKevadranne();
-      const dateCellHtml = canEdit && isEditing
-        ? `
-    <div class="spring-edit-wrap" style="display:flex; gap:6px; align-items:center;">
-      <input class="spring-edit-input" data-key="${key}" value="${currentVal}" placeholder="DD.MM"
-        inputmode="numeric"
-        style="width:72px; padding:6px 8px; border:1px solid #ddd; border-radius:10px; font-size:14px;" />
-      <button class="spring-edit-save" data-key="${key}"
-        style="padding:6px 10px; border:0; border-radius:10px; background:#16a34a; color:#fff;">OK</button>
-      <button class="spring-edit-cancel" data-key="${key}"
-        style="padding:6px 10px; border:0; border-radius:10px; background:#eee; color:#111;">X</button>
-    </div>
-  `
-        : (canEdit
-          ? `
-    <button class="spring-date-btn" data-key="${key}"
-      style="border:0; border-radius:999px; padding:6px 10px; background:#f3f4f6; color:#111;">
-      ${springDateText}
-    </button>
-  `
-          : `<span style="border-radius:999px; padding:6px 10px; background:#f3f4f6; color:#111; display:inline-block;">${springDateText}</span>`);
-      return '<tr><td>'+dateCellHtml+'</td><td><span class="springSpeciesBtn" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies(\''+safeName.replace(/'/g, "\\'")+'\')">'+ safeName+'</span></td><td>'+yDisp+'</td></tr>';
+    if(!kvData && !kvRead()) kvLoad();
+    var lst = document.getElementById('kvLst');
+    if(!lst) return;
+    var yr = new Date().getFullYear();
+    var sub = document.getElementById('kvSub');
+    if(sub) sub.textContent = 'Saabumised ' + yr + ' \u00b7 Elurikkuse andmetel';
+    var fresh = document.getElementById('kvFresh');
+    if(!kvData){ if(fresh) fresh.textContent = 'Laadin\u2026'; lst.innerHTML = ''; return; }
+
+    var now = new Date();
+    var todayIso = yr + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    var weekAgo = new Date(now.getTime() - 7 * 864e5);
+    var weekAgoIso = weekAgo.getFullYear() + '-' + String(weekAgo.getMonth() + 1).padStart(2, '0') + '-' + String(weekAgo.getDate()).padStart(2, '0');
+    var seasonOpen = todayIso < yr + '-07-01';
+    var q = String((document.getElementById('springSearch') || {}).value || '').toLowerCase().trim();
+
+    var arrived = [], single = [], waiting = [];
+    getSpeciesList().forEach(function(name){
+      var k = kvKind(name);
+      if(!k || k.kind !== 'migrant') return;
+      var r = kvRow(name);
+      if(r && r[0]) arrived.push({ n: name, a: r[0], f: r[1], nw: r[0] > weekAgoIso });
+      else if(r) single.push({ n: name, f: r[1] });
+      else waiting.push({ n: name, w: k.spring });
+    });
+    arrived.sort(function(x, y){ return x.a < y.a ? -1 : x.a > y.a ? 1 : x.n.localeCompare(y.n, 'et'); });
+    single.sort(function(x, y){ return x.f < y.f ? -1 : x.f > y.f ? 1 : x.n.localeCompare(y.n, 'et'); });
+    waiting.sort(function(x, y){ return x.n.localeCompare(y.n, 'et'); });
+    if(!seasonOpen) waiting = [];
+    var fresh7 = arrived.filter(function(x){ return x.nw; });
+
+    var t = new Date(kvAt);
+    if(fresh) fresh.innerHTML = '<b>' + arrived.length + '</b> liiki saabunud'
+      + (single.length ? ' \u00b7 <b>' + single.length + '</b> \u00fcksikut vaatlust' : '')
+      + (waiting.length ? ' \u00b7 <b>' + waiting.length + '</b> veel saabumata' : '')
+      + ' \u00b7 uuendatud ' + String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+
+    var months = [];
+    arrived.forEach(function(x){ var m = kvParts(x.a).m; if(months.indexOf(m) < 0) months.push(m); });
+    var bands = [{ id: 'all', lbl: 'K\u00f5ik', n: arrived.length + single.length + waiting.length, c: '' }];
+    if(fresh7.length) bands.push({ id: 'new', lbl: 'Uued', n: fresh7.length, c: 'g1' });
+    months.forEach(function(m){ bands.push({ id: 'm' + m, lbl: KV_MONFULL[m - 1], n: arrived.filter(function(x){ return kvParts(x.a).m === m; }).length, c: '' }); });
+    if(single.length) bands.push({ id: 'single', lbl: '\u00dcksikud vaatlused', n: single.length, c: 'g4' });
+    if(waiting.length) bands.push({ id: 'wait', lbl: 'Veel saabumata', n: waiting.length, c: 'g3' });
+    if(!bands.some(function(b){ return b.id === kvBand; })) kvBand = 'all';
+    var bandEl = document.getElementById('kvBand');
+    if(bandEl) bandEl.innerHTML = bands.map(function(b){
+      return '<button type="button" aria-pressed="' + (kvBand === b.id ? 'true' : 'false') + '" onclick="window.__kvBand(\'' + b.id + '\')">'
+        + (b.c ? '<i class="' + b.c + '"></i>' : '') + b.lbl + ' <b>' + b.n + '</b></button>';
     }).join('');
-    // Auto-scan disabled — user triggers refresh manually via the
-    // "Värskenda 2026 esmavaatlused" button in the Kevad panel header.
-    countEl.textContent = rows.length;
+
+    function hit(x){ return !q || String(x.n).toLowerCase().indexOf(q) >= 0; }
+    function arrivedRow(x, tag){
+      return kvRowHTML(x.n, 'esimene vaatlus <b>' + kvDdMm(x.f) + '</b>',
+        kvCal(x.a) + (tag ? '<span class="eSt now">\u25CF uus</span>' : ''));
+    }
+    var h = '';
+    if((kvBand === 'all' || kvBand === 'new') && fresh7.length){
+      var nr = fresh7.slice().reverse().filter(hit);
+      if(nr.length){ h += kvSec('Uued', 'viimased 7 p\u00e4eva \u00b7 ' + nr.length); nr.forEach(function(x){ h += arrivedRow(x, true); }); }
+    }
+    months.forEach(function(m){
+      if(kvBand !== 'all' && kvBand !== 'm' + m) return;
+      var rows = arrived.filter(function(x){ return kvParts(x.a).m === m && hit(x); });
+      if(!rows.length) return;
+      h += kvSec(KV_MONFULL[m - 1], rows.length + ' liiki');
+      rows.forEach(function(x){ h += arrivedRow(x, false); });
+    });
+    if(kvBand === 'all' || kvBand === 'single'){
+      var sr = single.filter(hit);
+      if(sr.length){
+        h += kvSec('\u00dcksikud vaatlused', sr.length + ' liiki \u00b7 alla 3 vaatluse n\u00e4dalas', 'kw');
+        sr.forEach(function(x){ h += kvRowHTML(x.n, 'esimene vaatlus <b>' + kvDdMm(x.f) + '</b> \u00b7 saabumine kinnitamata', '<div class="kCal w"><b>1\u00d7</b><span>\u00fcksik</span></div>'); });
+      }
+    }
+    if(kvBand === 'all' || kvBand === 'wait'){
+      var wr = waiting.filter(hit);
+      if(wr.length){
+        var R = window.__bmRandeajad;
+        h += kvSec('Veel saabumata', wr.length + ' liiki', 'kw');
+        wr.forEach(function(x){
+          var usual = (x.w && !x.w.diffuse && R && typeof R.fmtRange === 'function') ? ('tavaliselt ' + R.fmtRange(x.w)) : 'sel aastal veel vaatlusi pole';
+          h += kvRowHTML(x.n, usual, '<div class="kCal w"><b>\u2014</b><span>ootab</span></div>');
+        });
+      }
+    }
+    if(!h) h = '<div style="padding:16px;text-align:center;color:#6c7f74">' + (q ? 'Liiki "' + escapeHtml(q) + '" ei leitud' : 'Selles vahemikus liike pole') + '</div>';
+    lst.innerHTML = h;
+    if(!lst.__kvBound){
+      var go = function(e){ var el = e.target && e.target.closest ? e.target.closest('[data-kv]') : null; if(el && window.__springScrollToSpecies) window.__springScrollToSpecies(el.getAttribute('data-kv')); };
+      lst.addEventListener('click', go);
+      lst.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); go(e); } });
+      lst.__kvBound = true;
+    }
   }
   window.renderSpringPanel = renderSpringPanel;
 
@@ -12694,32 +12820,9 @@ document.addEventListener('DOMContentLoaded', function(){
     const btn = document.getElementById('toggleSpring');
     const close = document.getElementById('springClose');
     const search = document.getElementById('springSearch');
-    const refreshBtn = document.getElementById('springRefresh');
     if(btn && !btn.__springBound){ btn.addEventListener('click', ()=> toggleSpring()); btn.__springBound = true; }
     if(close && !close.__springBound){ close.addEventListener('click', ()=> toggleSpring(false)); close.__springBound = true; }
     if(search && !search.__springBound){ search.addEventListener('input', renderSpringPanel); search.__springBound = true; }
-    if(refreshBtn && !refreshBtn.__springBound){
-      refreshBtn.addEventListener('click', async function(){
-        if(springYearRefreshInFlight) return;
-        const keys = getSpeciesList().filter(function(name){
-          return !!_getSpringValue(name);
-        });
-        springYearRefreshInFlight = true;
-        renderSpringPanel();
-        try{
-          await refreshSpringYearFirstForKeys(keys);
-        } finally {
-          springYearRefreshInFlight = false;
-          renderSpringPanel();
-        }
-      });
-      refreshBtn.__springBound = true;
-    }
-    const refreshAllBtn = document.getElementById('springRefreshBtn');
-    if(refreshAllBtn && !refreshAllBtn.__springBound){
-      refreshAllBtn.addEventListener('click', () => manualRefreshAllSpringYearFirst());
-      refreshAllBtn.__springBound = true;
-    }
   }
 
   try{

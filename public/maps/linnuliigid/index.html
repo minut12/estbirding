@@ -10783,7 +10783,7 @@ function rowHTML(obj) {
   const springVal = (typeof window.__kevadArrival === 'function') ? window.__kevadArrival(key) : '';
   const springTxt = '' +
     '<span class="kevadi-chip" style="display:inline-flex; gap:8px; align-items:center;">' +
-      '<span class="pill">Kevad:</span>' +
+      '<span class="pill">Kevadine saabumine:</span>' +
       '<span class="pill">' + escapeHtml(springVal || '-') + '</span>' +
       (_canEditKevadranne()
         ? '<button type="button" class="btn secondary" style="position:relative;z-index:50;pointer-events:auto" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDateDirect && window.editSpringDateDirect(\'' + String(key).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'); return false;">Muuda</button>'
@@ -10857,7 +10857,7 @@ function rowHTML(obj) {
   })();
   var keyAttr = key.replace(/"/g,'&quot;');
   var keyJs = String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-  var springTxtNew = '<span class="sb-kevad"><span class="sb-kevad-lbl">Kevad</span><span class="sb-kevad-val">' + escapeHtml(springVal || '-') + '</span>' + (_canEditKevadranne() ? '<button type="button" class="btn secondary sb-kevad-edit" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDateDirect && window.editSpringDateDirect(\'' + keyJs + '\'); return false;">Muuda</button>' : '') + '</span>';
+  var springTxtNew = '<span class="sb-kevad"><span class="sb-kevad-lbl">Kevadine saabumine</span><span class="sb-kevad-val">' + escapeHtml(springVal || '-') + '</span>' + (_canEditKevadranne() ? '<button type="button" class="btn secondary sb-kevad-edit" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDateDirect && window.editSpringDateDirect(\'' + keyJs + '\'); return false;">Muuda</button>' : '') + '</span>';
   return '<div class="row' + (activeProbSpecies===key ? ' prob-row-active' : '') + (isOpen ? ' sb-open' : '') + '" data-key="' + key + '">' +
     '<div class="sb-row-main' + (window.__predictionFeatureOn ? ' sb-six' : '') + '" data-sb-toggle="' + keyAttr + '">' +
       '<div class="avatar" style="background-image:url(\'' + getDisplayAvatar(key) + '\');border-color:' + bcol + '">' + rarityCorner + '</div>' +

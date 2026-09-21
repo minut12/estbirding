@@ -59,7 +59,6 @@ export const DEFAULT_EBIRD_CODES: Record<string, string> = {
   "Jääkoskel": "commrg",
   "Jõgi-ritsiklind": "eurwar2",
   "Jõgitiir": "comter",
-  "Jõgitilder": "comsan",
   "Jõgivästrik": "grywag",
   "Kadakatäks": "whinch1",
   "Kaelus-kärbsenäpp": "colfly1",

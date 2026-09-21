@@ -1,6 +1,6 @@
 {
  "source": "elurikkus_observations pulled 2026-09-20; rows = [week, records, birds, sqrtBirds]; counts <=0/null treated as 1",
- "rule": "v4: gates (few/resident/winter) on records; migrant windows on sqrtBirds (row[3]), falling back to records (row[1]) when a row has only 2 values",
+ "rule": "v5: gates (few/resident/winter) on records; migrant windows on sqrtBirds (row[3]), falling back to records (row[1]) when a row has only 2 values; window = shortest run holding 70 % of the half excess, cap 12 weeks",
  "histograms": {
   "Sookurg": [
    [
@@ -2417,12 +2417,12 @@
   "Sookurg": {
    "kind": "migrant",
    "spring": {
-    "a": 13,
-    "b": 15,
+    "a": 12,
+    "b": 16,
     "pk": 15
    },
    "autumn": {
-    "a": 36,
+    "a": 34,
     "b": 38,
     "pk": 38
    }
@@ -2430,13 +2430,13 @@
   "Metsvint": {
    "kind": "migrant",
    "spring": {
-    "a": 13,
-    "b": 17,
+    "a": 14,
+    "b": 21,
     "pk": 14
    },
    "autumn": {
     "a": 38,
-    "b": 39,
+    "b": 40,
     "pk": 39
    }
   },
@@ -2444,11 +2444,11 @@
    "kind": "migrant",
    "spring": {
     "a": 10,
-    "b": 12,
+    "b": 14,
     "pk": 12
    },
    "autumn": {
-    "a": 37,
+    "a": 34,
     "b": 42,
     "pk": 37
    }
@@ -2467,12 +2467,12 @@
    "kind": "migrant",
    "spring": {
     "a": 18,
-    "b": 20,
+    "b": 21,
     "pk": 20
    },
    "autumn": {
     "a": 35,
-    "b": 41,
+    "b": 45,
     "pk": 40
    }
   },
@@ -2480,11 +2480,11 @@
    "kind": "migrant",
    "spring": {
     "a": 15,
-    "b": 18,
+    "b": 19,
     "pk": 18
    },
    "autumn": {
-    "a": 35,
+    "a": 33,
     "b": 37,
     "pk": 36
    }
@@ -2498,7 +2498,7 @@
    },
    "autumn": {
     "a": 37,
-    "b": 38,
+    "b": 39,
     "pk": 37
    }
   },
@@ -2509,7 +2509,7 @@
    "kind": "migrant",
    "spring": null,
    "autumn": {
-    "a": 38,
+    "a": 37,
     "b": 40,
     "pk": 39
    }
@@ -2655,12 +2655,12 @@
   "expected": {
    "kind": "migrant",
    "spring": {
-    "a": 17,
+    "a": 15,
     "b": 19,
     "pk": 18
    },
    "autumn": {
-    "a": 34,
+    "a": 32,
     "b": 37,
     "pk": 36
    }

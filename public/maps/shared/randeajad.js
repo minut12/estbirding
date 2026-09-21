@@ -1,6 +1,7 @@
 /* P46b/P46c/P46d: Randeajad (migration windows) from per-species week histograms.
    Rows are [week, records, birds, sqrtBirds]; legacy [week, records] rows still work.
    Rule v4 (2026-09-20): gates on records, passage windows on damped bird weight.
+   Rule v5 (2026-09-21): window = shortest run holding 70 % of the half's excess, up to 12 weeks (was 50 % / 8).
    Pure logic, ES5. Exposes window.__bmRandeajad and module.exports when present. */
 (function () {
   var MONTHS = ["jaan", "veebr", "m\u00e4rts", "apr", "mai", "juuni", "juuli", "aug", "sept", "okt", "nov", "dets"];
@@ -13,8 +14,8 @@
   var WINTER_SHARE = 0.25;
   var HALF_MIN_EXCESS = 15;
   var DIFFUSE_EXCESS_SHARE = 0.1;
-  var WINDOW_EXCESS_SHARE = 0.5;
-  var MAX_WINDOW_WEEKS = 8;
+  var WINDOW_EXCESS_SHARE = 0.7;
+  var MAX_WINDOW_WEEKS = 12;
   var BASE_FROM = 23;
   var BASE_TO = 30;
   var LO_SHARE = 0.5;
@@ -150,7 +151,7 @@
     return (v[mid - 1] + v[mid]) / 2;
   }
 
-  /* Shortest run a..b in [from,to] holding >= half of the excess; ties: larger sum, then earliest a. */
+  /* Shortest run a..b in [from,to] holding >= WINDOW_EXCESS_SHARE of the excess; ties: larger sum, then earliest a. */
   function shortestRun(e, from, to, need) {
     for (var width = 1; width <= to - from + 1; width++) {
       var best = null;

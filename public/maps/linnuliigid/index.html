@@ -12632,19 +12632,25 @@ document.addEventListener('DOMContentLoaded', function(){
   var KV_RETRY_MS = 60 * 1000;
   var KV_MON = ['jaan','veebr','m\u00e4rts','apr','mai','juuni','juuli','aug','sept','okt','nov','dets'];
   var KV_MONFULL = ['Jaanuar','Veebruar','M\u00e4rts','Aprill','Mai','Juuni','Juuli','August','September','Oktoober','November','Detsember'];
-  var kvData = null, kvAt = 0, kvSlug = {}, kvBand = 'all', kvLoading = false, kvLastTry = 0;
+  var kvData = null, kvAt = 0, kvSlug = {}, kvBand = 'all', kvLoading = false, kvLastTry = 0, kvYr = 0;
 
   function kvSlugOf(k){ return (typeof slugifySpeciesKey === 'function') ? slugifySpeciesKey(k) : String(k).toLowerCase(); }
-  function kvSet(d, at){
-    kvData = d; kvAt = at; kvSlug = {};
+  function kvSet(d, at, yr){
+    kvData = d; kvAt = at; kvYr = yr; kvSlug = {};
     Object.keys(d).forEach(function(k){ var s = kvSlugOf(k); if(!(s in kvSlug)) kvSlug[s] = k; });
   }
   function kvRead(){
     try{
       var o = JSON.parse(localStorage.getItem(KV_LS) || 'null');
-      if(o && o.d && typeof o.d === 'object' && (Date.now() - Number(o.t)) < KV_TTL){ kvSet(o.d, Number(o.t)); return true; }
+      if(o && o.d && typeof o.d === 'object' && (Date.now() - Number(o.t)) < KV_TTL && Number(o.y) === kvNowYr()){ kvSet(o.d, Number(o.t), Number(o.y)); return true; }
     }catch(e){}
     return false;
+  }
+  /* P54: year rollover. The payload is for the local calendar year; last year's data is dropped on 1 Jan (memory and storage). */
+  function kvNowYr(){ return new Date().getFullYear(); }
+  function kvEnsure(){
+    if(kvData && kvYr !== kvNowYr()){ kvData = null; kvAt = 0; kvSlug = {}; }
+    return !!kvData || kvRead();
   }
   async function kvLoad(){
     if(kvLoading || (Date.now() - kvLastTry) < KV_RETRY_MS) return;
@@ -12660,9 +12666,9 @@ document.addEventListener('DOMContentLoaded', function(){
       if(!res.ok){ console.warn('[kevad] HTTP', res.status); return; }
       var d = await res.json();
       if(!d || typeof d !== 'object' || Array.isArray(d)){ console.warn('[kevad] unexpected payload'); return; }
-      var t = Date.now();
-      kvSet(d, t);
-      try{ localStorage.setItem(KV_LS, JSON.stringify({ t: t, d: d })); }catch(e){}
+      var t = Date.now(), y = kvNowYr();
+      kvSet(d, t, y);
+      try{ localStorage.setItem(KV_LS, JSON.stringify({ t: t, y: y, d: d })); }catch(e){}
       if(typeof window.render === 'function') window.render();
     }catch(e){ console.warn('[kevad]', e); }
     finally{ kvLoading = false; }
@@ -12679,7 +12685,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
   /* Sidebar value: arrival 'DD.MM' for Randeajad migrants, '' otherwise. */
   window.__kevadArrival = function(key){
-    if(!kvData && !kvRead()) kvLoad();
+    if(!kvEnsure()) kvLoad();
     var r = kvRow(key);
     if(!r || !r[0]) return '';
     var k = kvKind(key);
@@ -12722,7 +12728,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
   function renderSpringPanel(){
     ensureSpringUiPlaced();
-    if(!kvData && !kvRead()) kvLoad();
+    if(!kvEnsure()) kvLoad();
     var lst = document.getElementById('kvLst');
     if(!lst) return;
     var yr = new Date().getFullYear();

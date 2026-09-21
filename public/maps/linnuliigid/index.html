@@ -69,7 +69,7 @@
   .fetch-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0;position:relative;z-index:9999;pointer-events:auto}
   .fetch-controls .btn{font-size:12px;padding:3px 8px}
   .fetch-controls .btn.stop{background:#e74c3c}
-  .elu-updated{font-size:11px;color:#6b7280;margin:4px 0 2px}
+  .elu-updated{font-size:11px;color:#6b7280;margin:4px 0 2px;white-space:pre-line}
   .fetch-progress{font-size:11px;color:#334155;padding:2px 0;min-height:16px}
   .fetch-progress-bar{height:3px;background:#e2e8f0;border-radius:2px;overflow:hidden;margin-top:2px}
   .fetch-progress-bar-inner{height:100%;background:#27ae60;transition:width .2s}
@@ -1653,7 +1653,13 @@ function _renderEluUpdated(){
   try{
     var el = document.getElementById('eluUpdated'); if(!el) return;
     var v = __snapshotMeta && __snapshotMeta.generated_at;
-    el.textContent = 'Andmed viimati uuendatud: ' + (v ? formatDateTimeEE(v) : '–');
+    var txt = 'Andmed viimati uuendatud: ' + (v ? formatDateTimeEE(v) + ' (server)' : String.fromCharCode(8211));
+    var m = null; try{ m = localStorage.getItem('bm_elu_manual_refresh_at_v1'); }catch(e){}
+    var mTs = m ? Date.parse(m) : NaN, vTs = v ? Date.parse(v) : NaN;
+    if(Number.isFinite(mTs) && (!Number.isFinite(vTs) || mTs > vTs)){
+      txt += '\nSinu uuendus: ' + formatDateTimeEE(mTs);
+    }
+    el.textContent = txt;
   }catch(e){}
 }
 function _speciesKey(name){
@@ -4928,6 +4934,10 @@ async function refreshAllElurikkusOnce(){
         showSnapshotBanner(loaded ? 'Refresh failed. Showing last snapshot.' : 'Refresh failed and no snapshot available', loaded ? 'warn' : 'error');
       } else {
         showSnapshotBanner(doneMsg, errors ? 'warn' : '');
+      }
+      if(!aborted && (updated > 0 || errors === 0)){
+        try{ localStorage.setItem('bm_elu_manual_refresh_at_v1', new Date().toISOString()); }catch(e){}
+        _renderEluUpdated();
       }
       __eluBulkSummary = {
         updated: updated,

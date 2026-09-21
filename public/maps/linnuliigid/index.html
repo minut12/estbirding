@@ -139,6 +139,20 @@
   .kCal.w b{color:#6c7f74;font-size:15px}
   .kCal.w span{color:#6d4fd8}
   .eSec.kw{color:#6d4fd8}
+  /* P53: Kevadranne row timeline, Feb-Jun: randeaeg band (rule v5 spring window), peak week, first record, arrival. */
+  .kTl{position:relative;height:14px;margin-top:5px}
+  .kTl i{position:absolute;display:block;font-style:normal}
+  .kTl .mz{top:0;height:14px;background:#f4f7f5}
+  .kTl .ax{left:0;right:0;top:6px;height:2px;background:#e3e8e4;border-radius:2px}
+  .kTl .w{top:3px;height:8px;background:#a9d3b6;border-radius:4px}
+  .kTl .pk{top:3px;height:8px;background:#5aa86a;border-radius:2px}
+  .kTl .fo{top:3px;width:8px;height:8px;margin-left:-4px;box-sizing:border-box;border-radius:50%;background:#fff;border:1.5px solid #7a877f}
+  .kTl .fo.off{left:0;top:-1px;width:auto;height:auto;margin:0;border:0;background:none;font:10px/1 system-ui;color:#7a877f}
+  .kTl .ar{top:1px;width:12px;height:12px;margin-left:-6px;box-sizing:border-box;border-radius:50%;background:#2d7a4b;border:2px solid #fff;box-shadow:0 0 0 1px #2d7a4b}
+  .kMl{position:relative;height:11px;margin-top:1px}
+  .kMl span{position:absolute;transform:translateX(-50%);font:600 9px system-ui;letter-spacing:.04em;text-transform:uppercase;color:#9aa69f;white-space:nowrap}
+  .kLeg{display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px 12px;font-size:11.5px;color:#6c7f74;border-top:1px solid #eef2ef;margin-top:6px}
+  .kLeg i{display:inline-block;vertical-align:middle;margin-right:5px}
   /* --- Fix Kevad overlap in sidebar cards --- */
   .meta-grid{
     display:flex;
@@ -12679,13 +12693,32 @@ document.addEventListener('DOMContentLoaded', function(){
     return '<div class="eAv"' + (u ? ' style="background-image:url(\'' + String(u).replace(/'/g, '%27') + '\')"' : '') + '></div>';
   }
   function kvCal(iso){ var p = kvParts(iso); return '<div class="kCal"><b>' + p.d + '</b><span>' + KV_MON[p.m - 1] + '</span></div>'; }
-  function kvRowHTML(n, meta, right){
+  function kvRowHTML(n, meta, right, extra){
     var e = escapeHtml(n);
     return '<div class="eR" role="button" tabindex="0" data-kv="' + e + '">' + kvAv(n)
-      + '<div class="eInf"><div class="eNm">' + e + '</div><div class="eLt">' + meta + '</div></div>'
+      + '<div class="eInf"><div class="eNm">' + e + '</div><div class="eLt">' + meta + '</div>' + (extra || '') + '</div>'
       + '<div class="eRt">' + right + '</div></div>';
   }
   function kvSec(t, sub, cls){ return '<div class="eSec' + (cls ? ' ' + cls : '') + '"><i class="' + (cls === 'kw' ? 'g3' : 'g1') + '"></i>' + t + ' <b>\u00b7 ' + sub + '</b></div>'; }
+
+  /* P53: Feb-Jun timeline (doy 32..181, non-leap like randeajad.js). Window weeks -> days as in R.fmtRange. */
+  var KV_TL_MS = [[32, 59, 'veebr'], [60, 90, 'm&auml;rts'], [91, 120, 'apr'], [121, 151, 'mai'], [152, 181, 'juuni']];
+  var KV_LEG = '<div class="kLeg"><span><i style="width:10px;height:10px;border-radius:50%;background:#2d7a4b"></i>saabumine</span><span><i style="width:8px;height:8px;border-radius:50%;box-sizing:border-box;border:1.5px solid #7a877f"></i>esimene vaatlus</span><span><i style="width:18px;height:8px;border-radius:4px;background:#a9d3b6"></i>r&auml;ndeaeg</span><span><i style="width:6px;height:8px;background:#5aa86a"></i>tipp</span></div>';
+  function kvDoy(iso){ var p = kvParts(iso); return p ? [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334][p.m - 1] + p.d : null; }
+  function kvPx(d){ return Math.round(Math.max(0, Math.min(100, (d - 32) / 149 * 100)) * 10) / 10; }
+  function kvSpan(cls, a, b){ var l = kvPx(a); return '<i class="' + cls + '" style="left:' + l + '%;width:' + Math.round((kvPx(b) - l) * 10) / 10 + '%"></i>'; }
+  function kvTl(x){
+    var s = '<div class="kTl">', w = x.w, ad = kvDoy(x.a), fd = kvDoy(x.f);
+    KV_TL_MS.forEach(function(m, i){ if(i % 2) s += kvSpan('mz', m[0], m[1] + 1); });
+    s += '<i class="ax"></i>';
+    if(w && !w.diffuse && typeof w.a === 'number' && typeof w.b === 'number'){
+      s += kvSpan('w', (w.a - 1) * 7 + 1, w.b * 7);
+      if(typeof w.pk === 'number') s += kvSpan('pk', (w.pk - 1) * 7 + 1, w.pk * 7);
+    }
+    if(fd !== null && ad !== null && fd < ad) s += fd < 32 ? '<i class="fo off">&#9666;</i>' : '<i class="fo" style="left:' + kvPx(fd) + '%"></i>';
+    if(ad !== null) s += '<i class="ar" style="left:' + kvPx(ad) + '%"></i>';
+    return s + '</div><div class="kMl">' + KV_TL_MS.map(function(m){ return '<span style="left:' + kvPx((m[0] + m[1]) / 2) + '%">' + m[2] + '</span>'; }).join('') + '</div>';
+  }
 
   function renderSpringPanel(){
     ensureSpringUiPlaced();
@@ -12710,7 +12743,7 @@ document.addEventListener('DOMContentLoaded', function(){
       var k = kvKind(name);
       if(!k || k.kind !== 'migrant') return;
       var r = kvRow(name);
-      if(r && r[0]) arrived.push({ n: name, a: r[0], f: r[1], nw: r[0] > weekAgoIso });
+      if(r && r[0]) arrived.push({ n: name, a: r[0], f: r[1], nw: r[0] > weekAgoIso, w: k.spring });
       else if(r) single.push({ n: name, f: r[1] });
       else waiting.push({ n: name, w: k.spring });
     });
@@ -12741,9 +12774,11 @@ document.addEventListener('DOMContentLoaded', function(){
     }).join('');
 
     function hit(x){ return !q || String(x.n).toLowerCase().indexOf(q) >= 0; }
+    var anyTl = false;
     function arrivedRow(x, tag){
+      anyTl = true;
       return kvRowHTML(x.n, 'esimene vaatlus <b>' + kvDdMm(x.f) + '</b>',
-        kvCal(x.a) + (tag ? '<span class="eSt now">\u25CF uus</span>' : ''));
+        kvCal(x.a) + (tag ? '<span class="eSt now">\u25CF uus</span>' : ''), kvTl(x));
     }
     var h = '';
     if((kvBand === 'all' || kvBand === 'new') && fresh7.length){
@@ -12775,6 +12810,7 @@ document.addEventListener('DOMContentLoaded', function(){
         });
       }
     }
+    if(anyTl && h) h += KV_LEG;
     if(!h) h = '<div style="padding:16px;text-align:center;color:#6c7f74">' + (q ? 'Liiki "' + escapeHtml(q) + '" ei leitud' : 'Selles vahemikus liike pole') + '</div>';
     lst.innerHTML = h;
     if(!lst.__kvBound){

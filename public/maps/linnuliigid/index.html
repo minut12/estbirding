@@ -566,6 +566,8 @@ html:not(.sb-classic) .sb-rand-l b.s{color:var(--sb-primary)}
 html:not(.sb-classic) .sb-rand-l b.a{color:var(--sb-warn)}
 html:not(.sb-classic) .sb-rand-l span{color:var(--sb-ink);font-variant-numeric:tabular-nums}
 html:not(.sb-classic) .sb-rand-l .sb-rand-pk{color:var(--sb-muted)}
+html:not(.sb-classic) .sb-rand-mx{font-size:11.5px;line-height:1.35;color:var(--sb-muted);padding:0 0 3px 46px;font-variant-numeric:tabular-nums}
+html:not(.sb-classic) .sb-rand-mx b{font-weight:600;color:var(--sb-ink2)}
 html:not(.sb-classic) .sb-rand-l em{font:600 10.5px system-ui;font-style:normal;padding:1px 7px;border-radius:999px;background:var(--sb-primary-soft);color:var(--sb-primary)}
 html:not(.sb-classic) .sb-rand-l b.a ~ em{background:var(--sb-warn-soft);color:#7c3a06}
 html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);padding:2px 0}
@@ -10460,7 +10462,8 @@ window.toggleNotification = async function(speciesName) {
 /* P46b/P46d/P46f: R\u00E4ndeajad (migration windows) from rpc/get_species_week_histograms (P46a/P46d).
    Rows are [week, records, birds, sqrtBirds]; windows and bars follow the damped bird weight.
    P46f: sqrtBirds is coverage-normalised in the RPC (scaled by max_coverage / coverage).
-   Cached in localStorage bm_randeajad_v3 for 7 days; fetched once from the SUPABASE_CONFIG handler. */
+   Cached in localStorage bm_randeajad_v3 for 7 days; fetched once from the SUPABASE_CONFIG handler.
+   P49: per-half largest record from rpc/get_species_max_counts, cached in bm_randeajad_max_v1 (7 days). */
 (function(){
   var LS_KEY = 'bm_randeajad_v3';
   var LS_KEY_V1 = 'bm_randeajad_v1';
@@ -10473,6 +10476,10 @@ window.toggleNotification = async function(speciesName) {
   var hist = null;
   var slugToKey = {};
   var memo = {};
+  var LS_KEY_MX = 'bm_randeajad_max_v1';
+  var MON = ['jaan','veebr','m\u00E4rts','apr','mai','juuni','juuli','aug','sept','okt','nov','dets'];
+  var mx = null;
+  var mxSlugToKey = {};
 
   function slug(k){ return (typeof slugifySpeciesKey === 'function') ? slugifySpeciesKey(k) : String(k).toLowerCase(); }
   function setData(h){
@@ -10495,10 +10502,65 @@ window.toggleNotification = async function(speciesName) {
   /* P46f: the v1 payload (2-value rows) and the v2 payload (pre-coverage-normalisation) are both dead once the key moves to v3. Best-effort only. */
   try{ localStorage.removeItem(LS_KEY_V1); localStorage.removeItem(LS_KEY_V2); }catch(e){}
 
+  /* P49: largest single record per half: { species: { s: [n, 'YYYY-MM-DD', locality|null], a: [...] } }. */
+  function setMax(m){
+    mx = m;
+    memo = {};
+    mxSlugToKey = {};
+    Object.keys(m).forEach(function(k){ var s = slug(k); if(!(s in mxSlugToKey)) mxSlugToKey[s] = k; });
+  }
+  function readMaxCache(){
+    try{
+      var o = JSON.parse(localStorage.getItem(LS_KEY_MX) || 'null');
+      if(o && o.m && typeof o.m === 'object' && (Date.now() - Number(o.t)) < TTL_MS) return o.m;
+    }catch(e){ console.warn('[randeajad-max] cache read failed', e); }
+    return null;
+  }
+  function writeMaxCache(m){
+    try{ localStorage.setItem(LS_KEY_MX, JSON.stringify({ t: Date.now(), m: m })); }
+    catch(e){ console.warn('[randeajad-max] cache write failed', e); }
+  }
+  async function loadMax(){
+    try{
+      var cfg = resolveSupabaseConfig();
+      if(!cfg.supabaseUrl || !cfg.anonKey) return;
+      var res = await fetch(cfg.supabaseUrl + '/rest/v1/rpc/get_species_max_counts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey },
+        body: '{}'
+      });
+      if(!res.ok){ console.warn('[randeajad-max] HTTP', res.status); return; }
+      var m = await res.json();
+      if(!m || typeof m !== 'object' || Array.isArray(m)){ console.warn('[randeajad-max] unexpected payload'); return; }
+      setMax(m);
+      writeMaxCache(m);
+      if(typeof render === 'function') render();
+    }catch(e){ console.warn('[randeajad-max]', e); }
+  }
+  function lookupMax(key){
+    if(!mx) return null;
+    if(Object.prototype.hasOwnProperty.call(mx, key)) return mx[key];
+    var k = mxSlugToKey[slug(key)];
+    return k ? mx[k] : null;
+  }
+  function fmtDate(iso){
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    return m ? Number(m[3]) + '. ' + MON[Number(m[2]) - 1] + ' ' + m[1] : '';
+  }
+  function mxHTML(row){
+    if(!row || !(Number(row[0]) >= 10)) return '';
+    var d = fmtDate(row[1]);
+    return '<div class="sb-rand-mx">enim isendeid <b>' + groupThousands(Number(row[0])) + '</b>'
+      + (d ? ' \u00b7 ' + d : '')
+      + (row[2] ? ' \u00b7 ' + escapeHtml(String(row[2])) : '') + '</div>';
+  }
+  var cachedMx = readMaxCache();
+  if(cachedMx) setMax(cachedMx);
   var cached = readCache();
   if(cached) setData(cached);
 
   window.__randeajadLoad = async function(){
+    if(!mx) loadMax();
     if(hist) return;
     try{
       var cfg = resolveSupabaseConfig();
@@ -10586,13 +10648,16 @@ window.toggleNotification = async function(speciesName) {
       + (win.pk ? '<span class="sb-rand-pk">tipp ' + R.fmtDoy(R.weekToDoy(win.pk) + 3) + '</span>' : '')
       + (live ? '<em>k\u00E4ib</em>' : '') + '</div>';
   }
-  /* One migrant half: real window -> dated line; diffuse -> "selget tippu ei ole"; null -> "andmetes ei eristu". */
-  function halfHTML(R, label, cls, win, wkNow){
-    if(!win) return '<div class="sb-rand-l"><b class="' + cls + '">' + label + '</b><span class="sb-rand-pk">andmetes ei eristu</span></div>';
-    if(win.diffuse) return '<div class="sb-rand-l"><b class="' + cls + '">' + label + '</b><span class="sb-rand-pk">selget tippu ei ole</span></div>';
-    return lineHTML(R, label, cls, win, R.isNow(win, wkNow));
+  /* One migrant half: real window -> dated line; diffuse -> "selget tippu ei ole"; null -> "andmetes ei eristu".
+     P49: followed by the half's largest record (>= 10 birds) when the max-count payload has one. */
+  function halfHTML(R, label, cls, win, wkNow, mxRow){
+    var line;
+    if(!win) line = '<div class="sb-rand-l"><b class="' + cls + '">' + label + '</b><span class="sb-rand-pk">andmetes ei eristu</span></div>';
+    else if(win.diffuse) line = '<div class="sb-rand-l"><b class="' + cls + '">' + label + '</b><span class="sb-rand-pk">selget tippu ei ole</span></div>';
+    else line = lineHTML(R, label, cls, win, R.isNow(win, wkNow));
+    return line + mxHTML(mxRow);
   }
-  function cardHTML(R, res, s, wkNow, nowPct){
+  function cardHTML(R, res, s, wkNow, nowPct, mxRec){
     var body;
     if(res.kind === 'few'){
       body = '<div class="sb-rand-note">Andmeid on liiga v\u00E4he, et r\u00E4ndeaegu n\u00E4idata.</div>';
@@ -10602,8 +10667,8 @@ window.toggleNotification = async function(speciesName) {
       body = chartHTML(R, res, s, nowPct) + lineHTML(R, 'Talvek\u00FClaline', 'a', res.winter, R.isNowWinter(res.winter, wkNow));
     } else {
       body = chartHTML(R, res, s, nowPct)
-        + halfHTML(R, 'Kevad', 's', res.spring, wkNow)
-        + halfHTML(R, 'S\u00FCgis', 'a', res.autumn, wkNow);
+        + halfHTML(R, 'Kevad', 's', res.spring, wkNow, mxRec && mxRec.s)
+        + halfHTML(R, 'S\u00FCgis', 'a', res.autumn, wkNow, mxRec && mxRec.a);
     }
     /* P46d: bird count only when the payload carries it (4-value rows). */
     var head = groupThousands(s.records) + ' vaatlust'
@@ -10612,12 +10677,12 @@ window.toggleNotification = async function(speciesName) {
     return '<div class="sb-info sb-rand"><div class="sb-info-h">R\u00E4ndeajad<span>' + head + '</span></div>'
       + '<div class="sb-rand-body">' + body + '</div></div>';
   }
-  function buildParts(R, pairs, doy, resident){
+  function buildParts(R, pairs, doy, resident, mxRec){
     var res = R.analyse(pairs, { resident: resident });
     var s = R.series(pairs);
     var wkNow = Math.min(WEEKS, Math.floor((doy - 1) / 7) + 1);
     var nowPct = (doy / 365 * 100).toFixed(1);
-    return { strip: stripHTML(R, pairs, res, nowPct), card: cardHTML(R, res, s, wkNow, nowPct) };
+    return { strip: stripHTML(R, pairs, res, nowPct), card: cardHTML(R, res, s, wkNow, nowPct, mxRec) };
   }
 
   /* Returns {strip, card} for the new-UI row, or null when there is no data (row renders as before). */
@@ -10634,7 +10699,7 @@ window.toggleNotification = async function(speciesName) {
         /* Curated list checked on both the payload key and the sidebar key, so a variant spelling cannot defeat it.
            A missing isResident degrades to "no curated list". */
         resident = (typeof R.isResident === 'function') && (R.isResident(found.key) || R.isResident(key));
-        hit = memo[key] = { doy: doy, parts: buildParts(R, found.pairs, doy, resident) };
+        hit = memo[key] = { doy: doy, parts: buildParts(R, found.pairs, doy, resident, lookupMax(found.key) || lookupMax(key)) };
       }
       catch(e){ console.warn('[randeajad] render failed for', key, e); return null; }
     }

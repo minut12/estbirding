@@ -151,6 +151,7 @@
 .bm-card-cl{display:none}
 .bm-card-cl.is-on{display:flex}
 .bm-card-recent{margin-top:11px;padding-top:9px;border-top:1px solid #e7eeea}
+.bm-card-recent.is-off{display:none}
 .bm-card-recent-h{font:700 10px/1.2 system-ui,Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#6c7f74}
 .bm-card-recent-list{margin-top:7px;display:flex;flex-direction:column;gap:5px}
 .bm-card-recent-row{display:flex;align-items:baseline;gap:8px;font-size:12px;color:#4a5852;text-decoration:none}
@@ -10567,49 +10568,17 @@ function buildPopupHtml(key, p, opts){
       if (_sci) sciLine = `\n            <div class="bm-card-sci">${escapeHtml(_sci)}</div>`;
     } catch (_e) {}
   }
-  // obsDt is already Estonian local time; never re-interpret it through a timezone.
-  const _recentWhen = (obsDt, todayEE, yestEE) => {
-    const _s = String(obsDt || '');
-    const _day = _s.slice(0, 10);
-    const _hm = /^\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2})/.exec(_s);
-    const _time = _hm ? _hm[1] : '';
-    let _d;
-    if (_day === todayEE) _d = 'T&auml;na';
-    else if (_day === yestEE) _d = 'Eile';
-    else _d = escapeHtml(_day.slice(8, 10) + '.' + _day.slice(5, 7));
-    return _time ? (_d + ' ' + escapeHtml(_time)) : _d;
-  };
+  // P64c: the eBird card no longer renders the 7-day list from the bulk obs cache
+  // (/obs/EE/recent carries only the NEWEST obs per species, so that cache holds
+  // exactly one item each). The box ships as an empty hidden placeholder and is
+  // filled on popupopen from the per-species feed; stat 1 starts as a dash for the
+  // same reason. Non-eBird output is unchanged.
   let recentBox = '';
-  if (isEb && Array.isArray(opts.recent) && opts.recent.length >= 2) {
-    try {
-      const _todayEE = new Intl.DateTimeFormat('en-CA', { timeZone: EE_TZ }).format(new Date());
-      const _yestEE = new Date(Date.parse(_todayEE + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
-      const _top = opts.recent
-        .filter(o => o && o.obsDt)
-        .slice()
-        .sort((a, b) => String(b.obsDt).localeCompare(String(a.obsDt)))
-        .slice(0, 3);
-      if (_top.length >= 2) {
-        const _rows = _top.map(o => {
-          const _when = _recentWhen(o.obsDt, _todayEE, _yestEE);
-          const _place = String(o.loc || '').trim();
-          const _hm2 = o.howMany;
-          const _nRaw = (_hm2 === null || _hm2 === undefined || _hm2 === '') ? NaN : Number(_hm2);
-          const _n = Number.isFinite(_nRaw) ? escapeHtml(String(_nRaw)) : '&ndash;';
-          const _inner = `<span class="bm-card-recent-when">${_when}</span>`
-            + `<span class="bm-card-recent-place" title="${escapeHtml(_place)}">${escapeHtml(_place)}</span>`
-            + `<span class="bm-card-recent-n">${_n}</span>`;
-          const _sub = String(o.subId || '').trim();
-          return _sub
-            ? `<a class="bm-card-recent-row" href="https://ebird.org/checklist/${escapeHtml(encodeURIComponent(_sub))}" target="_blank" rel="noopener">${_inner}</a>`
-            : `<div class="bm-card-recent-row">${_inner}</div>`;
-        }).join('');
-        recentBox = '\n        <div class="bm-card-recent">'
-          + '<div class="bm-card-recent-h">Viimased eBirdi vaatlused &middot; 7 p</div>'
-          + '<div class="bm-card-recent-list">' + _rows + '</div>'
-          + '</div>';
-      }
-    } catch (_e) { recentBox = ''; }
+  if (isEb) {
+    recentBox = '\n        <div class="bm-card-recent is-off">'
+      + '<div class="bm-card-recent-h">Viimased eBirdi vaatlused &middot; 7 p</div>'
+      + '<div class="bm-card-recent-list"></div>'
+      + '</div>';
   }
   const rows = [
     (!coordsApprox && locText) ? `<div class="bm-card-row">${SVG_PIN}<span title="${escapeHtml(locText)}">${escapeHtml(locText)}</span></div>` : '',
@@ -10650,7 +10619,7 @@ function buildPopupHtml(key, p, opts){
           </div>
         </div>
         <div class="bm-card-stats">
-          <div class="bm-card-stat"><b>${escapeHtml(dash(occ7))}</b><span>vaatlust 7 p</span></div>
+          <div class="bm-card-stat"><b${isEb ? ' class="bm-card-occ"' : ''}>${isEb ? '&ndash;' : escapeHtml(dash(occ7))}</b><span>vaatlust 7 p</span></div>
           <div class="bm-card-stat"><b>${escapeHtml(dash(ind))}</b><span>${indLabel}</span></div>
           <div class="bm-card-stat${isEb ? ' bm-card-stat--ebird' : ''}"><b>${escapeHtml(isEb ? 'eBird' : dash(src))}</b><span>allikas</span></div>
         </div>
@@ -10662,6 +10631,49 @@ function buildPopupHtml(key, p, opts){
     </div>
   `;
 }
+// P64c: shared builder for the eBird 7-day recent-sightings rows. Declared as a
+// function (not a top-level let/const) and exposed on window so the eBird IIFE can
+// reuse it when the per-species feed lands on popupopen. Every interpolated part is
+// escaped, so the result is safe to assign through innerHTML.
+function __bmEbirdRecentRowsHtml(items){
+  try {
+    if (!Array.isArray(items)) return '';
+    // obsDt is already Estonian local time; never re-interpret it through a timezone.
+    var todayEE = new Intl.DateTimeFormat('en-CA', { timeZone: EE_TZ }).format(new Date());
+    var yestEE = new Date(Date.parse(todayEE + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+    var top = items
+      .filter(function(o){ return o && o.obsDt; })
+      .slice()
+      .sort(function(a, b){ return String(b.obsDt).localeCompare(String(a.obsDt)); })
+      .slice(0, 3);
+    var out = '';
+    for (var i = 0; i < top.length; i++) {
+      var o = top[i];
+      var raw = String(o.obsDt || '');
+      var day = raw.slice(0, 10);
+      var hm = /^\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2})/.exec(raw);
+      var when;
+      if (day === todayEE) when = 'T&auml;na';
+      else if (day === yestEE) when = 'Eile';
+      else when = escapeHtml(day.slice(8, 10) + '.' + day.slice(5, 7));
+      if (hm) when += ' ' + escapeHtml(hm[1]);
+      // eBird locNames carry a trailing ', EE (lat, lon)'; it adds nothing here.
+      var place = String(o.locName || o.loc || '').replace(/,\s*EE\s*\([^)]*\)\s*$/, '').trim();
+      var cntRaw = o.howMany;
+      var cntNum = (cntRaw === null || cntRaw === undefined || cntRaw === '') ? NaN : Number(cntRaw);
+      var cnt = Number.isFinite(cntNum) ? escapeHtml(String(cntNum)) : '&ndash;';
+      var inner = '<span class="bm-card-recent-when">' + when + '</span>'
+        + '<span class="bm-card-recent-place" title="' + escapeHtml(place) + '">' + escapeHtml(place) + '</span>'
+        + '<span class="bm-card-recent-n">' + cnt + '</span>';
+      var sub = String(o.subId || '').trim();
+      out += sub
+        ? '<a class="bm-card-recent-row" href="https://ebird.org/checklist/' + escapeHtml(encodeURIComponent(sub)) + '" target="_blank" rel="noopener">' + inner + '</a>'
+        : '<div class="bm-card-recent-row">' + inner + '</div>';
+    }
+    return out;
+  } catch (_e) { return ''; }
+}
+window.__bmEbirdRecentRowsHtml = __bmEbirdRecentRowsHtml;
 function _bmCardCopy(el, lat, lon){
   try { copyCoords(lat, lon); } catch (_e) {}
   try {
@@ -13855,22 +13867,13 @@ var __sharedDefaults = {};
   function ebirdEEPopupHtml(key, ep){
     var dt = '';
     if (ep.t_dt && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(ep.t_dt)) dt = ep.t_dt.slice(8,10)+'.'+ep.t_dt.slice(5,7)+'.'+ep.t_dt.slice(0,4)+' '+ep.t_dt.slice(11,16);
-    // P64b: the 7-day per-species obs list lives only in localStorage (the bulk
-    // refresh keeps no in-memory copy), so read it here, once per popup build.
-    var recent = [];
-    try {
-      var rawObs = localStorage.getItem('bm_ebird_obs_v1');
-      if (rawObs) {
-        var cachedObs = JSON.parse(rawObs);
-        var arrObs = cachedObs && cachedObs.bySpecies && cachedObs.bySpecies[key];
-        if (Array.isArray(arrObs)) recent = arrObs;
-      }
-    } catch(e){}
+    // P64c: no obs list is read here any more. The card ships the 7-day box empty
+    // and hidden; the per-species feed fills it on popupopen.
     return buildPopupHtml(key, {
       lat: ep.lat, lon: ep.lon, t: ep.t, occ7: ep.occ7,
       individualCount: Number.isFinite(ep.howMany) ? ep.howMany : null,
       collectors: ep.observer || '', placeText: ep.loc || '', src: 'eBird'
-    }, { source: 'ebird', dateTxt: dt, recent: recent, extUrl: ep.subId ? ('https://ebird.org/checklist/' + encodeURIComponent(ep.subId)) : '' });
+    }, { source: 'ebird', dateTxt: dt, extUrl: ep.subId ? ('https://ebird.org/checklist/' + encodeURIComponent(ep.subId)) : '' });
   }
 
   // --- Fetch single species ---
@@ -14273,46 +14276,92 @@ var __sharedDefaults = {};
     return { lat: 0, lon: 0 };
   }
 
-  // --- Checklist line (P64b) ---
-  // One fetch per subId, cached in window.__bmEbirdCl and guarded against
-  // concurrent popupopens. Any failure leaves the row hidden.
+  // --- Popup async fills (P64b checklist line, P64c 7-day feed) ---
+  // One popupopen binder dispatching to two independent fills. Each keeps its own
+  // cache and inflight guard; any failure leaves the card exactly as rendered.
   var __bmEbirdClInflight = {};
-  function _bindEbirdChecklist(marker, subId){
-    marker.on('popupopen', function(e){
-      var cache = window.__bmEbirdCl = window.__bmEbirdCl || {};
-      function paint(){
-        try {
-          var data = cache[subId];
-          if(!data) return;
-          var root = e.popup.getElement();
-          if(!root) return;
-          var row = root.querySelector('.bm-card-cl');
-          if(!row) return;
-          var span = row.querySelector('span');
-          if(!span) return;
-          var txt = 'Vaatlusnimekiri: ' + data.n + (data.n === 1 ? ' liik' : ' liiki');
-          if(data.min !== null) txt += ' ' + String.fromCharCode(183) + ' ' + data.min + ' min';
-          span.textContent = txt;
-          row.classList.add('is-on');
-        } catch(err){}
-      }
-      if(cache[subId]){ paint(); return; }
-      if(__bmEbirdClInflight[subId]){ __bmEbirdClInflight[subId].then(paint, function(){}); return; }
-      var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
-      var pReq = fetch('https://api.ebird.org/v2/product/checklist/view/' + encodeURIComponent(subId), { headers: { 'X-eBirdApiToken': token } })
-        .then(function(res){ if(!res.ok) throw new Error('checklist HTTP ' + res.status); return res.json(); })
-        .then(function(j){
-          var nSp = Number(j && j.numSpecies);
-          if(!Number.isFinite(nSp)) throw new Error('checklist: no numSpecies');
-          var hrsRaw = j ? j.durationHrs : null;
-          var hrs = (hrsRaw === null || hrsRaw === undefined || hrsRaw === '') ? NaN : Number(hrsRaw);
-          cache[subId] = { n: nSp, min: Number.isFinite(hrs) ? Math.round(hrs * 60) : null };
-        });
-      __bmEbirdClInflight[subId] = pReq;
-      pReq.then(paint, function(){}).then(function(){ try { delete __bmEbirdClInflight[subId]; } catch(err){} });
-    });
+  var __bmEbirdSpInflight = {};
+  var BM_EBIRD_SP_TTL_MS = 10 * 60 * 1000;
+
+  function _fillChecklistRow(e, subId){
+    var cache = window.__bmEbirdCl = window.__bmEbirdCl || {};
+    function paint(){
+      try {
+        var data = cache[subId];
+        if(!data) return;
+        var root = e.popup.getElement();
+        if(!root) return;
+        var row = root.querySelector('.bm-card-cl');
+        if(!row) return;
+        var span = row.querySelector('span');
+        if(!span) return;
+        var txt = 'Vaatlusnimekiri: ' + data.n + (data.n === 1 ? ' liik' : ' liiki');
+        if(data.min !== null) txt += ' ' + String.fromCharCode(183) + ' ' + data.min + ' min';
+        span.textContent = txt;
+        row.classList.add('is-on');
+      } catch(err){}
+    }
+    if(cache[subId]){ paint(); return; }
+    if(__bmEbirdClInflight[subId]){ __bmEbirdClInflight[subId].then(paint, function(){}); return; }
+    var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
+    var pReq = fetch('https://api.ebird.org/v2/product/checklist/view/' + encodeURIComponent(subId), { headers: { 'X-eBirdApiToken': token } })
+      .then(function(res){ if(!res.ok) throw new Error('checklist HTTP ' + res.status); return res.json(); })
+      .then(function(j){
+        var nSp = Number(j && j.numSpecies);
+        if(!Number.isFinite(nSp)) throw new Error('checklist: no numSpecies');
+        var hrsRaw = j ? j.durationHrs : null;
+        var hrs = (hrsRaw === null || hrsRaw === undefined || hrsRaw === '') ? NaN : Number(hrsRaw);
+        cache[subId] = { n: nSp, min: Number.isFinite(hrs) ? Math.round(hrs * 60) : null };
+      });
+    __bmEbirdClInflight[subId] = pReq;
+    pReq.then(paint, function(){}).then(function(){ try { delete __bmEbirdClInflight[subId]; } catch(err){} });
   }
 
+  // P64c: the real 7-day history. The bulk /obs/EE/recent feed returns only the
+  // newest obs per species, so the per-species endpoint is the only source for the
+  // 7-day count and the recent list. One request per code, 10-minute TTL.
+  function _fillSpeciesFeed(e, code){
+    var cache = window.__bmEbirdSp = window.__bmEbirdSp || {};
+    function paint(){
+      try {
+        var entry = cache[code];
+        if(!entry || !Array.isArray(entry.items)) return;
+        var root = e.popup.getElement();
+        if(!root) return;
+        var occEl = root.querySelector('.bm-card-occ');
+        if(occEl) occEl.textContent = String(entry.items.length);
+        if(entry.items.length < 2) return;
+        var box = root.querySelector('.bm-card-recent');
+        if(!box) return;
+        var list = box.querySelector('.bm-card-recent-list');
+        if(!list || typeof window.__bmEbirdRecentRowsHtml !== 'function') return;
+        var html = window.__bmEbirdRecentRowsHtml(entry.items);
+        if(!html) return;
+        list.innerHTML = html;
+        box.classList.remove('is-off');
+      } catch(err){}
+    }
+    var hit = cache[code];
+    if(hit && (Date.now() - hit.at) < BM_EBIRD_SP_TTL_MS){ paint(); return; }
+    if(__bmEbirdSpInflight[code]){ __bmEbirdSpInflight[code].then(paint, function(){}); return; }
+    var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
+    var url = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=7&detail=full';
+    var pReq = fetch(url, { headers: { 'X-eBirdApiToken': token } })
+      .then(function(res){ if(!res.ok) throw new Error('species feed HTTP ' + res.status); return res.json(); })
+      .then(function(arr){
+        if(!Array.isArray(arr)) throw new Error('species feed: invalid payload');
+        cache[code] = { at: Date.now(), items: arr };
+      });
+    __bmEbirdSpInflight[code] = pReq;
+    pReq.then(paint, function(){}).then(function(){ try { delete __bmEbirdSpInflight[code]; } catch(err){} });
+  }
+
+  function _bindEbirdCard(marker, subId, code){
+    marker.on('popupopen', function(e){
+      if(subId) _fillChecklistRow(e, subId);
+      if(code) _fillSpeciesFeed(e, code);
+    });
+  }
   // --- Render markers ---
   function refreshEbirdEEMarkers(){
     var __openKeyEb = null;
@@ -14368,11 +14417,14 @@ var __sharedDefaults = {};
 
       var avatar = (typeof getDisplayAvatar === 'function') ? getDisplayAvatar(key) : ((typeof avatars !== 'undefined' && avatars[key]) || '');
       var metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
-      var icon = _markerIcon(avatar, _borderColorByDate(ep.t), Number(ep.occ7) || 0, metaCfg.rarityLevel || 'none', { srcTag: 'ebird' });
+      // P64c: ep.occ7 comes from the bulk feed, which only ever reports the newest
+      // obs per species, so it is 0 or 1 and says nothing useful. null = no badge.
+      var icon = _markerIcon(avatar, _borderColorByDate(ep.t), null, metaCfg.rarityLevel || 'none', { srcTag: 'ebird' });
 
       var m = L.marker([finalLat, finalLon], { icon: icon });
       m.bindPopup(ebirdEEPopupHtml(key, ep));
-      if(ep.subId) _bindEbirdChecklist(m, String(ep.subId));
+      var spCode = (typeof SPECIES_EBIRD_CODES !== 'undefined' && SPECIES_EBIRD_CODES[key]) || '';
+      if(ep.subId || spCode) _bindEbirdCard(m, ep.subId ? String(ep.subId) : '', spCode);
       m.addTo(map);
       ebirdEEMarkers.set(key, m);
     }

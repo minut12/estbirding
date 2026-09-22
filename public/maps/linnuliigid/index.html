@@ -114,7 +114,7 @@
   background:rgba(20,40,30,.26);filter:blur(1px)}
 .bm-pin.is-approx .bm-pin-shape{background:#f4f6f5;border-style:dashed;border-color:#9aa9a0}
 .bm-pin.is-approx .bm-pin-head{filter:saturate(.35);opacity:.85}
-.bm-pin-src{position:absolute;left:50%;top:37px;transform:translateX(-50%);z-index:2;height:15px;padding:0 5px;border-radius:5px;background:#0e7490;color:#fff;font:800 8.5px/15px system-ui,Arial,sans-serif;letter-spacing:.02em;box-shadow:0 0 0 1.5px #fff;pointer-events:none;white-space:nowrap}
+.bm-pin-src{position:absolute;left:50%;top:57px;transform:translateX(-50%);z-index:2;height:15px;padding:0 5px;border-radius:5px;background:#0e7490;color:#fff;font:800 8.5px/15px system-ui,Arial,sans-serif;letter-spacing:.02em;box-shadow:0 0 0 1.5px #fff;pointer-events:none;white-space:nowrap}
 
 /* --- P58c Card v2 (species observation popup) --- */
 .leaflet-popup-content-wrapper:has(.bm-card){border-radius:16px;padding:0;overflow:hidden}
@@ -133,6 +133,7 @@
   background-color:#29c;background-size:cover;background-position:center;box-shadow:0 2px 6px rgba(20,40,30,.18)}
 .bm-card-id{min-width:0;padding-bottom:4px}
 .bm-card-name{font:700 17px/1.25 system-ui,Arial,sans-serif;color:#222a26;overflow-wrap:anywhere}
+.bm-card-sci{margin-top:2px;font:italic 12px/1.3 system-ui,Arial,sans-serif;color:#6c7f74;overflow-wrap:anywhere}
 .bm-card-date{margin-top:2px;font-size:12px;color:#6c7f74}
 .bm-card-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:12px;
   background:#eef2ef;border:1px solid #eef2ef;border-radius:10px;overflow:hidden}
@@ -147,6 +148,17 @@
 .bm-card-row span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .bm-card-row code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   background:#f2f8f4;border-radius:5px;padding:0 4px;color:#222a26}
+.bm-card-cl{display:none}
+.bm-card-cl.is-on{display:flex}
+.bm-card-recent{margin-top:11px;padding-top:9px;border-top:1px solid #e7eeea}
+.bm-card-recent-h{font:700 10px/1.2 system-ui,Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#6c7f74}
+.bm-card-recent-list{margin-top:7px;display:flex;flex-direction:column;gap:5px}
+.bm-card-recent-row{display:flex;align-items:baseline;gap:8px;font-size:12px;color:#4a5852;text-decoration:none}
+a.bm-card-recent-row:hover{color:#2d7a4b}
+a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
+.bm-card-recent-when{flex:0 0 auto;width:80px;font:600 11.5px/1.4 system-ui,Arial,sans-serif;color:#222a26}
+.bm-card-recent-place{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit}
+.bm-card-recent-n{flex:0 0 auto;font:700 11.5px/1.4 system-ui,Arial,sans-serif;color:#0e7490}
 .bm-card-note{display:flex;gap:8px;align-items:flex-start;margin-top:10px;padding:8px 10px;border-radius:10px;
   background:#f4f6f5;border:1px solid #dde4df;color:#4a5852;font-size:11.5px;line-height:1.4}
 .bm-card-acts{display:flex;gap:8px;margin-top:12px}
@@ -10543,10 +10555,67 @@ function buildPopupHtml(key, p, opts){
   const SVG_COPY = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M5.5 1.5h6A1.5 1.5 0 0 1 13 3v7h-1.5V3h-6V1.5Zm-2 2.5h6A1.5 1.5 0 0 1 11 5.5v8A1.5 1.5 0 0 1 9.5 15h-6A1.5 1.5 0 0 1 2 13.5v-8A1.5 1.5 0 0 1 3.5 4Z"/></svg>';
   const SVG_EXT = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M9 2h5v5h-1.5V4.56L7.53 9.53 6.47 8.47l4.97-4.97H9V2Z"/><path fill="currentColor" d="M3 4h4v1.5H4.5v6h6V9H12v4H3V4Z"/></svg>';
   const rarPill = _rarBadge ? `<div class="bm-card-rar" style="color:${_rarColor}">${escapeHtml(_rarBadge)}</div>` : '';
+  // P64b (eBird only): binomial under the name, a 7-day recent-sightings box and
+  // an async checklist row. All three collapse to '' when opts.source !== 'ebird',
+  // so the Elurikkus card renders byte-identically to P64.
+  let sciLine = '';
+  if (isEb) {
+    try {
+      const _sciRaw = (typeof SPECIES_SCINAMES !== 'undefined' && SPECIES_SCINAMES[key]) ? String(SPECIES_SCINAMES[key]).trim() : '';
+      const _sciParts = _sciRaw ? _sciRaw.split(/\s+/) : [];
+      const _sci = (_sciParts.length >= 2) ? (_sciParts[0] + ' ' + _sciParts[1]) : _sciRaw;
+      if (_sci) sciLine = `\n            <div class="bm-card-sci">${escapeHtml(_sci)}</div>`;
+    } catch (_e) {}
+  }
+  // obsDt is already Estonian local time; never re-interpret it through a timezone.
+  const _recentWhen = (obsDt, todayEE, yestEE) => {
+    const _s = String(obsDt || '');
+    const _day = _s.slice(0, 10);
+    const _hm = /^\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2})/.exec(_s);
+    const _time = _hm ? _hm[1] : '';
+    let _d;
+    if (_day === todayEE) _d = 'T&auml;na';
+    else if (_day === yestEE) _d = 'Eile';
+    else _d = escapeHtml(_day.slice(8, 10) + '.' + _day.slice(5, 7));
+    return _time ? (_d + ' ' + escapeHtml(_time)) : _d;
+  };
+  let recentBox = '';
+  if (isEb && Array.isArray(opts.recent) && opts.recent.length >= 2) {
+    try {
+      const _todayEE = new Intl.DateTimeFormat('en-CA', { timeZone: EE_TZ }).format(new Date());
+      const _yestEE = new Date(Date.parse(_todayEE + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+      const _top = opts.recent
+        .filter(o => o && o.obsDt)
+        .slice()
+        .sort((a, b) => String(b.obsDt).localeCompare(String(a.obsDt)))
+        .slice(0, 3);
+      if (_top.length >= 2) {
+        const _rows = _top.map(o => {
+          const _when = _recentWhen(o.obsDt, _todayEE, _yestEE);
+          const _place = String(o.loc || '').trim();
+          const _hm2 = o.howMany;
+          const _nRaw = (_hm2 === null || _hm2 === undefined || _hm2 === '') ? NaN : Number(_hm2);
+          const _n = Number.isFinite(_nRaw) ? escapeHtml(String(_nRaw)) : '&ndash;';
+          const _inner = `<span class="bm-card-recent-when">${_when}</span>`
+            + `<span class="bm-card-recent-place" title="${escapeHtml(_place)}">${escapeHtml(_place)}</span>`
+            + `<span class="bm-card-recent-n">${_n}</span>`;
+          const _sub = String(o.subId || '').trim();
+          return _sub
+            ? `<a class="bm-card-recent-row" href="https://ebird.org/checklist/${escapeHtml(encodeURIComponent(_sub))}" target="_blank" rel="noopener">${_inner}</a>`
+            : `<div class="bm-card-recent-row">${_inner}</div>`;
+        }).join('');
+        recentBox = '\n        <div class="bm-card-recent">'
+          + '<div class="bm-card-recent-h">Viimased eBirdi vaatlused &middot; 7 p</div>'
+          + '<div class="bm-card-recent-list">' + _rows + '</div>'
+          + '</div>';
+      }
+    } catch (_e) { recentBox = ''; }
+  }
   const rows = [
     (!coordsApprox && locText) ? `<div class="bm-card-row">${SVG_PIN}<span title="${escapeHtml(locText)}">${escapeHtml(locText)}</span></div>` : '',
     (col !== '-') ? `<div class="bm-card-row">${SVG_USER}<span title="${escapeHtml(col)}">${escapeHtml(col)}</span></div>` : '',
-    (!isEb && beh !== '-') ? `<div class="bm-card-row">${SVG_EYE}<span>K&auml;itumine: <code>${escapeHtml(beh)}</code></span></div>` : ''
+    (!isEb && beh !== '-') ? `<div class="bm-card-row">${SVG_EYE}<span>K&auml;itumine: <code>${escapeHtml(beh)}</code></span></div>` : '',
+    isEb ? `<div class="bm-card-row bm-card-cl">${SVG_EYE}<span></span></div>` : ''
   ].join('');
   const approxNote = coordsApprox
     ? `<div class="bm-card-note">${SVG_LOCK}<span>T&auml;psed koordinaadid on peidetud &mdash; markeri asukoht on ligikaudne, p&auml;rineb varasemast vaatlusest.</span></div>`
@@ -10576,7 +10645,7 @@ function buildPopupHtml(key, p, opts){
         <div class="bm-card-head">
           <div class="bm-card-av" style="border-color:${_ring};${_avCss}"></div>
           <div class="bm-card-id">
-            <div class="bm-card-name">${escapeHtml(key)}</div>
+            <div class="bm-card-name">${escapeHtml(key)}</div>${sciLine}
             <div class="bm-card-date">${dateLine}</div>
           </div>
         </div>
@@ -10585,7 +10654,7 @@ function buildPopupHtml(key, p, opts){
           <div class="bm-card-stat"><b>${escapeHtml(dash(ind))}</b><span>${indLabel}</span></div>
           <div class="bm-card-stat${isEb ? ' bm-card-stat--ebird' : ''}"><b>${escapeHtml(isEb ? 'eBird' : dash(src))}</b><span>allikas</span></div>
         </div>
-        ${rows ? '<div class="bm-card-rows">' + rows + '</div>' : ''}
+        ${rows ? '<div class="bm-card-rows">' + rows + '</div>' : ''}${recentBox}
         ${approxNote}
         <div class="bm-card-acts">${isEb ? (wazeBtn + copyBtn + extBtn) : (coordsApprox ? eluBtn + copyBtn : wazeBtn + copyBtn + eluBtn)}</div>
         ${foot}
@@ -13786,11 +13855,22 @@ var __sharedDefaults = {};
   function ebirdEEPopupHtml(key, ep){
     var dt = '';
     if (ep.t_dt && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(ep.t_dt)) dt = ep.t_dt.slice(8,10)+'.'+ep.t_dt.slice(5,7)+'.'+ep.t_dt.slice(0,4)+' '+ep.t_dt.slice(11,16);
+    // P64b: the 7-day per-species obs list lives only in localStorage (the bulk
+    // refresh keeps no in-memory copy), so read it here, once per popup build.
+    var recent = [];
+    try {
+      var rawObs = localStorage.getItem('bm_ebird_obs_v1');
+      if (rawObs) {
+        var cachedObs = JSON.parse(rawObs);
+        var arrObs = cachedObs && cachedObs.bySpecies && cachedObs.bySpecies[key];
+        if (Array.isArray(arrObs)) recent = arrObs;
+      }
+    } catch(e){}
     return buildPopupHtml(key, {
       lat: ep.lat, lon: ep.lon, t: ep.t, occ7: ep.occ7,
       individualCount: Number.isFinite(ep.howMany) ? ep.howMany : null,
       collectors: ep.observer || '', placeText: ep.loc || '', src: 'eBird'
-    }, { source: 'ebird', dateTxt: dt, extUrl: ep.subId ? ('https://ebird.org/checklist/' + encodeURIComponent(ep.subId)) : '' });
+    }, { source: 'ebird', dateTxt: dt, recent: recent, extUrl: ep.subId ? ('https://ebird.org/checklist/' + encodeURIComponent(ep.subId)) : '' });
   }
 
   // --- Fetch single species ---
@@ -14193,6 +14273,46 @@ var __sharedDefaults = {};
     return { lat: 0, lon: 0 };
   }
 
+  // --- Checklist line (P64b) ---
+  // One fetch per subId, cached in window.__bmEbirdCl and guarded against
+  // concurrent popupopens. Any failure leaves the row hidden.
+  var __bmEbirdClInflight = {};
+  function _bindEbirdChecklist(marker, subId){
+    marker.on('popupopen', function(e){
+      var cache = window.__bmEbirdCl = window.__bmEbirdCl || {};
+      function paint(){
+        try {
+          var data = cache[subId];
+          if(!data) return;
+          var root = e.popup.getElement();
+          if(!root) return;
+          var row = root.querySelector('.bm-card-cl');
+          if(!row) return;
+          var span = row.querySelector('span');
+          if(!span) return;
+          var txt = 'Vaatlusnimekiri: ' + data.n + (data.n === 1 ? ' liik' : ' liiki');
+          if(data.min !== null) txt += ' ' + String.fromCharCode(183) + ' ' + data.min + ' min';
+          span.textContent = txt;
+          row.classList.add('is-on');
+        } catch(err){}
+      }
+      if(cache[subId]){ paint(); return; }
+      if(__bmEbirdClInflight[subId]){ __bmEbirdClInflight[subId].then(paint, function(){}); return; }
+      var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
+      var pReq = fetch('https://api.ebird.org/v2/product/checklist/view/' + encodeURIComponent(subId), { headers: { 'X-eBirdApiToken': token } })
+        .then(function(res){ if(!res.ok) throw new Error('checklist HTTP ' + res.status); return res.json(); })
+        .then(function(j){
+          var nSp = Number(j && j.numSpecies);
+          if(!Number.isFinite(nSp)) throw new Error('checklist: no numSpecies');
+          var hrsRaw = j ? j.durationHrs : null;
+          var hrs = (hrsRaw === null || hrsRaw === undefined || hrsRaw === '') ? NaN : Number(hrsRaw);
+          cache[subId] = { n: nSp, min: Number.isFinite(hrs) ? Math.round(hrs * 60) : null };
+        });
+      __bmEbirdClInflight[subId] = pReq;
+      pReq.then(paint, function(){}).then(function(){ try { delete __bmEbirdClInflight[subId]; } catch(err){} });
+    });
+  }
+
   // --- Render markers ---
   function refreshEbirdEEMarkers(){
     var __openKeyEb = null;
@@ -14252,6 +14372,7 @@ var __sharedDefaults = {};
 
       var m = L.marker([finalLat, finalLon], { icon: icon });
       m.bindPopup(ebirdEEPopupHtml(key, ep));
+      if(ep.subId) _bindEbirdChecklist(m, String(ep.subId));
       m.addTo(map);
       ebirdEEMarkers.set(key, m);
     }

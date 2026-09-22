@@ -9753,7 +9753,7 @@ function _renderEluObsMarkers(){
       var o = obs[oi];
       var lat = Number(o && o.lat), lon = Number(o && o.lon);
       if(!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-      if(mainLat !== null && mainLon !== null && Math.abs(lat - mainLat) < 1e-4 && Math.abs(lon - mainLon) < 1e-4) continue;
+      if(mainLat !== null && mainLon !== null && Math.abs(lat - mainLat) < 3e-4 && Math.abs(lon - mainLon) < 3e-4) continue;
       chosen.push(o);
     }
     if(!chosen.length) continue;
@@ -10057,7 +10057,7 @@ function updateMarker(key) {
     }catch(_e){}
   }
   console.log('[fix] updateMarker: placing', key, 'at lat=', p.lat, 'lon=', p.lon);
-  const m = L.marker([p.lat,p.lon], {icon});
+  const m = L.marker([p.lat,p.lon], {icon, zIndexOffset: 1000});
   if(clusterGroup && typeof clusterGroup.addLayer === 'function' && map.hasLayer(clusterGroup)){
     try{ clusterGroup.addLayer(m); }catch(e){ m.addTo(map); }
   } else {

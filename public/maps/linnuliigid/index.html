@@ -8186,6 +8186,12 @@ async function _applySnapshot(snap){
         );
       }
     }
+    try{
+      if(!(points[key] && points[key].t_dt) && _existing && _existing.t_dt && points[key] && points[key].t){
+        var _tdDay = new Intl.DateTimeFormat('en-CA',{timeZone:EE_TZ}).format(new Date(_existing.t_dt));
+        if(_tdDay === String(points[key].t).slice(0,10)) points[key].t_dt = _existing.t_dt;
+      }
+    }catch(_e){}
     __nettaTrace('apply_snapshot', key, snapPoint);
     // If device-local live data is newer than the snapshot, patch counts on top
     // — must not replace the point or overwrite positional fields.

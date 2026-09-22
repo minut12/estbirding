@@ -192,8 +192,8 @@
   background:#f2f5f7;border-radius:5px;padding:1px 5px}
 .bm-sc-note{display:flex;gap:7px;margin-top:9px;padding:7px 9px;border-radius:9px;
   background:#fff7ed;color:#9a3412;font-size:11.5px}
-.bm-sc-acts{display:flex;align-items:center;gap:7px;margin-top:11px}
-.bm-sc-btn{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 13px;border-radius:9px;
+.bm-sc-acts{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:11px}
+.bm-sc-btn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 13px;border-radius:9px;
   border:1px solid var(--sc);background:var(--sc);color:#fff;font:600 12.5px/1 system-ui,Arial,sans-serif;
   cursor:pointer;text-decoration:none}
 /* P60d: Leaflet's .leaflet-container a {color:#0078A8} outranks .bm-sc-btn, so the
@@ -206,7 +206,7 @@
 .bm-sc-ico{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;
   border-radius:9px;border:1px solid #dde4df;background:#fff;color:#4a5852;cursor:pointer;text-decoration:none}
 .bm-sc-ico:hover{border-color:var(--sc);color:var(--sc)}
-.bm-sc-pin{margin-left:auto;display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 11px;
+.bm-sc-pin{flex:1 1 100%;margin-left:0;display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 11px;
   border-radius:9px;border:1px solid var(--sc);background:#fff;color:var(--sc);
   font:600 12px/1 system-ui,Arial,sans-serif;cursor:pointer;white-space:nowrap}
 .bm-sc-pin.is-on{background:var(--sc);color:#fff}
@@ -365,7 +365,7 @@
   .gbif-mini-marker { background: transparent; border: none; }
   .gbif-mini-icon {
     position: relative;
-    width: 30px; height: 30px; border-radius: 50%;
+    width: 26px; height: 26px; border-radius: 50%;
     border: 2px solid #6366f1; background-size: cover;
     background-position: center; background-color: #e0e7ff;
     box-shadow: 0 1px 3px rgba(0,0,0,0.2);
@@ -9382,16 +9382,16 @@ function _gbifMiniIcon(avatarUrl, year, rarityLevel) {
     : "background-color:#c7d2fe";
   // Outer wrapper carries no opacity, so the rarity tag stays fully opaque even
   // when an old record fades the circle to 0.3.
-  var html = '<div style="position:relative;width:30px;height:30px">'
+  var html = '<div style="position:relative;width:26px;height:26px">'
     + '<div class="gbif-mini-icon" style="border-color:' + borderColor + ';opacity:' + opacity + ';' + bg + '"></div>'
     + _bmMkRar(rarityLevel)
     + '</div>';
   return L.divIcon({
     html: html,
     className: 'gbif-mini-marker',
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-    popupAnchor: [0, -18]
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+    popupAnchor: [0, -16]
   });
 }
 
@@ -9672,6 +9672,8 @@ function buildGbifPopup(species, occ) {
   }
   var cached = gbifTaxonKeys[species] || {};
   var displaySci = cached.scientificName || SPECIES_SCINAMES[species] || '';
+  // GBIF returns the authority too, e.g. 'Pernis apivorus (Linnaeus, 1758)'.
+  displaySci = String(displaySci || '').split(' (')[0].split(',')[0].trim();
   var note = (cached.warning || (cached.resolvedVia && cached.resolvedVia.indexOf('fallback') !== -1))
     ? '&#9888;&#65039; Kontrollimata vaste'
     : '';

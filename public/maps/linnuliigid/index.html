@@ -8563,6 +8563,8 @@ function refreshAllMarkers(){
   _updateDebugPanel();
 }
 function rebuildAllMarkers(){
+  var __openKey = null;
+  try { markers.forEach(function(m, k){ if (m && m.isPopupOpen && m.isPopupOpen()) __openKey = k; }); } catch(e){}
   try{
     const clusterGroup = window.__markerClusterGroup || window.markerClusterGroup || null;
     if(markers && typeof markers.forEach === 'function'){
@@ -8577,6 +8579,7 @@ function rebuildAllMarkers(){
   }catch(e){}
   __renderedMarkerCount = 0;
   Object.keys(points || {}).forEach(updateMarker);
+  try { if (__openKey && markers.get(__openKey) && map.hasLayer(markers.get(__openKey))) markers.get(__openKey).openPopup(); } catch(e){}
 }
 
 function _checkEmpty7dBanner(){
@@ -14192,6 +14195,8 @@ var __sharedDefaults = {};
 
   // --- Render markers ---
   function refreshEbirdEEMarkers(){
+    var __openKeyEb = null;
+    try { ebirdEEMarkers.forEach(function(m, k){ if (m && m.isPopupOpen && m.isPopupOpen()) __openKeyEb = k; }); } catch(e){}
     ebirdEEMarkers.forEach(function(m){
       try { map.removeLayer(m); } catch(e){}
     });
@@ -14250,6 +14255,7 @@ var __sharedDefaults = {};
       m.addTo(map);
       ebirdEEMarkers.set(key, m);
     }
+    try { if (__openKeyEb && ebirdEEMarkers.get(__openKeyEb) && map.hasLayer(ebirdEEMarkers.get(__openKeyEb))) ebirdEEMarkers.get(__openKeyEb).openPopup(); } catch(e){}
   }
   window.refreshEbirdEEMarkers = refreshEbirdEEMarkers;
 

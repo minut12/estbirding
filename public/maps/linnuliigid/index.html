@@ -96,7 +96,71 @@
 .marker-count.mig-on{background:rgba(40,180,70,.95);color:#fff;border-color:#1c6b25}
 .marker-count.mig-off{background:rgba(255,160,0,.95);color:#111;border-color:#8a5a00}
 .marker-ebird-label{position:absolute;top:4px;left:50%;transform:translateX(-50%);background:#4CAF50;color:#fff;font-size:8px;font-weight:700;font-family:system-ui,Arial,sans-serif;padding:1px 4px;border-radius:4px;line-height:1.3;pointer-events:none;z-index:2;border:1px solid #fff;white-space:nowrap;letter-spacing:.2px;text-transform:uppercase}
-.marker-count.ebird-count{background:rgba(76,175,80,.95) !important;color:#fff !important;border-color:#2E7D32 !important}.popupBtn{
+.marker-count.ebird-count{background:rgba(76,175,80,.95) !important;color:#fff !important;border-color:#2E7D32 !important}
+/* --- P58c Pin v2 (species markers) --- */
+.bm-pin{position:relative;width:44px;height:56px}
+.bm-pin-shape{position:absolute;left:2px;top:8px;width:40px;height:40px;box-sizing:border-box;
+  background:#fff;border:1.5px solid #dde4df;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);
+  box-shadow:0 2px 5px rgba(20,40,30,.28)}
+.bm-pin-head{position:absolute;left:6px;top:12px;width:32px;height:32px;border-radius:50%;box-sizing:border-box;
+  background-color:#29c;background-size:cover;background-position:center}
+.bm-pin-rb{position:absolute;left:-4px;top:4px;min-width:18px;height:16px;padding:0 4px;border-radius:999px;
+  background:#fff;border:1px solid currentColor;font:800 10px/14px system-ui,Arial,sans-serif;text-align:center;
+  box-sizing:border-box;z-index:4;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.bm-pin-cnt{position:absolute;right:-4px;top:4px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;
+  background:#2d7a4b;color:#fff;border:2px solid #fff;box-sizing:border-box;
+  font:700 12px/16px system-ui,Arial,sans-serif;text-align:center;z-index:3;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.bm-pin-tip{position:absolute;left:50%;transform:translateX(-50%);bottom:0;width:12px;height:4px;border-radius:50%;
+  background:rgba(20,40,30,.26);filter:blur(1px)}
+.bm-pin.is-approx .bm-pin-shape{background:#f4f6f5;border-style:dashed;border-color:#9aa9a0}
+.bm-pin.is-approx .bm-pin-head{filter:saturate(.35);opacity:.85}
+
+/* --- P58c Card v2 (species observation popup) --- */
+.leaflet-popup-content-wrapper:has(.bm-card){border-radius:16px;padding:0;overflow:hidden}
+.leaflet-popup-content:has(.bm-card){margin:0;width:320px!important}
+.bm-card{width:320px;max-width:320px;box-sizing:border-box;background:#fff;border-radius:16px;overflow:hidden;
+  font:400 13px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#222a26}
+.bm-card-band{position:relative;height:74px;overflow:hidden;background:#f2f8f4}
+.bm-card-wash{position:absolute;inset:-20px;background-size:cover;background-position:center;filter:blur(16px);opacity:.55}
+.bm-card-band::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.72) 70%,#fff 100%)}
+.bm-card-rar{position:absolute;left:12px;top:10px;z-index:2;padding:2px 9px;border-radius:999px;background:#fff;
+  border:1px solid currentColor;font:800 11px/16px system-ui,Arial,sans-serif;letter-spacing:.02em}
+.bm-card-body{padding:0 16px 14px}
+.bm-card-head{position:relative;z-index:2;display:flex;align-items:flex-end;gap:12px;margin-top:-38px}
+.bm-card-av{flex:0 0 auto;width:64px;height:64px;border-radius:50%;box-sizing:border-box;border:2px solid #dde4df;
+  background-color:#29c;background-size:cover;background-position:center;box-shadow:0 2px 6px rgba(20,40,30,.18)}
+.bm-card-id{min-width:0;padding-bottom:4px}
+.bm-card-name{font:700 17px/1.25 system-ui,Arial,sans-serif;color:#222a26;overflow-wrap:anywhere}
+.bm-card-date{margin-top:2px;font-size:12px;color:#6c7f74}
+.bm-card-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:12px;
+  background:#eef2ef;border:1px solid #eef2ef;border-radius:10px;overflow:hidden}
+.bm-card-stat{background:#f2f8f4;padding:7px 8px;text-align:center;min-width:0}
+.bm-card-stat b{display:block;font:700 15px/1.2 system-ui,Arial,sans-serif;color:#222a26;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bm-card-stat span{display:block;margin-top:1px;font-size:10.5px;color:#6c7f74}
+.bm-card-rows{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.bm-card-row{display:flex;gap:8px;align-items:flex-start;color:#4a5852;font-size:12.5px}
+.bm-card-row svg{flex:0 0 auto;margin-top:2px;color:#6c7f74}
+.bm-card-row code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  background:#f2f8f4;border-radius:5px;padding:0 4px;color:#222a26}
+.bm-card-note{display:flex;gap:8px;align-items:flex-start;margin-top:10px;padding:8px 10px;border-radius:10px;
+  background:#f4f6f5;border:1px solid #dde4df;color:#4a5852;font-size:11.5px;line-height:1.4}
+.bm-card-acts{display:flex;gap:8px;margin-top:12px}
+.bm-card-btn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 14px;
+  border:0;border-radius:10px;background:#2d7a4b;color:#fff;cursor:pointer;text-decoration:none;
+  font:700 13px/1 system-ui,Arial,sans-serif}
+.bm-card-btn:hover{background:#25643d}
+.bm-card-ico{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;
+  border:1px solid #dde4df;border-radius:10px;background:#fff;color:#4a5852;cursor:pointer;text-decoration:none}
+.bm-card-ico:hover{background:#f2f8f4;color:#2d7a4b}
+.bm-card-ico.is-ok{border-color:#2d7a4b;color:#2d7a4b;background:#e4f1e8}
+.bm-card-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;
+  padding-top:9px;border-top:1px solid #eef2ef;font-size:11px;color:#6c7f74}
+.bm-card-coords{font:600 11.5px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#4a5852;cursor:pointer}
+.bm-card-coords:hover{color:#2d7a4b}
+.bm-card-foot-note{flex:0 0 auto}
+.popupBtn{
   padding:6px 10px;
   border-radius:10px;
   border:1px solid rgba(0,0,0,.12);
@@ -9548,21 +9612,29 @@ window.__toggleGbifPin = function(gbifId){
   try { map.closePopup(); } catch(e){}
 };
 
-function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel){
+function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel, opts){
+  const o = opts || {};
+  const approx = o.approx === true;
   const color = rarityToBorder(rarityLevel, borderColor || '#222');
-  const style = window.getRarityStyle ? window.getRarityStyle(rarityLevel || 'none') : null;
+  const badge = rarityToBadge(rarityLevel);
+  const shapeStyle = (!approx && badge) ? ' style="background:' + color + ';border-color:' + color + '"' : '';
   const count = Number.isFinite(count7d) && count7d >= 1
-    ? '<div class="marker-count" title="Vaatlused viimase 7 päeva jooksul">' + count7d + '</div>'
+    ? '<div class="bm-pin-cnt" title="Vaatlused viimase 7 p&auml;eva jooksul">' + count7d + '</div>'
     : '';
-  const rarityBadge = rarityToBadge(rarityLevel)
-    ? '<div class="marker-rarity-badge" style="background:' + (style ? style.badgeBg : '#111') + ';color:' + (style ? style.badgeFg : '#fff') + '">' + rarityToBadge(rarityLevel) + '</div>'
+  const rarityBadge = badge
+    ? '<div class="bm-pin-rb" style="color:' + color + '">' + badge + '</div>'
     : '';
   const bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#29c";
-  const html = '<div class="marker-wrap"><div class="marker-circle" style="border-color:' + color + ';' + bg + '"></div>' + rarityBadge + count + '</div>';
-  return L.divIcon({html, className:'', iconSize:[44,72], iconAnchor:[22,36], popupAnchor:[0,-36]});
+  const html = '<div class="bm-pin' + (approx ? ' is-approx' : '') + '">'
+    + '<div class="bm-pin-shape"' + shapeStyle + '></div>'
+    + '<div class="bm-pin-head" style="' + bg + '"></div>'
+    + rarityBadge + count
+    + '<div class="bm-pin-tip"></div>'
+    + '</div>';
+  return L.divIcon({html, className:'', iconSize:[44,56], iconAnchor:[22,56], popupAnchor:[0,-52]});
 }
 function defaultIcon(borderColor, count7d, rarityLevel) { return _markerIcon('', borderColor, count7d, rarityLevel); }
-function avatarIcon(url, borderColor, count7d, rarityLevel) { return _markerIcon(url, borderColor, count7d, rarityLevel); }
+function avatarIcon(url, borderColor, count7d, rarityLevel, opts) { return _markerIcon(url, borderColor, count7d, rarityLevel, opts); }
 
 // === Elurikkus recent-obs secondary pins ===================================
 // Renders last-7d per-observation elurikkus markers alongside the existing
@@ -9965,7 +10037,8 @@ function updateMarker(key) {
   const bcol = _borderColorByDate(p.t);
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const c7 = Number.isFinite(markerCount) && markerCount >= 1 ? markerCount : null;
-  const icon = avatarIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none');
+  let _pinOpts; try { _pinOpts = { approx: _isCoordsApprox(p) }; } catch (_e) { _pinOpts = {}; }
+  const icon = avatarIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none', _pinOpts);
   const popupHtml = buildPopupHtml(key, p);
   const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;
   if(prevMarker && old && (Math.abs(Number(old.lat) - Number(p.lat)) > 1e-6 || Math.abs(Number(old.lng) - Number(p.lon)) > 1e-6) && typeof prevMarker.setLatLng === 'function'){
@@ -10016,6 +10089,22 @@ function escapeHtml(s){
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+function _isCoordsApprox(p){
+  var coordsApprox = false;
+  try {
+    const _cs = String(p.coords_status || '').toLowerCase();
+    if (_cs && _cs !== 'public') coordsApprox = true;
+    if (/centroid|snapshot/i.test(String(p.coords_source || p.coordsSource || ''))) coordsApprox = true;
+    const _dec = p.lastCoordDecision || null;
+    if (_dec) {
+      if (/kept_existing|restricted|no public coords/i.test(String(_dec.reason || ''))) coordsApprox = true;
+      const _fdt = String((_dec.found && _dec.found.dt) || '').slice(0, 10);
+      const _pdt = String(p.t || '').slice(0, 10);
+      if (_fdt && _pdt && _fdt !== _pdt) coordsApprox = true;
+    }
+  } catch (_e) {}
+  return coordsApprox;
+}
 function buildPopupHtml(key, p){
   const x = (p && p.eluExtra) ? p.eluExtra : {};
   __nettaTrace('popup_read', key, p);
@@ -10050,45 +10139,116 @@ function buildPopupHtml(key, p){
   // the previous point) while date / koht / collectors still describe the newest one — so the
   // marker lands where the bird was never reported on that date. Detected from positive
   // evidence only; unknown provenance stays uncaveated (fail-quiet, no warning spam).
-  let coordsApprox = false;
+  let coordsApprox = _isCoordsApprox(p);
+  // Card v2 (P58c). Same fields as before, no new fetches; only the markup changed.
+  const DASH = String.fromCharCode(8211);
+  const dash = (v)=> (v === undefined || v === null || String(v).trim() === '' || String(v).trim() === '-') ? DASH : String(v).trim();
+  const _meta = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
+  const _rarLevel = (_meta && _meta.rarityLevel) ? _meta.rarityLevel : 'none';
+  const _rarBadge = (typeof rarityToBadge === 'function') ? (rarityToBadge(_rarLevel) || '') : '';
+  const _rarColor = (typeof rarityToBorder === 'function') ? rarityToBorder(_rarLevel, '#dde4df') : '#dde4df';
+  const _ring = _rarBadge ? _rarColor : '#dde4df';
+  const _av = (typeof getDisplayAvatar === 'function') ? String(getDisplayAvatar(key) || '') : '';
+  const _avCss = _av ? `background-image:url('${escapeHtml(_av)}')` : '';
+  // Date line: prefer p.t_dt when it carries a real (non-midnight) time, else the date-only p.t.
+  const _hasTime = !!(p.t_dt && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(p.t_dt)));
+  const _dtRaw = _hasTime ? p.t_dt : p.t;
+  let dateTxt = _hasTime ? formatDateTimeEE(_dtRaw).replace(', ', ' ') : formatDateEE(_dtRaw);
+  if (dateTxt === '-') dateTxt = latest;
+  // Relative word from the Europe/Tallinn calendar day, not from UTC arithmetic.
+  let relWord = '';
   try {
-    const _cs = String(p.coords_status || '').toLowerCase();
-    if (_cs && _cs !== 'public') coordsApprox = true;
-    if (/centroid|snapshot/i.test(String(p.coords_source || p.coordsSource || ''))) coordsApprox = true;
-    const _dec = p.lastCoordDecision || null;
-    if (_dec) {
-      if (/kept_existing|restricted|no public coords/i.test(String(_dec.reason || ''))) coordsApprox = true;
-      const _fdt = String((_dec.found && _dec.found.dt) || '').slice(0, 10);
-      const _pdt = String(p.t || '').slice(0, 10);
-      if (_fdt && _pdt && _fdt !== _pdt) coordsApprox = true;
+    const _obsDay = (typeof isoFromAny === 'function') ? isoFromAny(p.t) : String(p.t || '').slice(0, 10);
+    const _nowDay = new Intl.DateTimeFormat('en-CA', { timeZone: EE_TZ }).format(new Date());
+    const _a = Date.parse(_obsDay + 'T00:00:00Z');
+    const _b = Date.parse(_nowDay + 'T00:00:00Z');
+    if (Number.isFinite(_a) && Number.isFinite(_b)) {
+      const _d = Math.round((_b - _a) / 86400000);
+      if (_d === 0) relWord = 'T&auml;na';
+      else if (_d === 1) relWord = 'Eile';
+      else if (_d >= 2 && _d <= 6) relWord = _d + ' p&auml;eva tagasi';
     }
   } catch (_e) {}
+  const dateLine = (relWord ? relWord + ' &middot; ' : '') + escapeHtml(dateTxt);
+  const _indNum = parseFloat(String(ind).replace(',', '.'));
+  const indLabel = (Number.isFinite(_indNum) && Math.abs(_indNum) === 1) ? 'isend' : 'isendit';
+  const eluUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(key);
+  const SVG_PIN = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3.3 4.5 8.5 4.5 8.5s4.5-5.2 4.5-8.5A4.5 4.5 0 0 0 8 1.5Zm0 6.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4Z"/></svg>';
+  const SVG_USER = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 1.5c-2.7 0-5 1.4-5 3.1V14h10v-1.4c0-1.7-2.3-3.1-5-3.1Z"/></svg>';
+  const SVG_EYE = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 3C4.5 3 1.8 5.5 1 8c.8 2.5 3.5 5 7 5s6.2-2.5 7-5c-.8-2.5-3.5-5-7-5Zm0 8a3 3 0 1 1 0-6 3 3 0 0 1 0 6Zm0-1.6a1.4 1.4 0 1 0 0-2.8 1.4 1.4 0 0 0 0 2.8Z"/></svg>';
+  const SVG_LOCK = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M4.5 7V5.5a3.5 3.5 0 1 1 7 0V7H12a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h.5Zm1.5 0h4V5.5a2 2 0 1 0-4 0V7Z"/></svg>';
+  const SVG_WAZE = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M14.5 1.5 1.8 6.6c-.7.3-.6 1.3.1 1.5l4.6 1.4 1.4 4.6c.2.7 1.2.8 1.5.1L14.5 1.5Z"/></svg>';
+  const SVG_COPY = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M5.5 1.5h6A1.5 1.5 0 0 1 13 3v7h-1.5V3h-6V1.5Zm-2 2.5h6A1.5 1.5 0 0 1 11 5.5v8A1.5 1.5 0 0 1 9.5 15h-6A1.5 1.5 0 0 1 2 13.5v-8A1.5 1.5 0 0 1 3.5 4Z"/></svg>';
+  const SVG_EXT = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M9 2h5v5h-1.5V4.56L7.53 9.53 6.47 8.47l4.97-4.97H9V2Z"/><path fill="currentColor" d="M3 4h4v1.5H4.5v6h6V9H12v4H3V4Z"/></svg>';
+  const rarPill = _rarBadge ? `<div class="bm-card-rar" style="color:${_rarColor}">${escapeHtml(_rarBadge)}</div>` : '';
+  const rows = [
+    (!coordsApprox && locText) ? `<div class="bm-card-row">${SVG_PIN}<span>${escapeHtml(locText)}</span></div>` : '',
+    (col !== '-') ? `<div class="bm-card-row">${SVG_USER}<span>${escapeHtml(col)}</span></div>` : '',
+    (beh !== '-') ? `<div class="bm-card-row">${SVG_EYE}<span>K&auml;itumine: <code>${escapeHtml(beh)}</code></span></div>` : ''
+  ].join('');
   const approxNote = coordsApprox
-    ? '<div style="margin-top:8px;padding:6px 8px;border-radius:6px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:11px;line-height:1.35">&#9888; T&auml;psed koordinaadid on peidetud &mdash; markeri asukoht on ligikaudne, p&auml;rineb varasemast vaatlusest.</div>'
+    ? `<div class="bm-card-note">${SVG_LOCK}<span>T&auml;psed koordinaadid on peidetud &mdash; markeri asukoht on ligikaudne, p&auml;rineb varasemast vaatlusest.</span></div>`
     : '';
-  const actions = hasCoords ? `
-    ${approxNote}
-    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="popupBtn" onclick="copyCoords(${p.lat},${p.lon})">Copy coords</button>
-      ${coordsApprox ? '' : `<button class="popupBtn" onclick="openWaze(${p.lat},${p.lon})">Open in Waze</button>`}
-    </div>
-    <div style="margin-top:6px;font-size:12px;opacity:.8">coords: ${lat},${lon}${coordsApprox ? ' (ligikaudne)' : ''}</div>
-  ` : '';
+  const wazeBtn = (hasCoords && !coordsApprox)
+    ? `<button class="bm-card-btn" onclick="openWaze(${p.lat},${p.lon})">${SVG_WAZE}Ava Waze'is</button>`
+    : '';
+  const copyBtn = hasCoords
+    ? `<button class="bm-card-ico bm-card-copy" title="Kopeeri koordinaadid" onclick="_bmCardCopy(this,${p.lat},${p.lon})">${SVG_COPY}</button>`
+    : '';
+  const eluBtn = coordsApprox
+    ? `<a class="bm-card-btn" href="${escapeHtml(eluUrl)}" target="_blank" rel="noopener">${SVG_EXT}Ava Elurikkuses</a>`
+    : `<a class="bm-card-ico" href="${escapeHtml(eluUrl)}" target="_blank" rel="noopener" title="Ava Elurikkuses">${SVG_EXT}</a>`;
+  const foot = hasCoords
+    ? `<div class="bm-card-foot"><span class="bm-card-coords" title="Kopeeri koordinaadid" onclick="_bmCardCopy(this,${p.lat},${p.lon})">${escapeHtml(lat)},${escapeHtml(lon)}</span><span class="bm-card-foot-note">${coordsApprox ? 'ligikaudne' : 't&auml;pne asukoht'}</span></div>`
+    : '';
   return `
-    <div style="min-width:210px">
-      <div style="font-weight:700;margin-bottom:4px">${escapeHtml(key)}</div>
-      <div>vaatluse kuupäev: ${escapeHtml(latest)}</div>
-      <div>7 päeva vaatlused: ${escapeHtml(String(occ7))}</div>
-      <div>allikas: ${escapeHtml(src)}</div>
-      ${locText ? '<div>koht: ' + escapeHtml(locText) + '</div>' : ''}
-      <div style="margin-top:6px">
-        <div>Individual count: ${escapeHtml(ind)}</div>
-        <div>Behavior: ${escapeHtml(beh)}</div>
-        <div>Collectors: ${escapeHtml(col)}</div>
+    <div class="bm-card">
+      <div class="bm-card-band">
+        <div class="bm-card-wash" style="${_avCss}"></div>
+        ${rarPill}
       </div>
-      ${actions}
+      <div class="bm-card-body">
+        <div class="bm-card-head">
+          <div class="bm-card-av" style="border-color:${_ring};${_avCss}"></div>
+          <div class="bm-card-id">
+            <div class="bm-card-name">${escapeHtml(key)}</div>
+            <div class="bm-card-date">${dateLine}</div>
+          </div>
+        </div>
+        <div class="bm-card-stats">
+          <div class="bm-card-stat"><b>${escapeHtml(dash(occ7))}</b><span>vaatlust 7 p</span></div>
+          <div class="bm-card-stat"><b>${escapeHtml(dash(ind))}</b><span>${indLabel}</span></div>
+          <div class="bm-card-stat"><b>${escapeHtml(dash(src))}</b><span>allikas</span></div>
+        </div>
+        ${rows ? '<div class="bm-card-rows">' + rows + '</div>' : ''}
+        ${approxNote}
+        <div class="bm-card-acts">${coordsApprox ? eluBtn + copyBtn : wazeBtn + copyBtn + eluBtn}</div>
+        ${foot}
+      </div>
     </div>
   `;
+}
+function _bmCardCopy(el, lat, lon){
+  try { copyCoords(lat, lon); } catch (_e) {}
+  try {
+    const card = (el && el.closest) ? el.closest('.bm-card') : null;
+    if (!card) return;
+    const btn = card.querySelector('.bm-card-copy');
+    const note = card.querySelector('.bm-card-foot-note');
+    const bHtml = btn ? btn.innerHTML : '';
+    const nHtml = note ? note.innerHTML : '';
+    if (btn) {
+      btn.innerHTML = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M6.3 12.2 2.6 8.5l1.1-1.1 2.6 2.6 6-6 1.1 1.1-7.1 7.1Z"/></svg>';
+      btn.classList.add('is-ok');
+    }
+    if (note) note.innerHTML = 'Kopeeritud';
+    setTimeout(function(){
+      try {
+        if (btn) { btn.innerHTML = bHtml; btn.classList.remove('is-ok'); }
+        if (note) note.innerHTML = nHtml;
+      } catch (_e2) {}
+    }, 2000);
+  } catch (_e) {}
 }
 async function copyCoords(lat, lon){
   if(!Number.isFinite(lat) || !Number.isFinite(lon)){

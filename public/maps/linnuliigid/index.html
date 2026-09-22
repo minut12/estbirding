@@ -9671,7 +9671,7 @@ function buildGbifPopup(species, occ) {
     else if (diff > 1) ago = diff + ' aastat tagasi';
   }
   var cached = gbifTaxonKeys[species] || {};
-  var displaySci = cached.scientificName || SPECIES_SCINAMES[species] || '';
+  var displaySci = SPECIES_SCINAMES[species] || cached.scientificName || '';
   // GBIF returns the authority too, e.g. 'Pernis apivorus (Linnaeus, 1758)'.
   displaySci = String(displaySci || '').split(' (')[0].split(',')[0].trim();
   var note = (cached.warning || (cached.resolvedVia && cached.resolvedVia.indexOf('fallback') !== -1))

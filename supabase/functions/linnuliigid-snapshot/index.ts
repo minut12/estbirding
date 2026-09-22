@@ -1,4 +1,4 @@
-// redeploy-marker: P56 2026-09-21
+// redeploy-marker: P58b 2026-09-22
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -119,6 +119,14 @@ function toDay(s: string): number | null {
   return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
 }
 
+// A time of day exists only when event_datetime_precise carries one. When the observer
+// gave no time the field is a bare "2019-06-30" while event_datetime_point synthesises
+// "2019-06-30T00:00:00Z" -- that midnight is fabricated and must never be shown.
+function preciseDateTime(rec: Record<string, unknown>): string | null {
+  const v = typeof rec?.event_datetime_precise === "string" ? rec.event_datetime_precise.trim() : "";
+  return v.includes("T") ? v : null;
+}
+
 function parseElurikkusDate(v: string): number {
   const s = String(v || "").trim();
   if (!s) return 0;
@@ -147,6 +155,8 @@ async function fetchSpeciesData(name: string, signal?: AbortSignal): Promise<{
   lat: number | null;
   lon: number | null;
   latestDate: string | null;
+  // Observer-recorded clock time for the newest record, UTC ISO; null when none was given.
+  latestDateTime: string | null;
   occ7: number;
   coordsStatus: "public" | "restricted" | "missing";
   coordsSource: "exact" | "municipality" | "county" | "none";
@@ -331,7 +341,7 @@ async function fetchSpeciesData(name: string, signal?: AbortSignal): Promise<{
       });
     }
 
-    return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
+    return { lat, lon, latestDate, latestDateTime: null, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
   } catch (e) {
     console.warn("[snapshot:biocache] unexpected error", { species: name, err: String((e as Error)?.message || e) });
     // Fallback to HTML scraping
@@ -414,6 +424,8 @@ async function fetchSpeciesFromHtml(name: string, signal?: AbortSignal): Promise
   lat: number | null;
   lon: number | null;
   latestDate: string | null;
+  // Observer-recorded clock time for the newest record, UTC ISO; null when none was given.
+  latestDateTime: string | null;
   occ7: number;
   coordsStatus: "public" | "restricted" | "missing";
   coordsSource: "exact" | "municipality" | "county" | "none";
@@ -527,7 +539,7 @@ async function fetchSpeciesFromHtml(name: string, signal?: AbortSignal): Promise
 
     // Page 0 entirely failed (network / non-OK) — preserve original res.ok=false branch shape.
     if (firstPageFatal) {
-      return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing" as const, coordsSource: "none" as const, locality: null, municipality: null, county: null, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
+      return { lat: null, lon: null, latestDate: null, latestDateTime: null, occ7: 0, coordsStatus: "missing" as const, coordsSource: "none" as const, locality: null, municipality: null, county: null, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
     }
 
     // --- Payload path (preferred) --------------------------------------------
@@ -543,6 +555,7 @@ async function fetchSpeciesFromHtml(name: string, signal?: AbortSignal): Promise
     if (normalizedRecords.length > 0) {
       const newest = normalizedRecords[0].rec;
       const latestDate = new Date(normalizedRecords[0].t).toISOString();
+      const latestDateTime = preciseDateTime(newest as unknown as Record<string, unknown>);
       const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
       const occ7 = normalizedRecords.filter((x) => x.t >= sevenDaysAgo).length;
 
@@ -586,7 +599,7 @@ async function fetchSpeciesFromHtml(name: string, signal?: AbortSignal): Promise
         datesParsed: normalizedRecords.length,
         recordsParsed: records.length,
       }));
-      return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount, behavior, collectors, districts: null, eestiOmavalitsused: null };
+      return { lat, lon, latestDate, latestDateTime, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount, behavior, collectors, districts: null, eestiOmavalitsused: null };
     }
 
     // --- Fallback: page-0 <table> scrape (pre-payload behaviour, unchanged) ----
@@ -709,10 +722,10 @@ async function fetchSpeciesFromHtml(name: string, signal?: AbortSignal): Promise
       occ7,
       datesParsed: allDates.length,
     }));
-    return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount, behavior, collectors, districts, eestiOmavalitsused };
+    return { lat, lon, latestDate, latestDateTime: null, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount, behavior, collectors, districts, eestiOmavalitsused };
   } catch (e) {
     console.warn("[snapshot:html] unexpected error", { species: name, err: String((e as Error)?.message || e) });
-    return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing", coordsSource: "none", locality: null, municipality: null, county: null, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
+    return { lat: null, lon: null, latestDate: null, latestDateTime: null, occ7: 0, coordsStatus: "missing", coordsSource: "none", locality: null, municipality: null, county: null, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
   }
 }
 
@@ -1682,6 +1695,7 @@ async function runRefresh(
       lat?: number | null;
       lon?: number | null;
       t?: string;
+      t_dt?: string | null;
       occ7?: number;
       src?: string;
       visible?: boolean;
@@ -1697,7 +1711,7 @@ async function runRefresh(
       eestiOmavalitsused?: string | null;
     }
   > = (existingRow?.points_json && typeof existingRow.points_json === "object")
-    ? existingRow.points_json as Record<string, { lat?: number | null; lon?: number | null; t?: string; occ7?: number; src?: string; visible?: boolean; coords_status?: "public" | "restricted" | "missing"; coords_source?: "exact" | "municipality" | "county" | "none"; locality?: string | null; municipality?: string | null; county?: string | null; individualCount?: number | null; behavior?: string | null; collectors?: string | null; districts?: string | null; eestiOmavalitsused?: string | null; }>
+    ? existingRow.points_json as Record<string, { lat?: number | null; lon?: number | null; t?: string; t_dt?: string | null; occ7?: number; src?: string; visible?: boolean; coords_status?: "public" | "restricted" | "missing"; coords_source?: "exact" | "municipality" | "county" | "none"; locality?: string | null; municipality?: string | null; county?: string | null; individualCount?: number | null; behavior?: string | null; collectors?: string | null; districts?: string | null; eestiOmavalitsused?: string | null; }>
     : {};
 
   // --- NOTIFICATION PREP: snapshot previous points (t + occ7 only) for later comparison ---
@@ -1794,11 +1808,18 @@ async function runRefresh(
             visible: points[name]?.visible ?? true,
           };
           // Bug 2 fix: preserve existing t when new fetch returns no date, so snapshot doesn't lose stale date
+          const prevT = points[name]?.t;
+          const prevTdt = points[name]?.t_dt;
           if (data.latestDate) {
             entry.t = data.latestDate;
           } else if (points[name]?.t) {
             entry.t = points[name].t;
           }
+          // Keep a stored time only while it still belongs to the same calendar day as the
+          // date being written, so the table-scrape path (which carries no time) cannot
+          // pair a stale clock time with a fresher date.
+          entry.t_dt = data.latestDateTime ??
+            ((entry.t && prevT && String(entry.t).slice(0, 10) === String(prevT).slice(0, 10)) ? (prevTdt ?? null) : null);
           // Always write lat/lon explicitly (including null) so the merge layer
           // overwrites stale numeric values rather than preserving them.
           entry.lat = data.lat ?? null;

@@ -1,4 +1,4 @@
-// redeploy-marker: P56 2026-09-21
+// redeploy-marker: P58b 2026-09-22
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
@@ -148,6 +148,8 @@ interface ParsedObservation {
   observer: string | null;
   individual_count: number | null;
   behavior: string | null;
+  // Observer-recorded clock time, UTC ISO, only when the source actually carries one.
+  precise_dt: string | null;
 }
 
 interface ObservationParseResult {
@@ -196,6 +198,14 @@ function cleanCellText(cellHtml: string): string {
     .replace(/\s+,/g, ",")
     .replace(/,\s*$/g, "")
     .trim());
+}
+
+// A time of day exists only when event_datetime_precise carries one. When the observer
+// gave no time the field is a bare "2019-06-30" while event_datetime_point synthesises
+// "2019-06-30T00:00:00Z" -- that midnight is fabricated and must never be shown.
+function preciseDateTime(rec: Record<string, unknown>): string | null {
+  const v = typeof rec?.event_datetime_precise === "string" ? rec.event_datetime_precise.trim() : "";
+  return v.includes("T") ? v : null;
 }
 
 function parseEstonianDate(text: string | null | undefined): string | null {
@@ -269,7 +279,7 @@ function parseObservationsFromHtml(html: string, species?: string): ObservationP
   // JSON pre-pass: extract real GPS from SvelteKit-fetched JSON block
   const sveltekitRe = /<script type="application\/json" data-sveltekit-fetched data-url="https:\/\/elurikkus\.ee\/api\/occurrences\/search"[^>]*>([\s\S]*?)<\/script>/;
   const m = html.match(sveltekitRe);
-  const coordsBySubId = new Map<string, { lat: number | null; lon: number | null; municipality: string | null; county: string | null; locality: string | null }>();
+  const coordsBySubId = new Map<string, { lat: number | null; lon: number | null; municipality: string | null; county: string | null; locality: string | null; precise: string | null }>();
   if (m) {
     try {
       const envelope = JSON.parse(m[1]);
@@ -285,6 +295,7 @@ function parseObservationsFromHtml(html: string, species?: string): ObservationP
           municipality: r.municipality || null,
           county: r.county || null,
           locality: r.locality || null,
+          precise: preciseDateTime(r),
         });
       }
     } catch (_e) {
@@ -384,6 +395,8 @@ function parseObservationsFromHtml(html: string, species?: string): ObservationP
       observer: observer && observer.length <= 200 ? observer : null,
       individual_count,
       behavior,
+      // Joined by sub_id to the same payload record that supplied this row.
+      precise_dt: j?.precise ?? null,
     });
   }
   console.log("[elu-parse]", species ?? "(unknown)", "jsonHits:", coordsBySubId.size, "rows:", observations.length);
@@ -1092,6 +1105,7 @@ Deno.serve(async (req) => {
         lon: preserveExactCoords ? existing!.lon : (resolved?.lon ?? null),
         occ7,
         t: metaSource?.observed_at ?? t ?? null,
+        t_dt: metaSource?.precise_dt ?? null,
         coords_status: preserveExactCoords ? (existing!.coords_status ?? 'public') : (resolved?.coords_status ?? 'missing'),
         coords_source: preserveExactCoords ? "exact" : (resolved?.coords_source ?? "none"),
         locality: metaSource?.locality ?? null,

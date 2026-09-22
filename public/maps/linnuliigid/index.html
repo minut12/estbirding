@@ -6116,7 +6116,10 @@ function _applySelectedOccurrenceFromServer(speciesName, json){
   const occUrl = String(selected.url || selected.occUrl || '').trim();
   const selDate = String((selected.date || selected.dateText || selected.observedAt || '')).slice(0,10);
   p.t = selDate || p.t || '';
-  p.t_dt = String((selected.observedAt || selected.dateText || '')).trim() || p.t_dt || '';
+  var _tdtRaw = String((selected.observedAt || selected.dateText || '')).trim();
+  // Only a real ISO timestamp may land here; a bare date must never overwrite a good
+  // server-supplied t_dt, and a midnight synthesised upstream is not a recorded time.
+  p.t_dt = (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(_tdtRaw) && !/T00:00(:00(\.0+)?)?(Z|\+00:00)?$/.test(_tdtRaw)) ? _tdtRaw : (p.t_dt || null);
   if(Number.isFinite(Number(json && json.occ7))){ p.occ7 = Number(json.occ7); p.occ7Elu = Number(json.occ7); p.occ7EluUpdated = new Date().toISOString(); }
   p.src = 'live_elurikkus';
   p.openUrl = occUrl || p.openUrl || '';
@@ -8089,6 +8092,7 @@ async function _applySnapshot(snap){
     if(!pts.hasOwnProperty(key)) continue;
     const snapPoint = {};
     if(typeof s.t === 'string' && s.t.trim()) snapPoint.t = s.t;
+    if(typeof s.t_dt === 'string' && s.t_dt) snapPoint.t_dt = s.t_dt;
     if(Number.isFinite(s.lat) && Number.isFinite(s.lon)){ snapPoint.lat = s.lat; snapPoint.lon = s.lon; }
     if(Number.isFinite(s.occ7)) snapPoint.occ7 = s.occ7;
     if(typeof s.src === 'string' && s.src.trim()) snapPoint.src = s.src;
@@ -8268,7 +8272,7 @@ async function _loadElurikkusCacheFromSupabase(){
     var anonKey = cfg.anonKey;
     if(!supabaseUrl || !anonKey) return;
     var res = await fetch(
-      supabaseUrl + '/rest/v1/elurikkus_cache?select=species_name,lat,lon,occ7,t,open_url,search_url,fetched_at,coords_status,coords_source,locality,municipality,county,individual_count,behavior,collectors&order=fetched_at.desc',
+      supabaseUrl + '/rest/v1/elurikkus_cache?select=species_name,lat,lon,occ7,t,t_dt,open_url,search_url,fetched_at,coords_status,coords_source,locality,municipality,county,individual_count,behavior,collectors&order=fetched_at.desc',
       {
         headers: {
           'apikey': anonKey,
@@ -8305,6 +8309,7 @@ async function _loadElurikkusCacheFromSupabase(){
       var merged = Object.assign({}, p, {
         occ7: typeof row.occ7 === 'number' ? row.occ7 : p.occ7,
         t: newerT,
+        t_dt: (row.t_dt != null ? row.t_dt : ((p.t_dt && row.t && String(p.t_dt).slice(0,10) === String(row.t).slice(0,10)) ? p.t_dt : null)),
         src: 'ElurikkusCloud',
         openUrl: row.open_url || p.openUrl,
         searchUrl: row.search_url || p.searchUrl,
@@ -9234,7 +9239,7 @@ window.addEventListener('message', function(ev){
 
 function _prunePointsForStorage(pts) {
   var pruned = {};
-  var KEEP = ['lat','lon','t','occ7','src','visible','rarity','migration','coords_status',
+  var KEEP = ['lat','lon','t','t_dt','occ7','src','visible','rarity','migration','coords_status',
     'occ7Ebird','occ7EbirdUpdated','occ7Elu','occ7EluUpdated','lastFetched','clientScannedAt',
     'ebirdCode','ebirdAuto','loc','openUrl','searchUrl','coords_source','coordsSource','coordLock','eluExtra'];
   for (var key in pts) {

@@ -1617,8 +1617,9 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).
   setTimeout(inval, 1500);
 })();
 
-/* P62: close the small source cards (.bm-sc) when the user zooms OUT. The species
-card, prediction and probability popups are untouched; zooming in keeps it open. */
+/* P62/P63: close the small source cards (.bm-sc) and the species card (.bm-card)
+when the user zooms OUT. Prediction and probability popups are untouched; zooming
+in keeps them open. */
 (function () {
   var m = window.map; if (!m || !m.on) return;
   var scZ0 = m.getZoom();
@@ -1626,9 +1627,13 @@ card, prediction and probability popups are untouched; zooming in keeps it open.
   m.on('zoomend', function () {
     try {
       if (m.getZoom() >= scZ0) return;
-      var pop = m._popup;
-      var el = pop && pop.getElement && pop.getElement();
-      if (el && el.querySelector('.bm-sc')) m.closePopup(pop);
+      var toClose = [];
+      m.eachLayer(function (l) {
+        if (!(l instanceof L.Popup)) return;
+        var el = l.getElement && l.getElement();
+        if (el && el.querySelector('.bm-sc, .bm-card')) toClose.push(l);
+      });
+      for (var i = 0; i < toClose.length; i++) m.closePopup(toClose[i]);
     } catch (e) {}
   });
 })();

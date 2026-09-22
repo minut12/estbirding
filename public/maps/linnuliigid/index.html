@@ -161,41 +161,52 @@
 .bm-card-coords{font:600 11.5px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#4a5852;cursor:pointer}
 .bm-card-coords:hover{color:#2d7a4b}
 .bm-card-foot-note{flex:0 0 auto}
-/* P60b: compact source card (Elurikkus single sighting / pinned elu+eBird / GBIF) */
-.leaflet-popup-content-wrapper:has(.bm-sc){border-radius:14px;padding:0;overflow:hidden}
+/* P61: compact source card - species-card anatomy (Elurikkus single sighting / pinned elu+eBird / GBIF) */
+.leaflet-popup-content-wrapper:has(.bm-sc){border-radius:16px;padding:0;overflow:hidden}
 .leaflet-popup-content:has(.bm-sc){margin:0;width:290px!important}
 .bm-sc{--sc:#4f46e5;--sc-soft:#eceafd;--sc-ink:#3730a3;
-  width:290px;max-width:290px;box-sizing:border-box;background:#fff;border-radius:14px;
-  padding:12px 14px;font:400 13px/1.45 system-ui,Arial,sans-serif;color:#222a26}
+  width:290px;max-width:290px;box-sizing:border-box;background:#fff;border-radius:16px;
+  padding:0;overflow:hidden;font:400 13px/1.45 system-ui,Arial,sans-serif;color:#222a26}
 .bm-sc--elu{--sc:#2c7fb8;--sc-soft:#e6f1f9;--sc-ink:#1d5c88}
 .bm-sc--ebird{--sc:#0e7490;--sc-soft:#e0f2f5;--sc-ink:#155e75}
 .bm-sc--gbif{--sc:#4f46e5;--sc-soft:#eceafd;--sc-ink:#3730a3}
-.bm-sc-tag{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--sc-soft);color:var(--sc-ink);
-  font:700 10.5px/1.6 system-ui,Arial,sans-serif;letter-spacing:.02em}
-.bm-sc-head{display:flex;gap:10px;align-items:flex-start;margin-top:9px}
-.bm-sc-av{flex:0 0 auto;width:40px;height:40px;border-radius:50%;box-sizing:border-box;
-  border:2px solid #fff;outline:1.5px solid var(--sc);background:#eef2f5 center/cover no-repeat}
-.bm-sc-id{min-width:0;flex:1 1 auto}
-.bm-sc-name{font:700 15.5px/1.25 system-ui,Arial,sans-serif;color:#222a26;overflow-wrap:anywhere}
+.bm-sc-band{position:relative;height:66px;overflow:hidden;background:var(--sc-soft)}
+.bm-sc-wash{position:absolute;inset:-20px;background-size:cover;background-position:center;
+  filter:blur(16px) saturate(1.2);opacity:.5}
+.bm-sc-band::before{content:"";position:absolute;inset:0;z-index:1;
+  background:linear-gradient(135deg,var(--sc) 0%,transparent 70%);opacity:.22}
+.bm-sc-band::after{content:"";position:absolute;inset:0;z-index:1;
+  background:linear-gradient(180deg,rgba(255,255,255,0) 30%,rgba(255,255,255,.88) 85%,#fff 100%)}
+.bm-sc-tag{position:absolute;left:12px;top:10px;z-index:2;display:inline-block;padding:2px 9px;border-radius:999px;
+  background:var(--sc);color:#fff;font:700 10.5px/1.6 system-ui,Arial,sans-serif;letter-spacing:.02em;
+  box-shadow:0 1px 3px rgba(20,40,30,.22)}
+.bm-sc-body{padding:0 14px 12px}
+.bm-sc-head{position:relative;z-index:2;display:flex;align-items:flex-end;gap:11px;margin-top:-32px}
+.bm-sc-av{flex:0 0 auto;width:56px;height:56px;border-radius:50%;box-sizing:border-box;border:3px solid #fff;
+  box-shadow:0 0 0 2px var(--sc),0 4px 10px rgba(20,40,30,.18);background:#eef2f5 center/cover no-repeat}
+.bm-sc-id{min-width:0;flex:1 1 auto;padding-bottom:3px}
+.bm-sc-name{font:700 16px/1.25 system-ui,Arial,sans-serif;color:#222a26;overflow-wrap:anywhere}
 .bm-sc-rar{display:inline-block;margin-left:6px;padding:0 5px;border-radius:999px;background:#fff;border:1.5px solid;
   font:800 9.5px/14px system-ui,Arial,sans-serif;vertical-align:2px}
 .bm-sc-sci{margin-top:1px;font-style:italic;font-size:11.5px;color:#6c7f74;overflow-wrap:anywhere}
-.bm-sc-when{margin-top:3px;font-size:12px;color:#4a5852}
-.bm-sc-when b{font-weight:700;color:#222a26}
-.bm-sc-ago{color:#6c7f74}
-.bm-sc-kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:10px 0 0}
-.bm-sc-kv:empty{display:none}
-.bm-sc-kv dt{font-size:11.5px;color:#6c7f74;white-space:nowrap}
-.bm-sc-kv dd{margin:0;font-size:12.5px;color:#222a26;overflow-wrap:anywhere;
+.bm-sc-when{margin-top:8px;font-size:12.5px;color:#6c7f74}
+.bm-sc-rel{font-weight:700;color:var(--sc-ink)}
+.bm-sc-when-t{font-weight:600;color:#222a26;font-variant-numeric:tabular-nums}
+.bm-sc-rows{display:flex;flex-direction:column;gap:7px;margin-top:10px;padding-top:10px;border-top:1px solid #eef2ef}
+.bm-sc-rows:empty{display:none}
+.bm-sc-row{display:flex;gap:9px;align-items:flex-start;font-size:13px;color:#222a26}
+.bm-sc-row svg{flex:0 0 auto;margin-top:2px;color:var(--sc)}
+.bm-sc-row span{min-width:0;overflow-wrap:anywhere;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.bm-sc-kv dd code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+.bm-sc-row .bm-sc-m{color:#6c7f74}
+.bm-sc-row code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   background:#f2f5f7;border-radius:5px;padding:1px 5px}
 .bm-sc-note{display:flex;gap:7px;margin-top:9px;padding:7px 9px;border-radius:9px;
   background:#fff7ed;color:#9a3412;font-size:11.5px}
-.bm-sc-acts{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:11px}
-.bm-sc-btn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 13px;border-radius:9px;
-  border:1px solid var(--sc);background:var(--sc);color:#fff;font:600 12.5px/1 system-ui,Arial,sans-serif;
-  cursor:pointer;text-decoration:none}
+.bm-sc-acts{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:12px}
+.bm-sc-btn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 13px;
+  border-radius:10px;border:1px solid var(--sc);background:var(--sc);color:#fff;
+  font:600 12.5px/1 system-ui,Arial,sans-serif;cursor:pointer;text-decoration:none}
 /* P60d: Leaflet's .leaflet-container a {color:#0078A8} outranks .bm-sc-btn, so the
    <a> variant of the Waze button needs both higher specificity and !important. */
 .bm-sc .bm-sc-btn,
@@ -203,13 +214,14 @@
 .bm-sc a.bm-sc-btn:visited,
 .bm-sc a.bm-sc-btn:hover{color:#fff!important;text-decoration:none;display:inline-flex;
   align-items:center;justify-content:center;gap:6px}
-.bm-sc-ico{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;
-  border-radius:9px;border:1px solid #dde4df;background:#fff;color:#4a5852;cursor:pointer;text-decoration:none}
+.bm-sc-ico{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;
+  border-radius:10px;border:1px solid #dde4df;background:#fff;color:#4a5852;cursor:pointer;text-decoration:none}
 .bm-sc-ico:hover{border-color:var(--sc);color:var(--sc)}
-.bm-sc-pin{flex:1 1 100%;margin-left:0;display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 11px;
-  border-radius:9px;border:1px solid var(--sc);background:#fff;color:var(--sc);
+.bm-sc-pin{flex:1 1 100%;margin-left:0;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  height:34px;padding:0 11px;border-radius:10px;border:1px solid var(--sc);
+  background:var(--sc-soft);color:var(--sc-ink);
   font:600 12px/1 system-ui,Arial,sans-serif;cursor:pointer;white-space:nowrap}
-.bm-sc-pin.is-on{background:var(--sc);color:#fff}
+.bm-sc-pin.is-on{background:#fff;border-style:dashed;color:var(--sc-ink)}
 .bm-sc-ft{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding-top:8px;
   border-top:1px solid #eef2ef;font-size:11px;color:#6c7f74}
 .bm-sc-coords{font:600 11.5px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#4a5852}
@@ -9470,11 +9482,63 @@ async function resolveGbifTaxonKey(species) {
 
 // P60b: one compact "source card" shared by the Elurikkus single sighting popup,
 // the pinned elu:/ebird: pin popups and the GBIF occurrence popup.
-// opts = {source:'elu'|'ebird'|'gbif', species, sci, pinned, dateTxt, ago,
+// P61: the card takes the species-card anatomy - a blurred avatar band tinted with
+// the source colour, a 56px avatar overlapping it, and icon rows instead of a dl.
+// opts = {source:'elu'|'ebird'|'gbif', species, sci, pinned, dateTxt, dateIso, ago,
 //         rows:[[label, value] | [label, value, 'code'], ...], note, lat, lon,
 //         wazeUrl, mapsUrl, pinId, gbifKey}
 // Labels are literal HTML (Estonian via entities); values are escaped here.
 // Rows whose value is empty are skipped.
+
+// P61: render the card's detail rows as icon + text lines. The row input shape is
+// unchanged; the icon and the label treatment are picked from the label text.
+function _bmScRowsHtml(rows){
+  var esc = (typeof escapeHtml === 'function') ? escapeHtml : function(s){ return String(s == null ? '' : s); };
+  var list = Array.isArray(rows) ? rows : [];
+  var F = '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">';
+  var K = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor"'
+    + ' stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+  var icoPin = F + '<path d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3.3 4.5 8.5 4.5 8.5s4.5-5.2 4.5-8.5A4.5 4.5 0 0 0 8 1.5Z'
+    + 'm0 6.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4Z"/></svg>';
+  var icoUser = F + '<path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 1.5c-2.7 0-5 1.4-5 3.1V14h10v-1.4c0-1.7-2.3-3.1-5-3.1Z"/></svg>';
+  var icoEye = F + '<path d="M8 3C4.5 3 1.8 5.5 1 8c.8 2.5 3.5 5 7 5s6.2-2.5 7-5c-.8-2.5-3.5-5-7-5Zm0 8a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z'
+    + 'm0-1.6a1.4 1.4 0 1 0 0-2.8 1.4 1.4 0 0 0 0 2.8Z"/></svg>';
+  var icoDot = F + '<circle cx="8" cy="8" r="3"></circle></svg>';
+  var icoHash = K + '<path d="M6.2 2.2 4.6 13.8M11.4 2.2 9.8 13.8M2.4 5.6h11.2M1.8 10.4h11.2"></path></svg>';
+  var icoDoc = K + '<path d="M9.3 1.8H4.6a1 1 0 0 0-1 1v10.4a1 1 0 0 0 1 1h6.8a1 1 0 0 0 1-1V4.5L9.3 1.8Z"></path>'
+    + '<path d="M9.3 1.8v2.7h3.1"></path></svg>';
+  var icoDb = K + '<path d="M13 3.6c0 1-2.2 1.8-5 1.8S3 4.6 3 3.6 5.2 1.8 8 1.8s5 .8 5 1.8Z"></path>'
+    + '<path d="M3 3.6v8.8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V3.6"></path>'
+    + '<path d="M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8"></path></svg>';
+  var out = '';
+  for (var i = 0; i < list.length; i++) {
+    var r = list[i] || [];
+    var label = String(r[0] == null ? '' : r[0]);
+    var val = r[1];
+    if (val == null || String(val).trim() === '') continue;
+    var txt = String(val);
+    var v = (r[2] === 'code') ? ('<code>' + esc(txt) + '</code>') : esc(txt);
+    var ico = icoDot;
+    var k = 'x';
+    var body = '<span class="bm-sc-m">' + label + ':</span> ' + v;
+    if (label === 'Koht') { ico = icoPin; k = 'koht'; body = v; }
+    else if (label === 'Kogus') {
+      ico = icoHash; k = 'kogus';
+      var n = parseFloat(txt.replace(',', '.'));
+      body = Number.isFinite(n) ? (v + ' ' + (Math.abs(n) === 1 ? 'isend' : 'isendit')) : v;
+    }
+    else if (label === 'K&auml;itumine') {
+      ico = icoEye; k = 'bhv';
+      body = '<span class="bm-sc-m">K&auml;itumine:</span> <code>' + esc(txt) + '</code>';
+    }
+    else if (label === 'Vaatleja') { ico = icoUser; k = 'obr'; body = v; }
+    else if (label === 'Kirje t&uuml;&uuml;p') { ico = icoDoc; k = 'basis'; }
+    else if (label === 'Andmestik') { ico = icoDb; k = 'ds'; }
+    out += '<div class="bm-sc-row" data-k="' + k + '" title="' + esc(txt) + '">' + ico + '<span>' + body + '</span></div>';
+  }
+  return out;
+}
+
 function _bmScCard(opts){
   var o = opts || {};
   var esc = (typeof escapeHtml === 'function') ? escapeHtml : function(s){ return String(s == null ? '' : s); };
@@ -9493,23 +9557,36 @@ function _bmScCard(opts){
   try { if (typeof getDisplayAvatar === 'function') av = getDisplayAvatar(o.species) || ''; } catch(e){}
   av = String(av).replace(/['"()\\]/g, '');
   var avStyle = av ? ' style="background-image:url(\'' + esc(av) + '\')"' : '';
+  // No avatar -> no wash; the band then shows the soft source tint alone.
+  var wash = av ? ('<div class="bm-sc-wash"' + avStyle + '></div>') : '';
 
+  // Scientific name: the caller's value wins, else the curated local table.
+  var sci = String(o.sci || '');
+  if (!sci) {
+    try { sci = String((typeof SPECIES_SCINAMES !== 'undefined' && SPECIES_SCINAMES[o.species]) || ''); } catch(e){}
+  }
+  sci = sci.split(' (')[0].split(',')[0].trim();
+
+  // Date line: an explicit 'ago' wins; otherwise a relative word derived from the
+  // Europe/Tallinn calendar day, the same way the species card computes it.
   var when = '';
   if (o.dateTxt) {
-    when = '<div class="bm-sc-when"><span class="bm-sc-when-d">' + esc(o.dateTxt) + '</span>'
-      + (o.ago ? '<span class="bm-sc-ago"> &middot; ' + esc(o.ago) + '</span>' : '')
-      + '</div>';
-  }
-
-  var rows = Array.isArray(o.rows) ? o.rows : [];
-  var kv = '';
-  for (var i = 0; i < rows.length; i++) {
-    var r = rows[i] || [];
-    var val = r[1];
-    if (val == null || String(val).trim() === '') continue;
-    var txt = String(val);
-    var body = (r[2] === 'code') ? ('<code>' + esc(txt) + '</code>') : esc(txt);
-    kv += '<dt>' + r[0] + '</dt><dd title="' + esc(txt) + '">' + body + '</dd>';
+    var relHtml = o.ago ? esc(String(o.ago)) : '';
+    if (!relHtml && o.dateIso) {
+      try {
+        var _a = Date.parse(String(o.dateIso).slice(0, 10) + 'T00:00:00Z');
+        var _b = Date.parse(new Intl.DateTimeFormat('en-CA', { timeZone: EE_TZ }).format(new Date()) + 'T00:00:00Z');
+        if (Number.isFinite(_a) && Number.isFinite(_b)) {
+          var _d = Math.round((_b - _a) / 86400000);
+          if (_d === 0) relHtml = 'T&auml;na';
+          else if (_d === 1) relHtml = 'Eile';
+          else if (_d >= 2 && _d <= 6) relHtml = _d + ' p&auml;eva tagasi';
+        }
+      } catch(e){}
+    }
+    when = '<div class="bm-sc-when">'
+      + (relHtml ? ('<b class="bm-sc-rel">' + relHtml + '</b> &middot; ') : '')
+      + '<span class="bm-sc-when-d">' + esc(o.dateTxt) + '</span></div>';
   }
 
   var lat = Number(o.lat), lon = Number(o.lon);
@@ -9522,18 +9599,22 @@ function _bmScCard(opts){
   var icoMap = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
     + ' stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>'
     + '<circle cx="12" cy="10" r="3"></circle></svg>';
+  var icoTack = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"'
+    + ' stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M10 1.6 14.4 6l-1.8 1.8-.7 3.2-7-7 3.2-.7L10 1.6Z"></path>'
+    + '<path d="M4.9 11.1 1.6 14.4"></path></svg>';
   var acts = '';
   if (hasXY) {
     acts += o.wazeUrl
-      ? '<a class="bm-sc-btn" href="' + esc(o.wazeUrl) + '" target="_blank" rel="noopener">' + icoWaze + 'Waze</a>'
-      : '<button class="bm-sc-btn" onclick="openWaze(' + lat + ',' + lon + ')">' + icoWaze + 'Waze</button>';
+      ? '<a class="bm-sc-btn" href="' + esc(o.wazeUrl) + '" target="_blank" rel="noopener">' + icoWaze + 'Ava Waze&#39;is</a>'
+      : '<button class="bm-sc-btn" onclick="openWaze(' + lat + ',' + lon + ')">' + icoWaze + 'Ava Waze&#39;is</button>';
     acts += '<button class="bm-sc-ico" title="Kopeeri koordinaadid" onclick="copyCoords(' + lat + ',' + lon + ')">' + icoCopy + '</button>';
     if (o.mapsUrl) acts += '<a class="bm-sc-ico" title="Google Maps" href="' + esc(o.mapsUrl) + '" target="_blank" rel="noopener">' + icoMap + '</a>';
   }
   if (o.pinId) {
     acts += '<button class="bm-sc-pin' + (o.pinned ? ' is-on' : '') + '"'
       + ' onclick="window.__toggleGbifPin(\'' + o.pinId + '\')">'
-      + '&#128204; ' + (o.pinned ? 'Eemalda n&otilde;el' : 'Kinnita n&otilde;elaga') + '</button>';
+      + icoTack + (o.pinned ? 'Eemalda n&otilde;el' : 'Kinnita n&otilde;elaga') + '</button>';
   }
 
   var ftRight = (src === 'elu') ? 't&auml;pne asukoht'
@@ -9543,21 +9624,22 @@ function _bmScCard(opts){
   var coordTxt = hasXY ? (lat.toFixed(5) + ', ' + lon.toFixed(5)) : '';
 
   return '<div class="bm-sc bm-sc--' + src + '">'
-    + '<span class="bm-sc-tag">' + tag + '</span>'
+    + '<div class="bm-sc-band">' + wash + '<span class="bm-sc-tag">' + tag + '</span></div>'
+    + '<div class="bm-sc-body">'
     + '<div class="bm-sc-head">'
     + '<div class="bm-sc-av"' + avStyle + '></div>'
     + '<div class="bm-sc-id">'
     + '<div class="bm-sc-name">' + esc(o.species) + rar + '</div>'
-    + ((src === 'gbif' && o.sci) ? '<div class="bm-sc-sci">' + esc(o.sci) + '</div>' : '')
-    + when
+    + (sci ? '<div class="bm-sc-sci">' + esc(sci) + '</div>' : '')
     + '</div></div>'
-    + '<dl class="bm-sc-kv">' + kv + '</dl>'
+    + when
+    + '<div class="bm-sc-rows">' + _bmScRowsHtml(o.rows) + '</div>'
     + (o.note ? '<div class="bm-sc-note">' + o.note + '</div>' : '')
     + (acts ? '<div class="bm-sc-acts">' + acts + '</div>' : '')
     + ((coordTxt || ftRight)
         ? ('<div class="bm-sc-ft"><span class="bm-sc-coords">' + esc(coordTxt) + '</span><span>' + ftRight + '</span></div>')
         : '')
-    + '</div>';
+    + '</div></div>';
 }
 
 // GBIF basisOfRecord -> Estonian label; unknown values fall through lowercased.
@@ -9580,13 +9662,8 @@ function _bmGbifPatchCard(popup, d){
   var kohtVal = d.locality || d.municipality || d.county || '';
   if (!kohtVal) {
     try {
-      var dts = card.querySelectorAll('.bm-sc-kv dt');
-      for (var j = 0; j < dts.length; j++) {
-        if (dts[j].textContent === 'Koht' && dts[j].nextElementSibling) {
-          kohtVal = dts[j].nextElementSibling.getAttribute('title') || '';
-          break;
-        }
-      }
+      var kEl = card.querySelector('.bm-sc-row[data-k="koht"]');
+      if (kEl) kohtVal = kEl.getAttribute('title') || '';
     } catch(e){}
   }
   var rows = [
@@ -9596,14 +9673,9 @@ function _bmGbifPatchCard(popup, d){
     ['Kirje t&uuml;&uuml;p', _bmGbifBasisEt(d.basisOfRecord)],
     ['Andmestik', d.datasetName || '']
   ];
-  var html = '';
-  for (var i = 0; i < rows.length; i++) {
-    var v = rows[i][1];
-    if (v == null || String(v).trim() === '') continue;
-    html += '<dt>' + rows[i][0] + '</dt><dd title="' + esc(String(v)) + '">' + esc(String(v)) + '</dd>';
-  }
-  var dl = card.querySelector('.bm-sc-kv');
-  if (dl && html) dl.innerHTML = html;
+  var html = _bmScRowsHtml(rows);
+  var box = card.querySelector('.bm-sc-rows');
+  if (box && html) box.innerHTML = html;
   // eventDate carries a real time only when it has a T component that is not midnight.
   try {
     var ev = String(d.eventDate || '');
@@ -9615,7 +9687,7 @@ function _bmGbifPatchCard(popup, d){
         : '';
       var dEl = card.querySelector('.bm-sc-when-d');
       if (tTxt && dEl && !card.querySelector('.bm-sc-when-t')) {
-        dEl.insertAdjacentHTML('afterend', '<b class="bm-sc-when-t"> ' + esc(tTxt) + '</b>');
+        dEl.insertAdjacentHTML('afterend', ' <b class="bm-sc-when-t">' + esc(tTxt) + '</b>');
       }
     }
   } catch(e){}
@@ -9797,6 +9869,7 @@ function renderPinnedGbifMarkers(){
           species: pin.species,
           pinned: true,
           dateTxt: __dTxt,
+          dateIso: pin.date ? String(pin.date).slice(0, 10) : '',
           rows: __det ? [
             ['Koht', __koht],
             ['Kogus', (__det.n == null ? '' : String(__det.n))],
@@ -9933,6 +10006,7 @@ function _eluObsPopupHtml(speciesKey, o, sid){
     species: speciesKey,
     pinned: !!(sid && typeof pinnedGbif !== 'undefined' && pinnedGbif.has(sid)),
     dateTxt: dTxt,
+    dateIso: o.d ? String(o.d).slice(0, 10) : '',
     rows: [
       ['Koht', koht],
       ['Kogus', (o.n == null ? '' : String(o.n))],

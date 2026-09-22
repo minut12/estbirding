@@ -142,6 +142,7 @@
 .bm-card-rows{margin-top:10px;display:flex;flex-direction:column;gap:6px}
 .bm-card-row{display:flex;gap:8px;align-items:flex-start;color:#4a5852;font-size:12.5px}
 .bm-card-row svg{flex:0 0 auto;margin-top:2px;color:#6c7f74}
+.bm-card-row span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .bm-card-row code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   background:#f2f8f4;border-radius:5px;padding:0 4px;color:#222a26}
 .bm-card-note{display:flex;gap:8px;align-items:flex-start;margin-top:10px;padding:8px 10px;border-radius:10px;
@@ -2722,6 +2723,7 @@ async function computeOcc7Offset(text, tryFetchHtml, signal){
   const datesIso = [];
   let occ7 = 0;
   let newestIso = '';
+  let newestRawDate = '';
   let oldestIso = '';
   let pages = 0;
   let rowsParsedTotal = 0;
@@ -2734,7 +2736,7 @@ async function computeOcc7Offset(text, tryFetchHtml, signal){
     rowsParsedTotal += rows.length;
     pages++;
     if(rows.length === 0) break;
-    if(page === 0) newestIso = rows[0].iso;
+    if(page === 0){ newestIso = rows[0].iso; newestRawDate = String(rows[0].rawDate || ''); }
     oldestIso = rows[rows.length - 1].iso;
     let anyWithin = false;
     for(const r of rows){
@@ -2754,7 +2756,7 @@ async function computeOcc7Offset(text, tryFetchHtml, signal){
     if(oldestIso && oldestIso < cutoffIso) break;
     await new Promise(function(r){ setTimeout(r, 250); });
   }
-  return { occ7: occ7, newestIso: newestIso, oldestIso: oldestIso, cutoffIso: cutoffIso, pagesScanned: pages, rowsParsedTotal: rowsParsedTotal, unique: seen.size, pagingMode: 'offset', datesIso: datesIso };
+  return { occ7: occ7, newestIso: newestIso, newestRawDate: newestRawDate, oldestIso: oldestIso, cutoffIso: cutoffIso, pagesScanned: pages, rowsParsedTotal: rowsParsedTotal, unique: seen.size, pagingMode: 'offset', datesIso: datesIso };
 }
 async function computeOcc7MultiPage(species, signal, maxPages){
   const fetcher = function(u, sig){ return tryFetch(u, { signal: sig, cache:'no-store' }); };
@@ -3606,7 +3608,7 @@ function parseEluDetailExact(detailHtml){
   const country = pick(/Country\s+(.+?)\s+County\b/i);
   const county = pick(/County\s+(.+?)\s+Municipality\b/i);
   const municipality = pick(/Municipality\s+(.+?)\s+Locality\b/i);
-  const locality = pick(/Locality\s+(.+?)\s+(?:2x2 km IUCN grid|10x10 grid|Birdatlas|EEA reference grid|Districts|Communes|Eesti omavalitsused|Date loaded\b|$)/i);
+  const locality = pick(/Locality\s+(.+?)\s+(?:Eesti kihelkonnad|Eesti maakonnad|2x2 km IUCN grid|10x10 grid|Birdatlas|EEA reference grid|Districts|Communes|Eesti omavalitsused|Date loaded\b|$)/i);
   const districts = pick(/Districts\s+(.+?)\s+(?:Eesti omavalitsused|$)/i);
   const communes = pick(/Communes\s+(.+?)\s+(?:Birdatlas|Eesti omavalitsused|Districts|$)/i);
   const eestiOmavalitsused = pick(/Eesti omavalitsused\s+(.+?)\s+(?:Districts|2x2 km IUCN grid|10x10 grid|Birdatlas|EEA reference grid|$)/i);
@@ -4557,7 +4559,7 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
     items: []
   };
 }
-function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, occ7, detailFields, rowExtra){
+function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, occ7, detailFields, rowExtra, newestRawDate){
   const p = points[species] = points[species] || {};
   const oldLat = Number.isFinite(Number(p.lat)) ? Number(p.lat) : null;
   const oldLon = Number.isFinite(Number(p.lon)) ? Number(p.lon) : null;
@@ -4648,6 +4650,12 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
     }
   }
   if(newestIso) p.t = newestIso;
+  if(newestIso){
+    var _m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(newestRawDate || ''));
+    var _dt = (_m && !(_m[2] === '00' && _m[3] === '00' && (!_m[4] || _m[4] === '00')) && _m[1] === String(newestIso).slice(0,10))
+      ? (_m[1] + 'T' + _m[2] + ':' + _m[3] + ':' + (_m[4] || '00') + 'Z') : null;
+    p.t_dt = _dt;
+  }
   if(Number.isFinite(Number(occ7))){ p.occ7 = Number(occ7); p.occ7Elu = Number(occ7); p.occ7EluUpdated = new Date().toISOString(); }
   p.src = 'Elurikkus';
   p.openUrl = String(detailUrl || '').trim() || p.openUrl || '';
@@ -4657,7 +4665,7 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
   if(detailExact.country) p.country = detailExact.country;
   if(detailExact.county) p.county = detailExact.county;
   if(detailExact.municipality) p.municipality = detailExact.municipality;
-  if(detailExact.locality) p.locality = detailExact.locality;
+  if((rowExtra && rowExtra.locality) || detailExact.locality) p.locality = (rowExtra && rowExtra.locality) || detailExact.locality;
   if(rowExtra && rowExtra.collectors) p.collectors = rowExtra.collectors;
   if(rowExtra && rowExtra.behavior) p.behavior = rowExtra.behavior;
   if(rowExtra && rowExtra.individualCount !== undefined && rowExtra.individualCount !== null && String(rowExtra.individualCount).trim() !== '') p.individualCount = rowExtra.individualCount;
@@ -4667,7 +4675,7 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
   p.eluExtra.collectors = String((rowExtra && rowExtra.collectors) || p.eluExtra.collectors || '');
   p.eluExtra.behavior = String((rowExtra && rowExtra.behavior) || p.eluExtra.behavior || '');
   p.eluExtra.municipality = String(detailExact.municipality || p.eluExtra.municipality || '');
-  p.eluExtra.locality = String(detailExact.locality || (rowExtra && rowExtra.locality) || p.eluExtra.locality || '');
+  p.eluExtra.locality = String((rowExtra && rowExtra.locality) || detailExact.locality || p.eluExtra.locality || '');
   p.eluExtra.county = String(detailExact.county || p.eluExtra.county || '');
   p.eluExtra.districts = String(detailExact.districts || p.eluExtra.districts || '');
   p.eluExtra.communes = String(detailExact.communes || p.eluExtra.communes || '');
@@ -4770,6 +4778,7 @@ async function autoFetchCoords(key, searchUrl, signal){
     occ7 = occ7Page1;
   }
   const latestIso = String((occ7Multi && occ7Multi.newestIso) || '') || newestIso || occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '');
+  const latestRawDate = String((occ7Multi && occ7Multi.newestRawDate) || (rowExtra && rowExtra.dateText) || '');
   let finalOcc7 = Number.isFinite(Number(occ7)) ? Number(occ7) : 0;
   if(latestIso && isWithin7dAny(latestIso) && finalOcc7 < 1) finalOcc7 = 1;
   if(finalOcc7 === 0 && prevOcc7 != null && prevOcc7 > 0 && latestIso && isWithin7dAny(latestIso)) finalOcc7 = prevOcc7;
@@ -4821,7 +4830,7 @@ async function autoFetchCoords(key, searchUrl, signal){
     eestiOmavalitsused: detailExact.eestiOmavalitsused || '',
     coordsStatus: (Number.isFinite(detailExact.lat) && Number.isFinite(detailExact.lon)) ? 'public' : 'restricted_or_missing'
   };
-  const result = applyElurikkusExactCoords(species, detailHtml, detailUrl, latestIso, finalOcc7, detailFields, rowExtra);
+  const result = applyElurikkusExactCoords(species, detailHtml, detailUrl, latestIso, finalOcc7, detailFields, rowExtra, latestRawDate);
   p.eluExtra = p.eluExtra || {};
   p.eluExtra.__coordDebug = {
     detailUrl,
@@ -10187,8 +10196,8 @@ function buildPopupHtml(key, p){
   const SVG_EXT = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M9 2h5v5h-1.5V4.56L7.53 9.53 6.47 8.47l4.97-4.97H9V2Z"/><path fill="currentColor" d="M3 4h4v1.5H4.5v6h6V9H12v4H3V4Z"/></svg>';
   const rarPill = _rarBadge ? `<div class="bm-card-rar" style="color:${_rarColor}">${escapeHtml(_rarBadge)}</div>` : '';
   const rows = [
-    (!coordsApprox && locText) ? `<div class="bm-card-row">${SVG_PIN}<span>${escapeHtml(locText)}</span></div>` : '',
-    (col !== '-') ? `<div class="bm-card-row">${SVG_USER}<span>${escapeHtml(col)}</span></div>` : '',
+    (!coordsApprox && locText) ? `<div class="bm-card-row">${SVG_PIN}<span title="${escapeHtml(locText)}">${escapeHtml(locText)}</span></div>` : '',
+    (col !== '-') ? `<div class="bm-card-row">${SVG_USER}<span title="${escapeHtml(col)}">${escapeHtml(col)}</span></div>` : '',
     (beh !== '-') ? `<div class="bm-card-row">${SVG_EYE}<span>K&auml;itumine: <code>${escapeHtml(beh)}</code></span></div>` : ''
   ].join('');
   const approxNote = coordsApprox

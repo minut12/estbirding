@@ -161,6 +161,57 @@
 .bm-card-coords{font:600 11.5px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#4a5852;cursor:pointer}
 .bm-card-coords:hover{color:#2d7a4b}
 .bm-card-foot-note{flex:0 0 auto}
+/* P60b: compact source card (Elurikkus single sighting / pinned elu+eBird / GBIF) */
+.leaflet-popup-content-wrapper:has(.bm-sc){border-radius:14px;padding:0;overflow:hidden}
+.leaflet-popup-content:has(.bm-sc){margin:0;width:290px!important}
+.bm-sc{--sc:#4f46e5;--sc-soft:#eceafd;--sc-ink:#3730a3;
+  width:290px;max-width:290px;box-sizing:border-box;background:#fff;border-radius:14px;
+  padding:12px 14px;font:400 13px/1.45 system-ui,Arial,sans-serif;color:#222a26}
+.bm-sc--elu{--sc:#2c7fb8;--sc-soft:#e6f1f9;--sc-ink:#1d5c88}
+.bm-sc--ebird{--sc:#0e7490;--sc-soft:#e0f2f5;--sc-ink:#155e75}
+.bm-sc--gbif{--sc:#4f46e5;--sc-soft:#eceafd;--sc-ink:#3730a3}
+.bm-sc-tag{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--sc-soft);color:var(--sc-ink);
+  font:700 10.5px/1.6 system-ui,Arial,sans-serif;letter-spacing:.02em}
+.bm-sc-head{display:flex;gap:10px;align-items:flex-start;margin-top:9px}
+.bm-sc-av{flex:0 0 auto;width:40px;height:40px;border-radius:50%;box-sizing:border-box;
+  border:2px solid #fff;outline:1.5px solid var(--sc);background:#eef2f5 center/cover no-repeat}
+.bm-sc-id{min-width:0;flex:1 1 auto}
+.bm-sc-name{font:700 15.5px/1.25 system-ui,Arial,sans-serif;color:#222a26;overflow-wrap:anywhere}
+.bm-sc-rar{display:inline-block;margin-left:6px;padding:0 5px;border-radius:999px;background:#fff;border:1.5px solid;
+  font:800 9.5px/14px system-ui,Arial,sans-serif;vertical-align:2px}
+.bm-sc-sci{margin-top:1px;font-style:italic;font-size:11.5px;color:#6c7f74;overflow-wrap:anywhere}
+.bm-sc-when{margin-top:3px;font-size:12px;color:#4a5852}
+.bm-sc-when b{font-weight:700;color:#222a26}
+.bm-sc-ago{color:#6c7f74}
+.bm-sc-kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:10px 0 0}
+.bm-sc-kv:empty{display:none}
+.bm-sc-kv dt{font-size:11.5px;color:#6c7f74;white-space:nowrap}
+.bm-sc-kv dd{margin:0;font-size:12.5px;color:#222a26;overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bm-sc-kv dd code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  background:#f2f5f7;border-radius:5px;padding:1px 5px}
+.bm-sc-note{display:flex;gap:7px;margin-top:9px;padding:7px 9px;border-radius:9px;
+  background:#fff7ed;color:#9a3412;font-size:11.5px}
+.bm-sc-acts{display:flex;align-items:center;gap:7px;margin-top:11px}
+.bm-sc-btn{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 13px;border-radius:9px;
+  border:1px solid var(--sc);background:var(--sc);color:#fff;font:600 12.5px/1 system-ui,Arial,sans-serif;
+  cursor:pointer;text-decoration:none}
+.bm-sc-ico{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;
+  border-radius:9px;border:1px solid #dde4df;background:#fff;color:#4a5852;cursor:pointer;text-decoration:none}
+.bm-sc-ico:hover{border-color:var(--sc);color:var(--sc)}
+.bm-sc-pin{margin-left:auto;display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 11px;
+  border-radius:9px;border:1px solid var(--sc);background:#fff;color:var(--sc);
+  font:600 12px/1 system-ui,Arial,sans-serif;cursor:pointer;white-space:nowrap}
+.bm-sc-pin.is-on{background:var(--sc);color:#fff}
+.bm-sc-ft{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding-top:8px;
+  border-top:1px solid #eef2ef;font-size:11px;color:#6c7f74}
+.bm-sc-coords{font:600 11.5px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#4a5852}
+.bm-sc-ft a{color:var(--sc);text-decoration:none}
+.bm-sc-ft a:hover{text-decoration:underline}
+/* P60b: rarity tag on the small round markers */
+.bm-mk-rar{position:absolute;top:-5px;right:-8px;min-width:14px;height:14px;padding:0 3px;border-radius:999px;
+  background:#fff;border:1.5px solid;font:800 8px/11px system-ui,Arial,sans-serif;text-align:center;
+  box-sizing:border-box;pointer-events:none}
 .popupBtn{
   padding:6px 10px;
   border-radius:10px;
@@ -306,6 +357,7 @@
   /* GBIF mini markers */
   .gbif-mini-marker { background: transparent; border: none; }
   .gbif-mini-icon {
+    position: relative;
     width: 22px; height: 22px; border-radius: 50%;
     border: 2px solid #6366f1; background-size: cover;
     background-position: center; background-color: #e0e7ff;
@@ -9304,7 +9356,16 @@ function rarityToBorder(level, fallback){
   return (style && style.ringColor) || fallback || '#222';
 }
 // === GBIF functions ===
-function _gbifMiniIcon(avatarUrl, year) {
+// P60b: rarity tag for the small round markers. Returns '' when the species has
+// no rarity level, so unrated markers render exactly as before.
+function _bmMkRar(rarityLevel){
+  var lvl = rarityLevel || 'none';
+  var badge = (typeof rarityToBadge === 'function') ? rarityToBadge(lvl) : '';
+  if (!badge) return '';
+  var c = (typeof rarityToBorder === 'function') ? rarityToBorder(lvl, '#222') : '#222';
+  return '<b class="bm-mk-rar" style="border-color:' + c + ';color:' + c + '">' + badge + '</b>';
+}
+function _gbifMiniIcon(avatarUrl, year, rarityLevel) {
   var currentYear = new Date().getFullYear();
   var age = currentYear - (year || currentYear);
   var opacity = Math.max(0.3, 1 - (age * 0.07));
@@ -9312,7 +9373,8 @@ function _gbifMiniIcon(avatarUrl, year) {
   var bg = avatarUrl
     ? "background-image:url('" + avatarUrl + "')"
     : "background-color:#c7d2fe";
-  var html = '<div class="gbif-mini-icon" style="border-color:' + borderColor + ';opacity:' + opacity + ';' + bg + '"></div>';
+  var html = '<div class="gbif-mini-icon" style="border-color:' + borderColor + ';opacity:' + opacity + ';' + bg + '">'
+    + _bmMkRar(rarityLevel) + '</div>';
   return L.divIcon({
     html: html,
     className: 'gbif-mini-marker',
@@ -9395,6 +9457,178 @@ async function resolveGbifTaxonKey(species) {
   return null;
 }
 
+// P60b: one compact "source card" shared by the Elurikkus single sighting popup,
+// the pinned elu:/ebird: pin popups and the GBIF occurrence popup.
+// opts = {source:'elu'|'ebird'|'gbif', species, sci, pinned, dateTxt, ago,
+//         rows:[[label, value] | [label, value, 'code'], ...], note, lat, lon,
+//         wazeUrl, mapsUrl, pinId, gbifKey}
+// Labels are literal HTML (Estonian via entities); values are escaped here.
+// Rows whose value is empty are skipped.
+function _bmScCard(opts){
+  var o = opts || {};
+  var esc = (typeof escapeHtml === 'function') ? escapeHtml : function(s){ return String(s == null ? '' : s); };
+  var src = (o.source === 'gbif') ? 'gbif' : ((o.source === 'ebird') ? 'ebird' : 'elu');
+  var tag = (src === 'gbif') ? (o.pinned ? 'GBIF &middot; n&otilde;el kinnitatud' : 'GBIF &middot; kirje')
+          : (src === 'ebird') ? 'eBird &middot; n&otilde;el kinnitatud'
+          : (o.pinned ? 'Elurikkus &middot; n&otilde;el kinnitatud' : 'Elurikkus &middot; &uuml;ksikvaatlus');
+
+  var lvl = 'none';
+  try { if (window.getSpeciesMetaShared) lvl = (window.getSpeciesMetaShared(o.species) || {}).rarityLevel || 'none'; } catch(e){}
+  var badge = (typeof rarityToBadge === 'function') ? rarityToBadge(lvl) : '';
+  var rarCol = (typeof rarityToBorder === 'function') ? rarityToBorder(lvl, '#222') : '#222';
+  var rar = badge ? ' <b class="bm-sc-rar" style="border-color:' + rarCol + ';color:' + rarCol + '">' + esc(badge) + '</b>' : '';
+
+  var av = '';
+  try { if (typeof getDisplayAvatar === 'function') av = getDisplayAvatar(o.species) || ''; } catch(e){}
+  av = String(av).replace(/['"()\\]/g, '');
+  var avStyle = av ? ' style="background-image:url(\'' + esc(av) + '\')"' : '';
+
+  var when = '';
+  if (o.dateTxt) {
+    when = '<div class="bm-sc-when"><span class="bm-sc-when-d">' + esc(o.dateTxt) + '</span>'
+      + (o.ago ? '<span class="bm-sc-ago"> &middot; ' + esc(o.ago) + '</span>' : '')
+      + '</div>';
+  }
+
+  var rows = Array.isArray(o.rows) ? o.rows : [];
+  var kv = '';
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i] || [];
+    var val = r[1];
+    if (val == null || String(val).trim() === '') continue;
+    var txt = String(val);
+    var body = (r[2] === 'code') ? ('<code>' + esc(txt) + '</code>') : esc(txt);
+    kv += '<dt>' + r[0] + '</dt><dd title="' + esc(txt) + '">' + body + '</dd>';
+  }
+
+  var lat = Number(o.lat), lon = Number(o.lon);
+  var hasXY = Number.isFinite(lat) && Number.isFinite(lon);
+  var icoCopy = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+    + ' stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect>'
+    + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+  var icoMap = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+    + ' stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>'
+    + '<circle cx="12" cy="10" r="3"></circle></svg>';
+  var acts = '';
+  if (hasXY) {
+    acts += o.wazeUrl
+      ? '<a class="bm-sc-btn" href="' + esc(o.wazeUrl) + '" target="_blank" rel="noopener">Waze</a>'
+      : '<button class="bm-sc-btn" onclick="openWaze(' + lat + ',' + lon + ')">Waze</button>';
+    acts += '<button class="bm-sc-ico" title="Kopeeri koordinaadid" onclick="copyCoords(' + lat + ',' + lon + ')">' + icoCopy + '</button>';
+    if (o.mapsUrl) acts += '<a class="bm-sc-ico" title="Google Maps" href="' + esc(o.mapsUrl) + '" target="_blank" rel="noopener">' + icoMap + '</a>';
+  }
+  if (o.pinId) {
+    acts += '<button class="bm-sc-pin' + (o.pinned ? ' is-on' : '') + '"'
+      + ' onclick="window.__toggleGbifPin(\'' + o.pinId + '\')">'
+      + '&#128204; ' + (o.pinned ? 'Eemalda n&otilde;el' : 'Kinnita n&otilde;elaga') + '</button>';
+  }
+
+  var ftRight = (src === 'elu') ? 't&auml;pne asukoht'
+    : ((src === 'gbif' && o.gbifKey)
+        ? '<a href="https://www.gbif.org/occurrence/' + esc(String(o.gbifKey)) + '" target="_blank" rel="noopener">GBIF &#8599;</a>'
+        : '');
+  var coordTxt = hasXY ? (lat.toFixed(5) + ', ' + lon.toFixed(5)) : '';
+
+  return '<div class="bm-sc bm-sc--' + src + '">'
+    + '<span class="bm-sc-tag">' + tag + '</span>'
+    + '<div class="bm-sc-head">'
+    + '<div class="bm-sc-av"' + avStyle + '></div>'
+    + '<div class="bm-sc-id">'
+    + '<div class="bm-sc-name">' + esc(o.species) + rar + '</div>'
+    + ((src === 'gbif' && o.sci) ? '<div class="bm-sc-sci">' + esc(o.sci) + '</div>' : '')
+    + when
+    + '</div></div>'
+    + '<dl class="bm-sc-kv">' + kv + '</dl>'
+    + (o.note ? '<div class="bm-sc-note">' + o.note + '</div>' : '')
+    + (acts ? '<div class="bm-sc-acts">' + acts + '</div>' : '')
+    + ((coordTxt || ftRight)
+        ? ('<div class="bm-sc-ft"><span class="bm-sc-coords">' + esc(coordTxt) + '</span><span>' + ftRight + '</span></div>')
+        : '')
+    + '</div>';
+}
+
+// GBIF basisOfRecord -> Estonian label; unknown values fall through lowercased.
+function _bmGbifBasisEt(v){
+  var s = String(v == null ? '' : v);
+  if (s === 'HUMAN_OBSERVATION') return 'Vaatlus';
+  if (s === 'PRESERVED_SPECIMEN') return 'Muuseumieksemplar';
+  if (s === 'MACHINE_OBSERVATION') return 'Automaatvaatlus';
+  return s ? s.toLowerCase() : '';
+}
+
+// Patch an already-open GBIF card with the detail-endpoint fields. Never throws
+// away what the card already shows: an empty detail field keeps the existing row.
+function _bmGbifPatchCard(popup, d){
+  var el = popup && popup.getElement ? popup.getElement() : null;
+  if (!el || !d) return;
+  var card = el.querySelector('.bm-sc');
+  if (!card) return;
+  var esc = escapeHtml;
+  var kohtVal = d.locality || d.municipality || d.county || '';
+  if (!kohtVal) {
+    try {
+      var dts = card.querySelectorAll('.bm-sc-kv dt');
+      for (var j = 0; j < dts.length; j++) {
+        if (dts[j].textContent === 'Koht' && dts[j].nextElementSibling) {
+          kohtVal = dts[j].nextElementSibling.getAttribute('title') || '';
+          break;
+        }
+      }
+    } catch(e){}
+  }
+  var rows = [
+    ['Koht', kohtVal],
+    ['Kogus', (d.individualCount == null ? '' : String(d.individualCount))],
+    ['Vaatleja', d.recordedBy || ''],
+    ['Kirje t&uuml;&uuml;p', _bmGbifBasisEt(d.basisOfRecord)],
+    ['Andmestik', d.datasetName || '']
+  ];
+  var html = '';
+  for (var i = 0; i < rows.length; i++) {
+    var v = rows[i][1];
+    if (v == null || String(v).trim() === '') continue;
+    html += '<dt>' + rows[i][0] + '</dt><dd title="' + esc(String(v)) + '">' + esc(String(v)) + '</dd>';
+  }
+  var dl = card.querySelector('.bm-sc-kv');
+  if (dl && html) dl.innerHTML = html;
+  // eventDate carries a real time only when it has a T component that is not midnight.
+  try {
+    var ev = String(d.eventDate || '');
+    var m = ev.match(/T(\d{2}):(\d{2})/);
+    if (m && !(m[1] === '00' && m[2] === '00')) {
+      var ts = Date.parse(ev);
+      var tTxt = Number.isFinite(ts)
+        ? new Intl.DateTimeFormat('et-EE', { timeZone: EE_TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(ts))
+        : '';
+      var dEl = card.querySelector('.bm-sc-when-d');
+      if (tTxt && dEl && !card.querySelector('.bm-sc-when-t')) {
+        dEl.insertAdjacentHTML('afterend', '<b class="bm-sc-when-t"> ' + esc(tTxt) + '</b>');
+      }
+    }
+  } catch(e){}
+}
+
+// Fetch the GBIF occurrence detail once per key, on first popup open.
+// Cached + in-flight guarded; any failure leaves the card exactly as rendered.
+window.__bmGbifDetail = window.__bmGbifDetail || { cache: {}, inflight: {} };
+function _bmGbifBindDetail(marker, gbifKey){
+  var k = String(gbifKey == null ? '' : gbifKey);
+  if (!marker || !/^\d+$/.test(k)) return;
+  marker.on('popupopen', function(e){
+    var store = window.__bmGbifDetail;
+    var apply = function(d){ try { _bmGbifPatchCard(e.popup, d); } catch(_e){} };
+    if (store.cache[k]) { apply(store.cache[k]); return; }
+    if (store.inflight[k]) return;
+    store.inflight[k] = true;
+    var fetcher = (typeof gbifFetch === 'function') ? gbifFetch : fetch;
+    fetcher('https://api.gbif.org/v1/occurrence/' + k)
+      .then(function(res){ return (res && res.ok) ? res.json() : null; })
+      .then(function(d){ if (d) { store.cache[k] = d; apply(d); } })
+      .catch(function(){})
+      .then(function(){ delete store.inflight[k]; });
+  });
+}
+
 function buildGbifPopup(species, occ) {
   var gbifId = occ && occ.key != null ? String(occ.key) : '';
   if (gbifId) {
@@ -9405,49 +9639,45 @@ function buildGbifPopup(species, occ) {
       date: occ.eventDate ? String(occ.eventDate).slice(0,10) : null,
     };
   }
-  var pinned = gbifId && pinnedGbif.has(gbifId);
-  var pinBtn = gbifId
-    ? '<button onclick="window.__toggleGbifPin(\'' + gbifId + '\')" '
-      + 'style="padding:3px 8px;border:1px solid #6366f1;border-radius:6px;'
-      + 'background:#eef2ff;color:#4338ca;font-size:11px;cursor:pointer">'
-      + (pinned ? '📌 Eemalda nõel' : '📌 Kinnita nõelaga')
-      + '</button>'
-    : '';
   var lat = Number(occ.decimalLatitude).toFixed(4);
   var lon = Number(occ.decimalLongitude).toFixed(4);
-  var coords = lat + ', ' + lon;
   var dateStr = occ.eventDate
-    ? occ.eventDate.slice(0, 10)
-    : (occ.year ? occ.year + (occ.month ? '-' + String(occ.month).padStart(2,'0') : '') : '?');
-  var locParts = [occ.locality, occ.stateProvince].filter(Boolean);
-  var locStr = locParts.length ? locParts.join(', ') : '';
+    ? String(occ.eventDate).slice(0, 10)
+    : (occ.year ? occ.year + (occ.month ? '-' + String(occ.month).padStart(2,'0') : '') : '');
+  var dateTxt = '';
+  if (dateStr) {
+    dateTxt = (typeof formatDateEE === 'function') ? formatDateEE(dateStr) : String(dateStr);
+    if (!dateTxt || dateTxt === '-') dateTxt = String(dateStr);
+  }
+  var yr = Number(occ.year);
+  if (!Number.isFinite(yr) && dateStr) yr = parseInt(String(dateStr).slice(0,4), 10);
+  var ago = '';
+  if (Number.isFinite(yr)) {
+    var diff = new Date().getFullYear() - yr;
+    if (diff === 1) ago = '1 aasta tagasi';
+    else if (diff > 1) ago = diff + ' aastat tagasi';
+  }
   var cached = gbifTaxonKeys[species] || {};
   var displaySci = cached.scientificName || SPECIES_SCINAMES[species] || '';
-  var sciLine = displaySci
-    ? '<br><small style="color:#64748b;font-style:italic">' + escapeHtml(displaySci) + '</small>'
+  var note = (cached.warning || (cached.resolvedVia && cached.resolvedVia.indexOf('fallback') !== -1))
+    ? '&#9888;&#65039; Kontrollimata vaste'
     : '';
-  var warningLine = (cached.warning || (cached.resolvedVia && cached.resolvedVia.indexOf('fallback') !== -1))
-    ? '<br><small style="color:#f59e0b">&#9888;&#65039; Kontrollimata vaste</small>'
-    : '';
-  var wazeUrl = 'https://waze.com/ul?ll=' + lat + ',' + lon + '&navigate=yes';
-  var mapsUrl = 'https://www.google.com/maps?q=' + lat + ',' + lon;
-  var btnStyle = 'padding:3px 8px;border:1px solid #6366f1;border-radius:6px;background:#eef2ff;color:#4338ca;font-size:11px;cursor:pointer;text-decoration:none';
-  return '<div style="min-width:200px">'
-    + '<b>' + escapeHtml(species) + '</b>'
-    + sciLine
-    + '<br><small>Kuupäev: ' + escapeHtml(dateStr) + '</small>'
-    + (locStr ? '<br><small>Koht: ' + escapeHtml(locStr) + '</small>' : '')
-    + '<br><small>Aasta: ' + (occ.year || '?') + '</small>'
-    + '<br><small>Koordinaadid: ' + coords + '</small>'
-    + warningLine
-    + '<br><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
-    + '<button onclick="navigator.clipboard.writeText(\'' + coords + '\').then(()=>{this.textContent=\'Kopeeritud!\';setTimeout(()=>{this.textContent=\'Kopeeri\'},1500)})" style="' + btnStyle + '">Kopeeri</button>'
-    + '<a href="' + wazeUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Waze</a>'
-    + '<a href="' + mapsUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Maps</a>'
-    + pinBtn
-    + '</div>'
-    + '<div style="margin-top:4px"><small style="color:#6366f1">GBIF</small></div>'
-    + '</div>';
+  return _bmScCard({
+    source: 'gbif',
+    species: species,
+    sci: displaySci,
+    pinned: !!(gbifId && pinnedGbif.has(gbifId)),
+    dateTxt: dateTxt,
+    ago: ago,
+    rows: [['Koht', occ.locality || occ.stateProvince || '']],
+    note: note,
+    lat: Number(occ.decimalLatitude),
+    lon: Number(occ.decimalLongitude),
+    wazeUrl: 'https://waze.com/ul?ll=' + lat + ',' + lon + '&navigate=yes',
+    mapsUrl: 'https://www.google.com/maps?q=' + lat + ',' + lon,
+    pinId: gbifId,
+    gbifKey: /^\d+$/.test(gbifId) ? gbifId : null
+  });
 }
 
 async function toggleGbifData(species) {
@@ -9497,9 +9727,10 @@ async function toggleGbifData(species) {
       var lon = occ.decimalLongitude;
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
       if (occ.key != null && pinnedGbif.has(String(occ.key))) continue; // pinned occ is drawn by the persistent pin layer
-      var icon = _gbifMiniIcon(avatarUrl, occ.year);
+      var icon = _gbifMiniIcon(avatarUrl, occ.year, (window.getSpeciesMetaShared ? ((getSpeciesMetaShared(species)||{}).rarityLevel || 'none') : 'none'));
       var m = L.marker([lat, lon], { icon: icon });
       m.bindPopup(buildGbifPopup(species, occ));
+      _bmGbifBindDetail(m, occ.key);
       m.addTo(map);
       markerList.push(m);
     }
@@ -9527,51 +9758,44 @@ function renderPinnedGbifMarkers(){
     pinnedGbif.forEach(function(pin, id){
       if (!Number.isFinite(pin.lat) || !Number.isFinite(pin.lon)) return;
       // Keep the occ registry fresh so the unpin button works even with no live marker.
-      __gbifOccById[id] = { species: pin.species, lat: pin.lat, lon: pin.lon, date: pin.date };
+      __gbifOccById[id] = { species: pin.species, lat: pin.lat, lon: pin.lon, date: pin.date, details: (pin.details || null) };
       var avatarUrl = getDisplayAvatar(pin.species);
-      var icon, popupHtml;
+      var icon, popupHtml, __detailKey = null;
       if (id.indexOf('ebird:') === 0 || id.indexOf('elu:') === 0) {
         var isEbird = id.indexOf('ebird:') === 0;
         var srcColor = isEbird ? '#f59e0b' : '#1E7F3E';            // orange eBird / green eElu
-        var srcBg = isEbird ? '#fef3c7' : '#dcfce7';
-        var srcText = isEbird ? '#92400e' : '#166534';
-        var srcLabel = isEbird ? 'eBird' : 'eElurikkus';
         var hasAv = !!(avatarUrl && avatarUrl.indexOf('placeholder') === -1);
         var letter = String(pin.species || '?').charAt(0).toUpperCase();
-        icon = _eluObsAvatarIcon(hasAv ? avatarUrl : '', srcColor, 'solid', 3, 0.95, letter);
-        var dateFmt = pin.date ? String(pin.date).replace(/^(\d{4})-(\d{2})-(\d{2}).*/, '$3.$2.$1') : '?';
-        var pinCoords = Number(pin.lat).toFixed(5) + ', ' + Number(pin.lon).toFixed(5);
-        var pinCopyBtn = '<button '
-          + "onclick=\"navigator.clipboard.writeText('" + pinCoords + "').then(function(){"
-          + "this.textContent='Kopeeritud!';var b=this;setTimeout(function(){b.textContent='Kopeeri'},1500)}.bind(this))\" "
-          + 'style="padding:3px 8px;border:1px solid ' + srcColor + ';border-radius:6px;'
-          + 'background:' + srcBg + ';color:' + srcText + ';font-size:11px;cursor:pointer">Kopeeri</button>';
-        // Rich detail lines (elu pins carry pin.details; GBIF/eBird/legacy pins have
-        // null → sparse popup, no regression). Mirrors _eluObsPopupHtml's labels.
+        icon = _eluObsAvatarIcon(hasAv ? avatarUrl : '', srcColor, 'solid', 3, 0.95, letter, (window.getSpeciesMetaShared ? ((getSpeciesMetaShared(pin.species)||{}).rarityLevel || 'none') : 'none'));
+        // Rich detail lines (elu pins carry pin.details; eBird/legacy pins have null
+        // -> date + actions only, no regression). Same keys as _eluObsPopupHtml.
         var __det = pin.details || null;
-        var __detailHtml = '';
-        if (__det) {
-          var __koht = String(__det.loc || '').trim();
-          if (__det.cty) __koht = __koht ? (__koht + ', ' + String(__det.cty)) : String(__det.cty);
-          if (__koht) __detailHtml += '<div>koht: ' + escapeHtml(__koht) + '</div>';
-          if (__det.n != null && String(__det.n).trim() !== '') __detailHtml += '<div>Individual count: ' + escapeHtml(String(__det.n)) + '</div>';
-          if (__det.bhv) __detailHtml += '<div>Behavior: ' + escapeHtml(String(__det.bhv)) + '</div>';
-          if (__det.obr) __detailHtml += '<div>Collectors: ' + escapeHtml(String(__det.obr)) + '</div>';
-          __detailHtml += '<div style="margin-top:4px;font-size:11px;opacity:.8">coords: ' + Number(pin.lat).toFixed(5) + ', ' + Number(pin.lon).toFixed(5) + '</div>';
+        var __dTxt = '';
+        if (pin.date) {
+          __dTxt = (typeof formatDateEE === 'function') ? formatDateEE(pin.date) : String(pin.date);
+          if (!__dTxt || __dTxt === '-') __dTxt = String(pin.date).slice(0, 10);
         }
-        popupHtml = '<div style="font-family:system-ui;font-size:12px">'
-          + '<b>' + escapeHtml(pin.species) + '</b><br>' + escapeHtml(dateFmt)
-          + '<br><span style="color:' + srcColor + ';font-size:11px">' + srcLabel + '</span>'
-          + (__detailHtml ? '<div style="margin-top:6px">' + __detailHtml + '</div>' : '')
-          + '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
-          + pinCopyBtn
-          + '<button onclick="window.__toggleGbifPin(\'' + id + '\')" '
-          + 'style="padding:3px 8px;border:1px solid ' + srcColor + ';border-radius:6px;'
-          + 'background:' + srcBg + ';color:' + srcText + ';font-size:11px;cursor:pointer">📌 Eemalda nõel</button>'
-          + '</div></div>';
+        var __koht = __det ? String(__det.loc || '').trim() : '';
+        if (__det && __det.cty) __koht = __koht ? (__koht + ', ' + String(__det.cty)) : String(__det.cty);
+        popupHtml = _bmScCard({
+          source: isEbird ? 'ebird' : 'elu',
+          species: pin.species,
+          pinned: true,
+          dateTxt: __dTxt,
+          rows: __det ? [
+            ['Koht', __koht],
+            ['Kogus', (__det.n == null ? '' : String(__det.n))],
+            ['K&auml;itumine', __det.bhv, 'code'],
+            ['Vaatleja', __det.obr]
+          ] : [],
+          lat: pin.lat,
+          lon: pin.lon,
+          pinId: id
+        });
       } else {
+        __detailKey = id;
         var year = pin.date ? parseInt(String(pin.date).slice(0,4), 10) : null;
-        icon = _gbifMiniIcon(avatarUrl, year);
+        icon = _gbifMiniIcon(avatarUrl, year, (window.getSpeciesMetaShared ? ((getSpeciesMetaShared(pin.species)||{}).rarityLevel || 'none') : 'none'));
         popupHtml = buildGbifPopup(pin.species, {
           key: id,
           decimalLatitude: pin.lat,
@@ -9603,6 +9827,7 @@ function renderPinnedGbifMarkers(){
 
       var m = L.marker([pin.lat, pin.lon], { icon: icon });
       m.bindPopup(popupHtml);
+      if (__detailKey) _bmGbifBindDetail(m, __detailKey);
       m.addTo(map); // base markerPane — always visible, NOT the cluster group, ignores filters
       pinnedGbifMarkers.set(id, m);
     });
@@ -9661,10 +9886,11 @@ function avatarIcon(url, borderColor, count7d, rarityLevel, opts) { return _mark
 // one-marker-per-species. Mirrors the GBIF multi-marker layer (gbifMarkers):
 // species key -> array of L.marker on the base map pane (NOT the cluster group).
 // Fetch-time only; never persisted to any snapshot / localStorage.
-function _eluObsIcon(avatarUrl){
+function _eluObsIcon(avatarUrl, rarityLevel){
   var bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#29c";
-  var html = '<div style="width:26px;height:26px;border-radius:50%;border:1.5px solid #2c7fb8;opacity:0.75;'
-    + 'background-size:cover;background-position:center;box-sizing:border-box;' + bg + '"></div>';
+  var html = '<div style="position:relative;width:26px;height:26px;border-radius:50%;border:1.5px solid #2c7fb8;opacity:0.75;'
+    + 'background-size:cover;background-position:center;box-sizing:border-box;' + bg + '">'
+    + _bmMkRar(rarityLevel) + '</div>';
   return L.divIcon({ html: html, className: '', iconSize: [26,26], iconAnchor: [13,13], popupAnchor: [0,-13] });
 }
 // Canonical synthetic pin id for a secondary elu-obs record. MUST match the id
@@ -9676,36 +9902,30 @@ function _eluObsSynthId(species, lat, lon, date){
        + ':' + String(date || '').slice(0, 10);
 }
 function _eluObsPopupHtml(speciesKey, o, sid){
-  var esc = (typeof escapeHtml === 'function') ? escapeHtml : function(s){ return String(s == null ? '' : s); };
-  var html = '<div style="font-weight:700;margin-bottom:4px">' + esc(speciesKey) + '</div>';
-  if(o.d){
-    var dTxt = (typeof fmtDateEE === 'function') ? fmtDateEE(o.d) : o.d;
-    html += '<div>vaatluse kuupäev: ' + esc(dTxt) + '</div>';
-  }
+  // observed_at is a DATE column all the way from Elurikkus, so this path never
+  // carries a time - date only, no formatDateTimeEE branch (P60b ruling).
   var koht = String(o.loc || '').trim();
   if(o.cty) koht = koht ? (koht + ', ' + String(o.cty)) : String(o.cty);
-  if(koht) html += '<div>koht: ' + esc(koht) + '</div>';
-  var extra = '';
-  if(o.n !== undefined && o.n !== null && String(o.n).trim() !== '') extra += '<div>Individual count: ' + esc(String(o.n)) + '</div>';
-  if(o.bhv) extra += '<div>Behavior: ' + esc(String(o.bhv)) + '</div>';
-  if(o.obr) extra += '<div>Collectors: ' + esc(String(o.obr)) + '</div>';
-  if(extra) html += '<div style="margin-top:6px">' + extra + '</div>';
-  var lat = Number(o.lat), lon = Number(o.lon);
-  if(Number.isFinite(lat) && Number.isFinite(lon)){
-    var pinBtn = '';
-    if(sid){
-      var __pinned = (typeof pinnedGbif !== 'undefined') && pinnedGbif.has(sid);
-      pinBtn = '<button class="popupBtn" onclick="window.__toggleGbifPin(\'' + sid + '\')">'
-        + (__pinned ? '📌 Eemalda nõel' : '📌 Kinnita nõelaga') + '</button>';
-    }
-    html += '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">'
-      + '<button class="popupBtn" onclick="copyCoords(' + lat + ',' + lon + ')">Copy coords</button>'
-      + '<button class="popupBtn" onclick="openWaze(' + lat + ',' + lon + ')">Open in Waze</button>'
-      + pinBtn
-      + '</div>'
-      + '<div style="margin-top:6px;font-size:12px;opacity:.8">coords: ' + lat.toFixed(5) + ',' + lon.toFixed(5) + '</div>';
+  var dTxt = '';
+  if(o.d){
+    dTxt = (typeof formatDateEE === 'function') ? formatDateEE(o.d) : '';
+    if(!dTxt || dTxt === '-') dTxt = (typeof fmtDateEE === 'function') ? fmtDateEE(o.d) : String(o.d);
   }
-  return '<div style="min-width:210px">' + html + '</div>';
+  return _bmScCard({
+    source: 'elu',
+    species: speciesKey,
+    pinned: !!(sid && typeof pinnedGbif !== 'undefined' && pinnedGbif.has(sid)),
+    dateTxt: dTxt,
+    rows: [
+      ['Koht', koht],
+      ['Kogus', (o.n == null ? '' : String(o.n))],
+      ['K&auml;itumine', o.bhv, 'code'],
+      ['Vaatleja', o.obr]
+    ],
+    lat: o.lat,
+    lon: o.lon,
+    pinId: sid || ''
+  });
 }
 // Mirror updateMarker()'s isVisible decision so secondaries appear/disappear
 // exactly with the species' main marker.
@@ -9792,7 +10012,7 @@ function _renderEluObsMarkers(){
         if(co.bhv) __d.bhv = co.bhv;
         if(co.sid) __d.sid = co.sid;
         __gbifOccById[__sid] = { species: key, lat: Number(co.lat), lon: Number(co.lon), date: co.d ? String(co.d).slice(0,10) : null, details: (Object.keys(__d).length ? __d : null) };
-        var m = L.marker([Number(co.lat), Number(co.lon)], { icon: _eluObsIcon(avatarUrl) });
+        var m = L.marker([Number(co.lat), Number(co.lon)], { icon: _eluObsIcon(avatarUrl, (window.getSpeciesMetaShared ? ((getSpeciesMetaShared(key)||{}).rarityLevel || 'none') : 'none')) });
         m.bindPopup(_eluObsPopupHtml(key, co, __sid));
         m.addTo(map); // base map pane, like GBIF markers — NOT the cluster group
         markerList.push(m);
@@ -11506,13 +11726,14 @@ try{
   }
 }catch(e){}
 // Avatar icon for pinned secondary obs markers — used by the persistent pin layer (renderPinnedGbifMarkers, ~8766).
-function _eluObsAvatarIcon(avatarUrl, borderColor, borderStyle, borderWidth, opacity, letter) {
+function _eluObsAvatarIcon(avatarUrl, borderColor, borderStyle, borderWidth, opacity, letter, rarityLevel) {
   var size = 26;
   var bg = avatarUrl
     ? "background-image:url('" + avatarUrl + "');background-size:cover;background-position:center"
     : "background-color:#94a3b8;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff";
-  var html = '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;border:' + borderWidth + 'px ' + borderStyle + ' ' + borderColor + ';' + bg + ';opacity:' + opacity.toFixed(2) + ';box-shadow:0 1px 4px rgba(0,0,0,0.25);pointer-events:auto;cursor:pointer">'
+  var html = '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;border-radius:50%;border:' + borderWidth + 'px ' + borderStyle + ' ' + borderColor + ';' + bg + ';opacity:' + opacity.toFixed(2) + ';box-shadow:0 1px 4px rgba(0,0,0,0.25);pointer-events:auto;cursor:pointer">'
     + (avatarUrl ? '' : (letter || '?'))
+    + _bmMkRar(rarityLevel)
     + '</div>';
   var total = size + borderWidth * 2;
   return L.divIcon({ html: html, className: '', iconSize: [total, total], iconAnchor: [total / 2, total / 2], popupAnchor: [0, -(total / 2 + 2)] });

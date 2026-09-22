@@ -8584,22 +8584,25 @@ function refreshAllMarkers(){
 }
 function rebuildAllMarkers(){
   var __openKey = null;
-  try { markers.forEach(function(m, k){ if (m && m.isPopupOpen && m.isPopupOpen()) __openKey = k; }); } catch(e){}
+  var __openMarker = null;
+  try { markers.forEach(function(m, k){ if (m && m.isPopupOpen && m.isPopupOpen()) { __openKey = k; __openMarker = m; } }); } catch(e){}
   try{
     const clusterGroup = window.__markerClusterGroup || window.markerClusterGroup || null;
     if(markers && typeof markers.forEach === 'function'){
-      markers.forEach(function(m){
+      markers.forEach(function(m, k){
         try{
+          // P68: the marker whose card is open stays on the map and in the cluster group.
+          if(__openKey && k === __openKey) return;
           if(clusterGroup && typeof clusterGroup.removeLayer === 'function' && map.hasLayer(clusterGroup)) clusterGroup.removeLayer(m);
           else map.removeLayer(m);
         }catch(e){}
       });
       markers.clear();
+      try { if(__openKey && __openMarker) markers.set(__openKey, __openMarker); } catch(e){}
     }
   }catch(e){}
   __renderedMarkerCount = 0;
-  Object.keys(points || {}).forEach(updateMarker);
-  try { if (__openKey && markers.get(__openKey) && map.hasLayer(markers.get(__openKey))) markers.get(__openKey).openPopup(); } catch(e){}
+  Object.keys(points || {}).forEach(function(k){ if (k === __openKey) return; updateMarker(k); });
 }
 
 function _checkEmpty7dBanner(){
@@ -14407,13 +14410,22 @@ var __sharedDefaults = {};
   // --- Render markers ---
   function refreshEbirdEEMarkers(){
     var __openKeyEb = null;
-    try { ebirdEEMarkers.forEach(function(m, k){ if (m && m.isPopupOpen && m.isPopupOpen()) __openKeyEb = k; }); } catch(e){}
-    ebirdEEMarkers.forEach(function(m){
-      try { map.removeLayer(m); } catch(e){}
+    var __openMarkerEb = null;
+    try { ebirdEEMarkers.forEach(function(m, k){ if (m && m.isPopupOpen && m.isPopupOpen()) { __openKeyEb = k; __openMarkerEb = m; } }); } catch(e){}
+    ebirdEEMarkers.forEach(function(m, k){
+      // P68: the marker whose card is open stays on the map.
+      try { if(__openKeyEb && k === __openKeyEb) return; map.removeLayer(m); } catch(e){}
     });
     ebirdEEMarkers.clear();
+    try { if(__openKeyEb && __openMarkerEb) ebirdEEMarkers.set(__openKeyEb, __openMarkerEb); } catch(e){}
 
-    if(!window.__ebirdEELayerOn) return;
+    if(!window.__ebirdEELayerOn){
+      // P68: layer switched off - close the open card and drop its marker, nothing orphaned.
+      try { if(__openMarkerEb && __openMarkerEb.closePopup) __openMarkerEb.closePopup(); } catch(e){}
+      try { if(__openMarkerEb) map.removeLayer(__openMarkerEb); } catch(e){}
+      try { ebirdEEMarkers.clear(); } catch(e){}
+      return;
+    }
 
     var now = Date.now();
     var win7 = 7 * 24 * 60 * 60 * 1000;
@@ -14450,6 +14462,8 @@ var __sharedDefaults = {};
     // Step 3: Create markers with adjusted coordinates
     for(var i = 0; i < spread.length; i++){
       var s = spread[i];
+      // P68: skip the key whose card is open - its marker was kept above.
+      if(__openKeyEb && s.key === __openKeyEb) continue;
       var ep = s.original.ep;
       var key = s.key;
 
@@ -14470,7 +14484,6 @@ var __sharedDefaults = {};
       m.addTo(map);
       ebirdEEMarkers.set(key, m);
     }
-    try { if (__openKeyEb && ebirdEEMarkers.get(__openKeyEb) && map.hasLayer(ebirdEEMarkers.get(__openKeyEb))) ebirdEEMarkers.get(__openKeyEb).openPopup(); } catch(e){}
   }
   window.refreshEbirdEEMarkers = refreshEbirdEEMarkers;
 

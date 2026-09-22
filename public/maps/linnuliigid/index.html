@@ -1653,6 +1653,13 @@ in keeps them open. */
   });
 })();
 
+/* P67: re-run the small-marker nudge whenever layer points change under a zoom or a
+   view reset. _nudgeEluObs is a hoisted declaration further down the same script. */
+(function () {
+  var m = window.map; if (!m || !m.on) return;
+  m.on('zoomend viewreset', function(){ try{ _nudgeEluObs(); }catch(e){} });
+})();
+
 const markers = new Map();
 
 // === GBIF state ===
@@ -10079,7 +10086,26 @@ function _clearEluObsMarkers(){
   }catch(e){}
   try{ eluObsMarkers.clear(); }catch(e){}
 }
+// P67: a small elu-obs marker can sit exactly under a 44x56 species pin (same site,
+// different species). It must stay - it is a real sighting - so nudge the icon's inner
+// wrapper only. Display-only: marker lat/lng, pin storage and _markerIcon are untouched.
+function _nudgeEluObs(){
+  try{
+    var tips = [];
+    markers.forEach(function(m){ try{ if(m && map.hasLayer(m)) tips.push(map.latLngToLayerPoint(m.getLatLng())); }catch(e){} });
+    eluObsMarkers.forEach(function(list){
+      for(var i=0;i<list.length;i++){
+        var mk = list[i]; var el = mk && mk.getElement && mk.getElement(); var inner = el && el.firstElementChild; if(!inner) continue;
+        var pt = map.latLngToLayerPoint(mk.getLatLng()); var hit = false;
+        for(var j=0;j<tips.length;j++){ var dx = pt.x - tips[j].x, dy = pt.y - tips[j].y; if(Math.abs(dx) < 22 && dy > -60 && dy < 14){ hit = true; break; } }
+        inner.style.transform = hit ? 'translate(20px,4px)' : '';
+      }
+    });
+  }catch(e){}
+}
 function _dropEluObsAtMain(key){
+  // P67: re-check every small marker after any pin move, before the early return.
+  try { clearTimeout(window.__bmNudgeT); window.__bmNudgeT = setTimeout(function(){ try{ _nudgeEluObs(); }catch(e){} }, 150); } catch(e){}
   try{
     var list = eluObsMarkers.get(key); if(!list || !list.length) return;
     var p = points[key]; if(!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return;
@@ -10185,6 +10211,7 @@ function _renderEluObsMarkers(){
       payloadSpecies: (__eluRecentObs && __eluRecentObs.species) ? Object.keys(__eluRecentObs.species).length : 0
     });
   }catch(e){ console.warn('[elu-obs] diag failed', e); }
+  try{ _nudgeEluObs(); }catch(e){}
 }
 // Cheap re-projection to match current visibility (hide/unhide, 7p toggle, filter).
 function _syncEluObsVisibility(){

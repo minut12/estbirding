@@ -9373,8 +9373,12 @@ function _gbifMiniIcon(avatarUrl, year, rarityLevel) {
   var bg = avatarUrl
     ? "background-image:url('" + avatarUrl + "')"
     : "background-color:#c7d2fe";
-  var html = '<div class="gbif-mini-icon" style="border-color:' + borderColor + ';opacity:' + opacity + ';' + bg + '">'
-    + _bmMkRar(rarityLevel) + '</div>';
+  // Outer wrapper carries no opacity, so the rarity tag stays fully opaque even
+  // when an old record fades the circle to 0.3.
+  var html = '<div style="position:relative;width:22px;height:22px">'
+    + '<div class="gbif-mini-icon" style="border-color:' + borderColor + ';opacity:' + opacity + ';' + bg + '"></div>'
+    + _bmMkRar(rarityLevel)
+    + '</div>';
   return L.divIcon({
     html: html,
     className: 'gbif-mini-marker',
@@ -9888,9 +9892,11 @@ function avatarIcon(url, borderColor, count7d, rarityLevel, opts) { return _mark
 // Fetch-time only; never persisted to any snapshot / localStorage.
 function _eluObsIcon(avatarUrl, rarityLevel){
   var bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#29c";
-  var html = '<div style="position:relative;width:26px;height:26px;border-radius:50%;border:1.5px solid #2c7fb8;opacity:0.75;'
-    + 'background-size:cover;background-position:center;box-sizing:border-box;' + bg + '">'
-    + _bmMkRar(rarityLevel) + '</div>';
+  var html = '<div style="position:relative;width:26px;height:26px">'
+    + '<div style="width:26px;height:26px;border-radius:50%;border:1.5px solid #2c7fb8;opacity:0.75;'
+    + 'background-size:cover;background-position:center;box-sizing:border-box;' + bg + '"></div>'
+    + _bmMkRar(rarityLevel)
+    + '</div>';
   return L.divIcon({ html: html, className: '', iconSize: [26,26], iconAnchor: [13,13], popupAnchor: [0,-13] });
 }
 // Canonical synthetic pin id for a secondary elu-obs record. MUST match the id
@@ -11731,11 +11737,13 @@ function _eluObsAvatarIcon(avatarUrl, borderColor, borderStyle, borderWidth, opa
   var bg = avatarUrl
     ? "background-image:url('" + avatarUrl + "');background-size:cover;background-position:center"
     : "background-color:#94a3b8;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff";
-  var html = '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;border-radius:50%;border:' + borderWidth + 'px ' + borderStyle + ' ' + borderColor + ';' + bg + ';opacity:' + opacity.toFixed(2) + ';box-shadow:0 1px 4px rgba(0,0,0,0.25);pointer-events:auto;cursor:pointer">'
+  var total = size + borderWidth * 2;
+  var html = '<div style="position:relative;width:' + total + 'px;height:' + total + 'px">'
+    + '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;border:' + borderWidth + 'px ' + borderStyle + ' ' + borderColor + ';' + bg + ';opacity:' + opacity.toFixed(2) + ';box-shadow:0 1px 4px rgba(0,0,0,0.25);pointer-events:auto;cursor:pointer">'
     + (avatarUrl ? '' : (letter || '?'))
+    + '</div>'
     + _bmMkRar(rarityLevel)
     + '</div>';
-  var total = size + borderWidth * 2;
   return L.divIcon({ html: html, className: '', iconSize: [total, total], iconAnchor: [total / 2, total / 2], popupAnchor: [0, -(total / 2 + 2)] });
 }
 

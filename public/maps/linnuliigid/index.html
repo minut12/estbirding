@@ -196,6 +196,13 @@
 .bm-sc-btn{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 13px;border-radius:9px;
   border:1px solid var(--sc);background:var(--sc);color:#fff;font:600 12.5px/1 system-ui,Arial,sans-serif;
   cursor:pointer;text-decoration:none}
+/* P60d: Leaflet's .leaflet-container a {color:#0078A8} outranks .bm-sc-btn, so the
+   <a> variant of the Waze button needs both higher specificity and !important. */
+.bm-sc .bm-sc-btn,
+.bm-sc a.bm-sc-btn,
+.bm-sc a.bm-sc-btn:visited,
+.bm-sc a.bm-sc-btn:hover{color:#fff!important;text-decoration:none;display:inline-flex;
+  align-items:center;justify-content:center;gap:6px}
 .bm-sc-ico{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;
   border-radius:9px;border:1px solid #dde4df;background:#fff;color:#4a5852;cursor:pointer;text-decoration:none}
 .bm-sc-ico:hover{border-color:var(--sc);color:var(--sc)}
@@ -358,7 +365,7 @@
   .gbif-mini-marker { background: transparent; border: none; }
   .gbif-mini-icon {
     position: relative;
-    width: 22px; height: 22px; border-radius: 50%;
+    width: 30px; height: 30px; border-radius: 50%;
     border: 2px solid #6366f1; background-size: cover;
     background-position: center; background-color: #e0e7ff;
     box-shadow: 0 1px 3px rgba(0,0,0,0.2);
@@ -9368,23 +9375,23 @@ function _bmMkRar(rarityLevel){
 function _gbifMiniIcon(avatarUrl, year, rarityLevel) {
   var currentYear = new Date().getFullYear();
   var age = currentYear - (year || currentYear);
-  var opacity = Math.max(0.3, 1 - (age * 0.07));
+  var opacity = Math.max(0.55, 1 - (age * 0.07));
   var borderColor = age <= 1 ? '#4f46e5' : age <= 3 ? '#6366f1' : age <= 6 ? '#818cf8' : '#a5b4fc';
   var bg = avatarUrl
     ? "background-image:url('" + avatarUrl + "')"
     : "background-color:#c7d2fe";
   // Outer wrapper carries no opacity, so the rarity tag stays fully opaque even
   // when an old record fades the circle to 0.3.
-  var html = '<div style="position:relative;width:22px;height:22px">'
+  var html = '<div style="position:relative;width:30px;height:30px">'
     + '<div class="gbif-mini-icon" style="border-color:' + borderColor + ';opacity:' + opacity + ';' + bg + '"></div>'
     + _bmMkRar(rarityLevel)
     + '</div>';
   return L.divIcon({
     html: html,
     className: 'gbif-mini-marker',
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
-    popupAnchor: [0, -14]
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    popupAnchor: [0, -18]
   });
 }
 
@@ -9507,6 +9514,8 @@ function _bmScCard(opts){
 
   var lat = Number(o.lat), lon = Number(o.lon);
   var hasXY = Number.isFinite(lat) && Number.isFinite(lon);
+  var icoWaze = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">'
+    + '<path fill="currentColor" d="M14.5 1.5 1.8 6.6c-.7.3-.6 1.3.1 1.5l4.6 1.4 1.4 4.6c.2.7 1.2.8 1.5.1L14.5 1.5Z"/></svg>';
   var icoCopy = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
     + ' stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect>'
     + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
@@ -9516,8 +9525,8 @@ function _bmScCard(opts){
   var acts = '';
   if (hasXY) {
     acts += o.wazeUrl
-      ? '<a class="bm-sc-btn" href="' + esc(o.wazeUrl) + '" target="_blank" rel="noopener">Waze</a>'
-      : '<button class="bm-sc-btn" onclick="openWaze(' + lat + ',' + lon + ')">Waze</button>';
+      ? '<a class="bm-sc-btn" href="' + esc(o.wazeUrl) + '" target="_blank" rel="noopener">' + icoWaze + 'Waze</a>'
+      : '<button class="bm-sc-btn" onclick="openWaze(' + lat + ',' + lon + ')">' + icoWaze + 'Waze</button>';
     acts += '<button class="bm-sc-ico" title="Kopeeri koordinaadid" onclick="copyCoords(' + lat + ',' + lon + ')">' + icoCopy + '</button>';
     if (o.mapsUrl) acts += '<a class="bm-sc-ico" title="Google Maps" href="' + esc(o.mapsUrl) + '" target="_blank" rel="noopener">' + icoMap + '</a>';
   }

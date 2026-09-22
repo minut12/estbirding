@@ -10079,6 +10079,20 @@ function _clearEluObsMarkers(){
   }catch(e){}
   try{ eluObsMarkers.clear(); }catch(e){}
 }
+function _dropEluObsAtMain(key){
+  try{
+    var list = eluObsMarkers.get(key); if(!list || !list.length) return;
+    var p = points[key]; if(!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return;
+    var keep = [];
+    for(var i=0;i<list.length;i++){
+      var mk = list[i], ll = mk && mk.getLatLng && mk.getLatLng();
+      var dup = ll && Math.abs(ll.lat - p.lat) < 3e-4 && Math.abs(ll.lng - p.lon) < 3e-4;
+      if(dup && !(mk.isPopupOpen && mk.isPopupOpen())){ try{ map.removeLayer(mk); }catch(e){} }
+      else keep.push(mk);
+    }
+    if(keep.length) eluObsMarkers.set(key, keep); else eluObsMarkers.delete(key);
+  }catch(e){}
+}
 function _renderEluObsMarkers(){
   if(!ELU_OBS_PINS_ENABLED) return;
   _clearEluObsMarkers();
@@ -10449,6 +10463,7 @@ function updateMarker(key) {
     try{ clusterGroup.removeLayer(m); clusterGroup.addLayer(m); }catch(e){}
   }
   markers.set(key, m);
+  try { _dropEluObsAtMain(key); } catch(e){}
 }
 
 

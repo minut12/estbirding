@@ -114,6 +114,7 @@
   background:rgba(20,40,30,.26);filter:blur(1px)}
 .bm-pin.is-approx .bm-pin-shape{background:#f4f6f5;border-style:dashed;border-color:#9aa9a0}
 .bm-pin.is-approx .bm-pin-head{filter:saturate(.35);opacity:.85}
+.bm-pin-src{position:absolute;left:50%;top:37px;transform:translateX(-50%);z-index:2;height:15px;padding:0 5px;border-radius:5px;background:#0e7490;color:#fff;font:800 8.5px/15px system-ui,Arial,sans-serif;letter-spacing:.02em;box-shadow:0 0 0 1.5px #fff;pointer-events:none;white-space:nowrap}
 
 /* --- P58c Card v2 (species observation popup) --- */
 .leaflet-popup-content-wrapper:has(.bm-card){border-radius:16px;padding:0;overflow:hidden}
@@ -139,6 +140,7 @@
 .bm-card-stat b{display:block;font:700 15px/1.2 system-ui,Arial,sans-serif;color:#222a26;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bm-card-stat span{display:block;margin-top:1px;font-size:10.5px;color:#6c7f74}
+.bm-card-stat--ebird b{color:#0e7490}
 .bm-card-rows{margin-top:10px;display:flex;flex-direction:column;gap:6px}
 .bm-card-row{display:flex;gap:8px;align-items:flex-start;color:#4a5852;font-size:12.5px}
 .bm-card-row svg{flex:0 0 auto;margin-top:2px;color:#6c7f74}
@@ -9979,9 +9981,11 @@ function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel, opts){
     ? '<div class="bm-pin-rb" style="color:' + color + '">' + badge + '</div>'
     : '';
   const bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#29c";
+  const srcTag = (o.srcTag === 'ebird') ? '<div class="bm-pin-src">eBird</div>' : '';
   const html = '<div class="bm-pin' + (approx ? ' is-approx' : '') + '">'
     + '<div class="bm-pin-shape"' + shapeStyle + '></div>'
     + '<div class="bm-pin-head" style="' + bg + '"></div>'
+    + srcTag
     + rarityBadge + count
     + '<div class="bm-pin-tip"></div>'
     + '</div>';
@@ -10457,9 +10461,10 @@ function _isCoordsApprox(p){
   } catch (_e) {}
   return coordsApprox;
 }
-function buildPopupHtml(key, p){
+function buildPopupHtml(key, p, opts){
+  const isEb = !!(opts && opts.source === 'ebird');
   const x = (p && p.eluExtra) ? p.eluExtra : {};
-  __nettaTrace('popup_read', key, p);
+  if (!isEb) __nettaTrace('popup_read', key, p);
   const val = (v)=> (v===undefined || v===null || String(v).trim()==='') ? '-' : String(v).trim();
   const ind = val(x.individualCount ?? p.individualCount);
   const beh = val(x.behavior ?? p.behavior);
@@ -10468,7 +10473,8 @@ function buildPopupHtml(key, p){
   // Prefer uncapped 7-day count from Tõenäosus's __probEluCache.items when present.
   // Fall back to p.occ7 (typically ~50, capped) for species Tõenäosus hasn't scanned.
   let occ7;
-  try {
+  if (isEb) { occ7 = Number.isFinite(p.occ7) ? p.occ7 : 0; }
+  else try {
     const _eluKey = _speciesKey(key);
     const _probItems = (window.__probEluCache || {})[_eluKey]?.items;
     if (Array.isArray(_probItems) && _probItems.length > 0) {
@@ -10491,7 +10497,7 @@ function buildPopupHtml(key, p){
   // the previous point) while date / koht / collectors still describe the newest one — so the
   // marker lands where the bird was never reported on that date. Detected from positive
   // evidence only; unknown provenance stays uncaveated (fail-quiet, no warning spam).
-  let coordsApprox = _isCoordsApprox(p);
+  let coordsApprox = isEb ? false : _isCoordsApprox(p);
   // Card v2 (P58c). Same fields as before, no new fetches; only the markup changed.
   const DASH = String.fromCharCode(8211);
   const dash = (v)=> (v === undefined || v === null || String(v).trim() === '' || String(v).trim() === '-') ? DASH : String(v).trim();
@@ -10507,6 +10513,7 @@ function buildPopupHtml(key, p){
   const _dtRaw = _hasTime ? p.t_dt : p.t;
   let dateTxt = _hasTime ? formatDateTimeEE(_dtRaw).replace(', ', ' ') : formatDateEE(_dtRaw);
   if (dateTxt === '-') dateTxt = latest;
+  if (isEb && opts.dateTxt) dateTxt = opts.dateTxt;
   // Relative word from the Europe/Tallinn calendar day, not from UTC arithmetic.
   let relWord = '';
   try {
@@ -10536,7 +10543,7 @@ function buildPopupHtml(key, p){
   const rows = [
     (!coordsApprox && locText) ? `<div class="bm-card-row">${SVG_PIN}<span title="${escapeHtml(locText)}">${escapeHtml(locText)}</span></div>` : '',
     (col !== '-') ? `<div class="bm-card-row">${SVG_USER}<span title="${escapeHtml(col)}">${escapeHtml(col)}</span></div>` : '',
-    (beh !== '-') ? `<div class="bm-card-row">${SVG_EYE}<span>K&auml;itumine: <code>${escapeHtml(beh)}</code></span></div>` : ''
+    (!isEb && beh !== '-') ? `<div class="bm-card-row">${SVG_EYE}<span>K&auml;itumine: <code>${escapeHtml(beh)}</code></span></div>` : ''
   ].join('');
   const approxNote = coordsApprox
     ? `<div class="bm-card-note">${SVG_LOCK}<span>T&auml;psed koordinaadid on peidetud &mdash; markeri asukoht on ligikaudne, p&auml;rineb varasemast vaatlusest.</span></div>`
@@ -10550,8 +10557,11 @@ function buildPopupHtml(key, p){
   const eluBtn = coordsApprox
     ? `<a class="bm-card-btn" href="${escapeHtml(eluUrl)}" target="_blank" rel="noopener">${SVG_EXT}Ava Elurikkuses</a>`
     : `<a class="bm-card-ico" href="${escapeHtml(eluUrl)}" target="_blank" rel="noopener" title="Ava Elurikkuses">${SVG_EXT}</a>`;
+  const extBtn = (isEb && opts.extUrl)
+    ? `<a class="bm-card-ico" href="${escapeHtml(opts.extUrl)}" target="_blank" rel="noopener" title="Ava eBirdis">${SVG_EXT}</a>`
+    : '';
   const foot = hasCoords
-    ? `<div class="bm-card-foot"><span class="bm-card-coords" title="Kopeeri koordinaadid" onclick="_bmCardCopy(this,${p.lat},${p.lon})">${escapeHtml(lat)},${escapeHtml(lon)}</span><span class="bm-card-foot-note">${coordsApprox ? 'ligikaudne' : 't&auml;pne asukoht'}</span></div>`
+    ? `<div class="bm-card-foot"><span class="bm-card-coords" title="Kopeeri koordinaadid" onclick="_bmCardCopy(this,${p.lat},${p.lon})">${escapeHtml(lat)},${escapeHtml(lon)}</span><span class="bm-card-foot-note">${coordsApprox ? 'ligikaudne' : (isEb ? 'vaatluskoht' : 't&auml;pne asukoht')}</span></div>`
     : '';
   return `
     <div class="bm-card">
@@ -10570,11 +10580,11 @@ function buildPopupHtml(key, p){
         <div class="bm-card-stats">
           <div class="bm-card-stat"><b>${escapeHtml(dash(occ7))}</b><span>vaatlust 7 p</span></div>
           <div class="bm-card-stat"><b>${escapeHtml(dash(ind))}</b><span>${indLabel}</span></div>
-          <div class="bm-card-stat"><b>${escapeHtml(dash(src))}</b><span>allikas</span></div>
+          <div class="bm-card-stat${isEb ? ' bm-card-stat--ebird' : ''}"><b>${escapeHtml(isEb ? 'eBird' : dash(src))}</b><span>allikas</span></div>
         </div>
         ${rows ? '<div class="bm-card-rows">' + rows + '</div>' : ''}
         ${approxNote}
-        <div class="bm-card-acts">${coordsApprox ? eluBtn + copyBtn : wazeBtn + copyBtn + eluBtn}</div>
+        <div class="bm-card-acts">${isEb ? (wazeBtn + copyBtn + extBtn) : (coordsApprox ? eluBtn + copyBtn : wazeBtn + copyBtn + eluBtn)}</div>
         ${foot}
       </div>
     </div>
@@ -13767,34 +13777,17 @@ var __sharedDefaults = {};
   });
   syncEbirdEEBtn();
 
-  // --- Marker icon (text label) ---
-  function _ebirdMarkerIcon(avatarUrl, howMany, rarityLevel){
-    var color = '#4CAF50';
-    var countHtml = (Number.isFinite(howMany) && howMany > 0)
-      ? '<div class="marker-count ebird-count" title="Lindude arv (eBird)">' + howMany + '</div>'
-      : '';
-    var ebirdLabel = '<div class="marker-ebird-label">eBird</div>';
-    var bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#4CAF50";
-    var html = '<div class="marker-wrap">' + ebirdLabel + '<div class="marker-circle" style="border-color:' + color + ';' + bg + '"></div>' + countHtml + '</div>';
-    return L.divIcon({html:html, className:'', iconSize:[44,72], iconAnchor:[22,36], popupAnchor:[0,-36]});
-  }
-
   // --- Popup ---
+  // P64: the eBird card is the species card. Coords stay the ORIGINAL ep ones;
+  // the spread / collision offset only moves the marker, not the popup.
   function ebirdEEPopupHtml(key, ep){
-    var displayName = window.normalizeUiText ? window.normalizeUiText(key) : key;
-    var when = ep.t ? '<br><small>last seen: ' + formatDateEE(ep.t) + '</small>' : '';
-    var where = ep.loc ? '<br><small>location: ' + ep.loc + '</small>' : '';
-    var srcLn = '<br><small>source: eBird EE (Estonia)</small>';
-    var occLn = '<br><small>7d records: ' + (ep.occ7 || 0) + ' (computed from last 30d)</small>';
-    var countLn = Number.isFinite(ep.howMany) ? '<br><small>bird count: ' + ep.howMany + '</small>' : '';
-    var observerLn = ep.observer ? '<br><small>observer: ' + ep.observer + '</small>' : '';
-    var checklistLn = ep.subId
-      ? '<br><small><a href="https://ebird.org/checklist/' + ep.subId + '" target="_blank" rel="noopener" style="color:#4CAF50">view checklist &#8599;</a></small>'
-      : '';
-    var metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
-    var rarLn = (metaCfg.rarityLevel && metaCfg.rarityLevel !== 'none' && window.getRarityBadgeText)
-      ? '<br><small>rarity: ' + window.getRarityBadgeText(metaCfg.rarityLevel) + '</small>' : '';
-    return '<b>' + displayName + '</b>' + when + where + srcLn + occLn + countLn + observerLn + checklistLn + rarLn;
+    var dt = '';
+    if (ep.t_dt && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(ep.t_dt)) dt = ep.t_dt.slice(8,10)+'.'+ep.t_dt.slice(5,7)+'.'+ep.t_dt.slice(0,4)+' '+ep.t_dt.slice(11,16);
+    return buildPopupHtml(key, {
+      lat: ep.lat, lon: ep.lon, t: ep.t, occ7: ep.occ7,
+      individualCount: Number.isFinite(ep.howMany) ? ep.howMany : null,
+      collectors: ep.observer || '', placeText: ep.loc || '', src: 'eBird'
+    }, { source: 'ebird', dateTxt: dt, extUrl: ep.subId ? ('https://ebird.org/checklist/' + encodeURIComponent(ep.subId)) : '' });
   }
 
   // --- Fetch single species ---
@@ -13843,6 +13836,7 @@ var __sharedDefaults = {};
     return {
       lat: lat, lon: lon,
       t: (latest.obsDt || '').substring(0, 10),
+      t_dt: (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(String(latest.obsDt||''))) ? String(latest.obsDt).slice(0,16) : null,
       loc: latest.locName || '',
       occ7: occ7,
       howMany: Number.isFinite(latest.howMany) ? latest.howMany : null,
@@ -13955,6 +13949,7 @@ var __sharedDefaults = {};
         ebirdEEPoints[name] = {
           lat: lat, lon: lon,
           t: String(latest.obsDt || '').substring(0, 10),
+          t_dt: (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(String(latest.obsDt||''))) ? String(latest.obsDt).slice(0,16) : null,
           loc: latest.locName || '',
           occ7: stats.count7,
           howMany: Number.isFinite(latest.howMany) ? latest.howMany : null,
@@ -14247,9 +14242,8 @@ var __sharedDefaults = {};
       var finalLon = s.lon + elOffset.lon;
 
       var avatar = (typeof getDisplayAvatar === 'function') ? getDisplayAvatar(key) : ((typeof avatars !== 'undefined' && avatars[key]) || '');
-      var count = Number.isFinite(ep.howMany) ? ep.howMany : null;
       var metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
-      var icon = _ebirdMarkerIcon(avatar, count, metaCfg.rarityLevel || 'none');
+      var icon = _markerIcon(avatar, _borderColorByDate(ep.t), Number(ep.occ7) || 0, metaCfg.rarityLevel || 'none', { srcTag: 'ebird' });
 
       var m = L.marker([finalLat, finalLon], { icon: icon });
       m.bindPopup(ebirdEEPopupHtml(key, ep));

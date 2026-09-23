@@ -90,7 +90,7 @@ self.addEventListener('push', function(event) {
   }
 
   const species = payload.species || '';
-  const title = payload.title || 'EstBirding';
+  const title = payload.title || 'EstBirds';
   const body = payload.body || ((species || 'Tundmatu liik') + ' on märgatud!');
   const url = payload.url || '/';
   const tag = payload.tag || ('estbirding-' + String(species).replace(/[^a-zA-ZäöüõÄÖÜÕ0-9]/g, '-'));

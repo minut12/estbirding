@@ -90,7 +90,7 @@ Deno.serve(async (req) => {
 
     const payload = {
       title: "Testteavitus",
-      body: "EstBirding teavitused töötavad.",
+      body: "EstBirds teavitused töötavad.",
       url: "/",
       tag: "estbirding-test",
     };

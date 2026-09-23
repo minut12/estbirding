@@ -65,7 +65,7 @@ export default function LoginPage() {
           <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
             <Bird className="w-8 h-8 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">EstBirding</h1>
+          <h1 className="text-2xl font-bold text-foreground">EstBirds</h1>
           <p className="text-sm text-muted-foreground">Logi sisse oma kontoga</p>
         </div>
 

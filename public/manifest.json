@@ -1,6 +1,6 @@
 {
-  "name": "EstBirding",
-  "short_name": "EstBirding",
+  "name": "EstBirds",
+  "short_name": "EstBirds",
   "description": "Eesti linnuvaatluse rakendus",
   "start_url": "/",
   "display": "standalone",

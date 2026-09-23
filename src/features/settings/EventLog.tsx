@@ -18,7 +18,7 @@ export default function EventLog() {
 
   const share = async () => {
     if (navigator.share) {
-      try { await navigator.share({ title: 'EstBirding logi', text }); } catch {}
+      try { await navigator.share({ title: 'EstBirds logi', text }); } catch {}
     } else { copy(); }
   };
 

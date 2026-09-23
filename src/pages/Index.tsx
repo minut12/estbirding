@@ -91,10 +91,10 @@ export default function Index() {
   }, [active]);
 
   return (
-    <div className="flex flex-col h-[100dvh] min-h-[100dvh] bg-background overflow-hidden">
+    <div className="relative flex flex-col h-[100dvh] min-h-[100dvh] bg-background overflow-hidden">
       <VersionBanner />
 
-      <div className="flex-1 min-h-0 overflow-hidden relative">
+      <div className="flex-1 min-h-0 overflow-hidden relative max-[900px]:pb-[calc(84px+env(safe-area-inset-bottom))]">
         <div className={active === 'kaart' ? 'absolute inset-0' : 'absolute inset-0 invisible pointer-events-none'}>
           <MapTab isActive={active === 'kaart'} onMapChange={setSelectedMapId} />
         </div>
@@ -104,7 +104,7 @@ export default function Index() {
         {active === 'seaded' && <SettingsTab />}
       </div>
 
-      <nav className="flex justify-center border-t border-border bg-card px-1.5 pt-1.5 pb-[calc(10px+env(safe-area-inset-bottom))]">
+      <nav data-app-nav="bar" className="flex justify-center border-t border-border bg-card px-1.5 pt-1.5 pb-[calc(10px+env(safe-area-inset-bottom))] max-[900px]:hidden">
         <div className="flex w-full max-w-[600px]">
           {tabs.map(({ id, label, icon: Icon }) => {
             const on = active === id;
@@ -136,6 +136,38 @@ export default function Index() {
             );
           })}
         </div>
+      </nav>
+      <nav
+        data-app-nav="dock"
+        className="min-[901px]:hidden absolute z-40 left-1/2 -translate-x-1/2 bottom-[calc(12px+env(safe-area-inset-bottom))] max-w-[calc(100vw-16px)] flex gap-1 p-1.5 rounded-3xl border border-border bg-card/90 backdrop-blur-md shadow-[0_10px_30px_rgba(34,42,38,0.16),0_1px_2px_rgba(34,42,38,0.08)]"
+      >
+        {tabs.map(({ id, label, icon: Icon }) => {
+          const on = active === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActive(id)}
+              aria-current={on ? 'page' : undefined}
+              aria-label={label}
+              className={cn(
+                'h-12 min-w-12 px-[13px] flex items-center justify-center rounded-[18px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary active:scale-[0.97] motion-reduce:transform-none',
+                on ? 'gap-2 bg-primary text-primary-foreground' : 'gap-0 text-foreground/75'
+              )}
+            >
+              <Icon active={on} className="h-[22px] w-[22px] shrink-0" />
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'overflow-hidden whitespace-nowrap text-[13px] font-bold tracking-[-0.005em] transition-[max-width] duration-300 [transition-timing-function:cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none',
+                  on ? 'max-w-24' : 'max-w-0'
+                )}
+              >
+                {label}
+              </span>
+            </button>
+          );
+        })}
       </nav>
     </div>
   );

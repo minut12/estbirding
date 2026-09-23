@@ -189,16 +189,20 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   // Send APP_INSETS to iframe so it can adjust layout for parent header/nav
   const sendAppInsets = useCallback(() => {
     try {
-      const headerEl = document.querySelector('.shrink-0');
-      const navEl = document.querySelector('nav.border-t');
-      const bottomNavPx = navEl ? navEl.getBoundingClientRect().height : 56;
-      sendToIframe({
-        type: 'APP_INSETS',
-        headerPx: 0,
-        bottomNavPx,
-      });
+      const dock = document.querySelector('[data-app-nav="dock"]');
+      const r = dock ? dock.getBoundingClientRect() : null;
+      const bottomNavPx = r && r.height > 0 ? Math.round(window.innerHeight - r.top + 8) : 0;
+      sendToIframe({ type: 'APP_INSETS', headerPx: 0, bottomNavPx });
     } catch (e) { /* cross-origin safety */ }
   }, [sendToIframe]);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 900px)');
+    const onChange = () => sendAppInsets();
+    mq.addEventListener('change', onChange);
+    window.addEventListener('resize', onChange);
+    return () => { mq.removeEventListener('change', onChange); window.removeEventListener('resize', onChange); };
+  }, [sendAppInsets]);
 
   // Admin key no longer needed for refresh
 

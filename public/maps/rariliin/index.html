@@ -151,6 +151,7 @@
 
     /* Mobile drawer + backdrop */
     .leaflet-top,.leaflet-bottom{z-index:1000!important}
+    .leaflet-bottom{bottom:var(--appBottomNav,0px)}
     .leaflet-control{z-index:1000!important}
     .sidebar-backdrop{display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.35)}
     .recent-rarities-wrap{
@@ -8363,6 +8364,7 @@ setTimeout(autoDetectAvatarsForActive, 30000);
 window.addEventListener('message', function(ev){
   try{
     if(!ev.data || ev.data.type !== 'APP_INSETS') return;
+    document.documentElement.style.setProperty('--appBottomNav', (Math.max(0, Number(ev.data.bottomNavPx) || 0)) + 'px');
     if(window.map && map.invalidateSize) setTimeout(function(){ map.invalidateSize(true); }, 100);
   }catch(e){}
 });

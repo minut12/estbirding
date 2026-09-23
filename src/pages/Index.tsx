@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Map, Newspaper, CalendarDays, Settings, Binoculars } from 'lucide-react';
+import { KaartIcon, UlevaadeIcon, UudisedIcon, UritusedIcon, SeadedIcon, type NavIcon } from '@/components/icons/NavIcons';
 import MapTab from '@/features/map/MapTab';
 import NewsTab from '@/features/news/NewsTab';
 import EventsTab from '@/features/events/EventsTab';
@@ -27,12 +27,12 @@ function resolveInitialTab(): Tab {
   return 'kaart';
 }
 
-const tabs: { id: Tab; label: string; icon: typeof Map }[] = [
-  { id: 'kaart', label: 'Kaart', icon: Map },
-  { id: 'ulevaade', label: 'Ülevaade', icon: Binoculars },
-  { id: 'uudised', label: 'Uudised', icon: Newspaper },
-  { id: 'üritused', label: 'Üritused', icon: CalendarDays },
-  { id: 'seaded', label: 'Seaded', icon: Settings },
+const tabs: { id: Tab; label: string; icon: NavIcon }[] = [
+  { id: 'kaart', label: 'Kaart', icon: KaartIcon },
+  { id: 'ulevaade', label: 'Ülevaade', icon: UlevaadeIcon },
+  { id: 'uudised', label: 'Uudised', icon: UudisedIcon },
+  { id: 'üritused', label: 'Üritused', icon: UritusedIcon },
+  { id: 'seaded', label: 'Seaded', icon: SeadedIcon },
 ];
 
 export default function Index() {
@@ -104,22 +104,38 @@ export default function Index() {
         {active === 'seaded' && <SettingsTab />}
       </div>
 
-      <nav className="flex items-center border-t border-border bg-card pb-safe">
-        {tabs.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setActive(id)}
-            className={cn(
-              'flex-1 flex flex-col items-center gap-0.5 py-2 text-xs transition-colors',
-              active === id
-                ? 'text-primary font-semibold'
-                : 'text-muted-foreground'
-            )}
-          >
-            <Icon className="w-5 h-5" />
-            <span>{label}</span>
-          </button>
-        ))}
+      <nav className="flex justify-center border-t border-border bg-card px-1.5 pt-1.5 pb-[calc(10px+env(safe-area-inset-bottom))]">
+        <div className="flex w-full max-w-[600px]">
+          {tabs.map(({ id, label, icon: Icon }) => {
+            const on = active === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActive(id)}
+                aria-current={on ? 'page' : undefined}
+                className={cn(
+                  'flex-1 min-w-0 flex flex-col items-center gap-1 pt-1.5 pb-0.5 rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
+                  on ? 'text-primary' : 'text-foreground/75 hover:text-foreground'
+                )}
+              >
+                <span className="relative flex h-8 w-14 items-center justify-center">
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'absolute inset-0 rounded-full bg-primary/15 transition-[transform,opacity] duration-300 [transition-timing-function:cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none',
+                      on ? 'scale-x-100 opacity-100' : 'scale-x-50 opacity-0'
+                    )}
+                  />
+                  <Icon active={on} className="relative h-[22px] w-[22px]" />
+                </span>
+                <span className={cn('text-[11.5px] leading-[14px] tracking-[-0.005em]', on ? 'font-bold text-foreground' : 'font-medium')}>
+                  {label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </nav>
     </div>
   );

@@ -1,0 +1,3 @@
+# Tailwind ease-[...] is ambiguous with tailwindcss-animate
+
+tailwindcss-animate defines its own `ease-*` utility (animation-timing-function), so an arbitrary `ease-[cubic-bezier(...)]` is ambiguous in Tailwind 3.4 and is silently dropped - the build succeeds and prints no error. Use the arbitrary property `[transition-timing-function:cubic-bezier(...)]` instead (first hit in P69, bottom-nav pill). Verify arbitrary classes actually landed by grepping the built CSS, e.g. `grep -o "transition-timing-function:cubic-bezier(.2,.8,.2,1)" dist/assets/*.css`; running `npx tailwindcss -c tailwind.config.ts` directly shows the "ambiguous" warning that the Vite build does not surface.

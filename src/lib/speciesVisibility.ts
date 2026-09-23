@@ -14,6 +14,23 @@ export type MapScope =
 
 const CACHE_PREFIX = 'speciesHidden';
 
+// ── Year reset: crossouts in these scopes count only within the current Europe/Tallinn year ──
+
+export const YEAR_BOUND_SCOPES: ReadonlySet<MapScope> = new Set<MapScope>(['ee_map']);
+
+export function tallinnYear(d: Date): number {
+  return Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Tallinn', year: 'numeric' }).format(d));
+}
+
+export function isCurrentTallinnYear(iso: string | null | undefined, now: Date = new Date()): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  return tallinnYear(d) === tallinnYear(now);
+}
+
+type HiddenRow = { species_key: string; updated_at: string | null };
+
 // ── Local cache helpers ──
 
 function cacheKey(scope: MapScope, userId: string): string {
@@ -26,6 +43,9 @@ function cacheTimestampKey(scope: MapScope, userId: string): string {
 
 export function loadLocalHidden(scope: MapScope, userId: string): Set<string> {
   try {
+    if (YEAR_BOUND_SCOPES.has(scope) && !isCurrentTallinnYear(localStorage.getItem(cacheTimestampKey(scope, userId)))) {
+      return new Set();
+    }
     const raw = localStorage.getItem(cacheKey(scope, userId));
     if (!raw) return new Set();
     const arr = JSON.parse(raw);
@@ -45,7 +65,7 @@ function saveLocalHidden(scope: MapScope, userId: string, hidden: Set<string>): 
 export async function loadCloudHidden(scope: MapScope, userId: string): Promise<Set<string>> {
   const { data, error } = await supabase
     .from('map_species_preferences' as any)
-    .select('species_key')
+    .select('species_key, updated_at')
     .eq('user_id', userId)
     .eq('map_scope', scope)
     .eq('is_hidden', true);
@@ -55,7 +75,14 @@ export async function loadCloudHidden(scope: MapScope, userId: string): Promise<
     return loadLocalHidden(scope, userId);
   }
 
-  const hidden = new Set((data as any[]).map((r: any) => r.species_key as string));
+  const rows = (data ?? []) as unknown as HiddenRow[];
+  let kept: HiddenRow[] = rows;
+  if (YEAR_BOUND_SCOPES.has(scope)) {
+    kept = rows.filter(r => isCurrentTallinnYear(r.updated_at));
+    console.log(`[prefs] scope=${scope} year-reset dropped=${rows.length - kept.length}`);
+  }
+
+  const hidden = new Set(kept.map(r => r.species_key));
   // Update local cache
   saveLocalHidden(scope, userId, hidden);
   return hidden;

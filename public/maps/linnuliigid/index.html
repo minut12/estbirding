@@ -546,11 +546,22 @@ html:not(.sb-classic) #recentToggle{grid-column:2;width:42px;height:24px;padding
 html:not(.sb-classic) #recentToggle::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--sb-bg);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .18s}
 html:not(.sb-classic) #recentToggle.on{background:var(--sb-primary)}
 html:not(.sb-classic) #recentToggle.on::after{transform:translateX(18px)}
+/* P71: "Peida nahtud liigid" switch row, same look as #recentToggle */
+html:not(.sb-classic) .sb-seen-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;font:500 13px system-ui;color:var(--sb-ink);margin-top:-2px}
+html:not(.sb-classic) #hideSeenToggle{width:42px;height:24px;padding:0;border-radius:12px;border:0;background:var(--sb-line);position:relative;font-size:0;color:transparent;cursor:pointer;box-shadow:none}
+html:not(.sb-classic) #hideSeenToggle::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--sb-bg);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .18s}
+html:not(.sb-classic) #hideSeenToggle.on{background:var(--sb-primary)}
+html:not(.sb-classic) #hideSeenToggle.on::after{transform:translateX(18px)}
+html.sb-classic .sb-seen-row{display:flex;align-items:center;gap:6px;font-size:12px;margin:4px 0}
+html.sb-classic #hideSeenToggle{width:30px;height:16px;padding:0;border-radius:8px;border:1px solid #cbd5e1;background:#e5e7eb;position:relative;cursor:pointer}
+html.sb-classic #hideSeenToggle::after{content:"";position:absolute;top:1px;left:1px;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+html.sb-classic #hideSeenToggle.on{background:#2563eb;border-color:#2563eb}
+html.sb-classic #hideSeenToggle.on::after{transform:translateX(14px)}
 html:not(.sb-classic) .sb-filters-body .fetch-controls #btnRefreshData,html:not(.sb-classic) .sb-filters-body .fetch-controls #btnResumeFetch,html:not(.sb-classic) .sb-filters-body .fetch-controls #btnStopFetch{grid-column:1 / -1;justify-self:start;height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink);font:500 12.5px system-ui}
 html:not(.sb-classic) .sb-filters-body .fetch-controls #btnStopFetch{background:var(--sb-crit);border-color:var(--sb-crit);color:#fff}
 html:not(.sb-classic) .sb-filters-body .elu-updated{margin:0;font-size:11.5px;color:var(--sb-muted);display:flex;align-items:center;gap:6px}
 html:not(.sb-classic) .sb-filters-body .elu-updated::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--sb-primary);flex-shrink:0}
-@media (prefers-reduced-motion:reduce){ html:not(.sb-classic) #recentToggle::after,html:not(.sb-classic) .sb-filters>summary::after{transition:none} }
+@media (prefers-reduced-motion:reduce){ html:not(.sb-classic) #recentToggle::after,html:not(.sb-classic) #hideSeenToggle::after,html:not(.sb-classic) .sb-filters>summary::after{transition:none} }
 /* P37b compact rows + action-only expand */
 html:not(.sb-classic) .panel-content-scroll{padding-left:0;padding-right:0}
 html:not(.sb-classic) .row{display:block;grid-template-columns:none;gap:0;padding:0;border-bottom:1px solid var(--sb-line2)}
@@ -770,6 +781,7 @@ html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);paddi
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index" style="display:none">Resume</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
+<div class="sb-seen-row"><span>Peida n&auml;htud liigid</span><button id="hideSeenToggle" type="button" role="switch" aria-checked="false" aria-label="Peida n&auml;htud liigid" title="Peida l&auml;bikriipsutatud liigid nimekirjast"></button></div>
 <div id="eluUpdated" class="elu-updated">Andmed viimati uuendatud: –</div>
 <div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
 <div id="eluLastCoord" class="fetch-progress" style="display:none !important"></div>
@@ -5307,6 +5319,33 @@ function setRecentOnly(val){
   try { if (typeof _syncEluObsVisibility === 'function') _syncEluObsVisibility(); } catch(e){}
 }
 window.__recentOnly = getRecentOnly();
+// P71: "Peida nahtud liigid" - hide crossed-out species from the sidebar list only
+(function(){
+  var LS_HIDE_SEEN = 'bm_hide_seen';
+  try { window.__hideSeen = (localStorage.getItem(LS_HIDE_SEEN) === '1'); } catch(e) { window.__hideSeen = false; }
+  function syncBtn(){
+    var b = document.getElementById('hideSeenToggle');
+    if (!b) return;
+    if (window.__hideSeen) b.classList.add('on'); else b.classList.remove('on');
+    b.setAttribute('aria-checked', window.__hideSeen ? 'true' : 'false');
+  }
+  window.__setHideSeen = function(on){
+    window.__hideSeen = !!on;
+    try { localStorage.setItem(LS_HIDE_SEEN, on ? '1' : '0'); } catch(e) {}
+    syncBtn();
+    render();
+  };
+  function wire(){
+    var b = document.getElementById('hideSeenToggle');
+    if (!b) return;
+    syncBtn();
+    if (b.__wired) return;
+    b.addEventListener('click', function(){ window.__setHideSeen(!window.__hideSeen); });
+    b.__wired = true;
+  }
+  if (document.getElementById('hideSeenToggle')) wire();
+  else document.addEventListener('DOMContentLoaded', wire);
+})();
 window.__snapshotLoadedOnce = false;
 window.__applyingSnapshot = false;
 // Trace unexpected changes to __recentOnly
@@ -11569,6 +11608,7 @@ function render() {
   const recent7 = is7daysOnly();
   const arr = DATA.filter(function(x){
     if(!x.est.toLowerCase().includes(q)) return false;
+    if (window.__hideSeen) { var pS = points[x.est]; if (pS && pS.visible === false) return false; }
     if(recent7){
       const p = points[x.est];
       if(!p) return false;

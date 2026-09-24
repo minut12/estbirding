@@ -2594,6 +2594,107 @@ if (!DEV_DEBUG) {
   function esc(s){
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
+  // P77a: eBird checklist species comments, cached per subId (value: {code: comment} or null)
+  var euChecklistCommentCache = new Map();
+  var euChecklistCommentInflight = new Map();
+  function euChecklistCommentPick(map, code){
+    return (map && Object.prototype.hasOwnProperty.call(map, code)) ? map[code] : null;
+  }
+  function euChecklistCommentCall(cb, value){
+    if (typeof cb !== "function") return;
+    try { cb(value); } catch(e){ console.warn("[P77a] checklist comment cb failed", e); }
+  }
+  function euChecklistCommentLoad(subId){
+    var pending = euChecklistCommentInflight.get(subId);
+    if (pending) return pending;
+    var token = "";
+    try { token = String(getEbirdToken() || ""); } catch(e){ token = ""; }
+    if (!token) {
+      euChecklistCommentCache.set(subId, null);
+      return Promise.resolve(null);
+    }
+    var url = "https://api.ebird.org/v2/product/checklist/view/" + encodeURIComponent(subId);
+    var p = safeFetchJson(url, { timeoutMs: 8000, retries: 1, headers: { "X-eBirdApiToken": token } })
+      .then(function(res){
+        var obs = (res && res.ok && res.status === 200 && res.json && Array.isArray(res.json.obs)) ? res.json.obs : null;
+        if (!obs) return null;
+        var map = {};
+        obs.forEach(function(o){
+          var code = (o && typeof o.speciesCode === "string") ? o.speciesCode : "";
+          var c = (o && typeof o.comments === "string") ? o.comments.trim() : "";
+          if (code && c) map[code] = c;
+        });
+        return map;
+      })
+      .catch(function(){ return null; })
+      .then(function(map){
+        euChecklistCommentCache.set(subId, map);
+        euChecklistCommentInflight.delete(subId);
+        return map;
+      });
+    euChecklistCommentInflight.set(subId, p);
+    return p;
+  }
+  function euChecklistComment(subId, speciesCode, cb){
+    var sid = (typeof subId === "string") ? subId.trim() : "";
+    var code = (typeof speciesCode === "string") ? speciesCode.trim() : "";
+    if (!sid || !code) { euChecklistCommentCall(cb, null); return; }
+    if (euChecklistCommentCache.has(sid)) {
+      euChecklistCommentCall(cb, euChecklistCommentPick(euChecklistCommentCache.get(sid), code));
+      return;
+    }
+    euChecklistCommentLoad(sid).then(function(map){
+      euChecklistCommentCall(cb, euChecklistCommentPick(map, code));
+    });
+  }
+  // P77a: eBird recent obs per country+species (newest per location, back=7), cached per key (value: array or null)
+  var euRecentObsCache = new Map();
+  var euRecentObsInflight = new Map();
+  function euRecentObsLoad(cc, code, key){
+    var pending = euRecentObsInflight.get(key);
+    if (pending) return pending;
+    var token = "";
+    try { token = String(getEbirdToken() || ""); } catch(e){ token = ""; }
+    if (!token) {
+      euRecentObsCache.set(key, null);
+      return Promise.resolve(null);
+    }
+    var url = "https://api.ebird.org/v2/data/obs/" + cc + "/recent/" + encodeURIComponent(code) + "?back=7";
+    var p = safeFetchJson(url, { timeoutMs: 8000, retries: 1, headers: { "X-eBirdApiToken": token } })
+      .then(function(res){
+        var arr = (res && res.ok && Array.isArray(res.json)) ? res.json : null;
+        if (!arr) return null;
+        return arr
+          .filter(function(o){ return o && typeof o === "object"; })
+          .map(function(o){
+            return {
+              dt: String(o.obsDt || "").slice(0, 16),
+              loc: String(o.locName || "").slice(0, 120),
+              n: (o.howMany != null ? Number(o.howMany) : null),
+              subId: (typeof o.subId === "string" ? o.subId.slice(0, 32) : null),
+              priv: !!o.locationPrivate
+            };
+          })
+          .sort(function(a, b){ return a.dt < b.dt ? 1 : (a.dt > b.dt ? -1 : 0); })
+          .slice(0, 5);
+      })
+      .catch(function(){ return null; })
+      .then(function(list){
+        euRecentObsCache.set(key, list);
+        euRecentObsInflight.delete(key);
+        return list;
+      });
+    euRecentObsInflight.set(key, p);
+    return p;
+  }
+  function euRecentObs(cc, speciesCode, cb){
+    var c = (typeof cc === "string") ? cc.trim() : "";
+    var code = (typeof speciesCode === "string") ? speciesCode.trim() : "";
+    if (REGIONS.indexOf(c) === -1 || !code) { euChecklistCommentCall(cb, null); return; }
+    var key = c + ":" + code;
+    if (euRecentObsCache.has(key)) { euChecklistCommentCall(cb, euRecentObsCache.get(key)); return; }
+    euRecentObsLoad(c, code, key).then(function(list){ euChecklistCommentCall(cb, list); });
+  }
   function readHideSeen(){
     try { return localStorage.getItem(LS_HIDE_SEEN_KEY) === "1"; } catch(e){ return false; }
   }

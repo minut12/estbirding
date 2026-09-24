@@ -3038,7 +3038,7 @@ if (!DEV_DEBUG) {
     var ringStyle = rar.color ? "box-shadow:0 0 0 2px " + rar.color + ",0 4px 10px rgba(20,40,30,.18);" : "";
     var regs = activeRegions({ regions: regionsObj });
     var cc = d.rg || "";
-    var tag = isAgg ? ("eBird &middot; " + regs.length + " " + esc(STR.countries)) : ("eBird &middot; " + esc(cc));
+    var tag = isAgg ? ("eBird &middot; " + (regs.length === 1 ? "1 riik" : regs.length + " " + esc(STR.countries))) : ("eBird &middot; " + esc(cc));
     var rtag = rar.text ? '<span class="bm-sc-rtag" style="background:' + rar.color + '">' + esc(rar.text) + '</span>' : '';
     var rel = relDay(d.t);
     var when = d.t

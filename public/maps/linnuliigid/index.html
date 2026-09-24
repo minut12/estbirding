@@ -2655,7 +2655,9 @@ async function tryFetch(url, opts){
   let lastErr = null;
   for(const u of urls){
     try{
-      const r = await fetch(u, { cache:'no-store', signal: signal });
+      const tfOpts = { cache:'no-store', signal: signal };
+      _addEluLangHeader(tfOpts, u);
+      const r = await fetch(u, tfOpts);
       if(!r.ok) throw new Error('HTTP ' + r.status);
       let text = await r.text();
       text = normalizeHtmlPayload(text);
@@ -2667,6 +2669,22 @@ async function tryFetch(url, opts){
     }
   }
   throw new Error(lastErr && lastErr.message ? String(lastErr.message) : 'Fetch failed');
+}
+// P80-pre: Elurikkus serves Estonian table headers/labels when the browser asks for et;
+// the parsers match English labels, so request English on every elurikkus.ee fetch.
+function _addEluLangHeader(fetchOpts, u){
+  var s = String(u || '');
+  if(s.indexOf('elurikkus.ee') < 0 && s.indexOf('elurikkus%2Eee') < 0 && s.indexOf('elurikkus%2eee') < 0) return fetchOpts;
+  var h = Object.assign({}, fetchOpts.headers || {});
+  h['Accept-Language'] = 'en-US,en;q=0.9';
+  fetchOpts.headers = h;
+  return fetchOpts;
+}
+// P80-pre: Elurikkus occurrence hrefs may be absolute (/app/occurrences/occurrence/<id>)
+// or relative (../occurrences/occurrence/<id>); normalise via the numeric id.
+function _eluOccUrlFromHref(href){
+  var m = String(href || '').match(/occurrences\/occurrence\/(\d+)/i);
+  return m ? ('https://elurikkus.ee/app/occurrences/occurrence/' + m[1]) : '';
 }
 function makeFetchURL(url){
   const raw = String(url || '').trim();
@@ -2945,7 +2963,7 @@ function findFirstDetailLink(html){
   if(!s) return '';
   const links = Array.from(s.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>/ig)).map(function(m){ return String(m[1] || ''); });
   for(const href of links){
-    if(/\/app\/occurrences\/occurrence\/\d+/i.test(String(href || ''))) return _absElurikkusUrl(href);
+    if(/occurrences\/occurrence\/\d+/i.test(String(href || ''))) return _eluOccUrlFromHref(href);
   }
   return '';
 }
@@ -2958,13 +2976,11 @@ function getLatestOccurrenceDetailUrlFromSearchHtml(html){
   const trMatch = tbody.match(/<tr[^>]*>([\s\S]*?)<\/tr>/i);
   if(!trMatch) return null;
   const tr = String(trMatch[1] || '');
-  const aMatch = tr.match(/href=["']([^"']*\/app\/occurrences\/occurrence\/\d+[^"']*)["']/i);
+  const aMatch = tr.match(/href=["']([^"']*occurrences\/occurrence\/\d+[^"']*)["']/i);
   if(!aMatch) return null;
   const href = String(aMatch[1] || '').trim();
   if(!href) return null;
-  if(/^https?:\/\//i.test(href)) return href;
-  if(href.startsWith('/')) return 'https://elurikkus.ee' + href;
-  return 'https://elurikkus.ee/' + href;
+  return _eluOccUrlFromHref(href) || null;
 }
 function getTopOccurrenceDetailUrlsFromSearchHtml(html, maxN){
   const out = [];
@@ -2974,11 +2990,11 @@ function getTopOccurrenceDetailUrlsFromSearchHtml(html, maxN){
   const tbodyMatch = s.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
   if(!tbodyMatch) return out;
   const tbody = String(tbodyMatch[1] || '');
-  const matches = Array.from(tbody.matchAll(/href=["']([^"']*\/app\/occurrences\/occurrence\/\d+[^"']*)["']/ig));
+  const matches = Array.from(tbody.matchAll(/href=["']([^"']*occurrences\/occurrence\/\d+[^"']*)["']/ig));
   for(let i = 0; i < matches.length; i++){
     const href = String(matches[i][1] || '').trim();
     if(!href) continue;
-    const abs = _absElurikkusUrl(href);
+    const abs = _eluOccUrlFromHref(href);
     if(abs && out.indexOf(abs) < 0) out.push(abs);
     if(out.length >= n) break;
   }
@@ -3382,7 +3398,7 @@ function parseEluRowsIso(html, baseUrl){
   let m;
   while((m = trRe.exec(text)) !== null){
     const tr = m[1];
-    const id = (String(tr).match(/\/app\/occurrences\/occurrence\/(\d+)/i)||[])[1];
+    const id = (String(tr).match(/occurrences\/occurrence\/(\d+)/i)||[])[1];
     const dm = String(tr).match(/(\d{4}-\d{2}-\d{2})/);
     const iso = dm ? dm[1] : '';
     if(!iso) continue;
@@ -3848,11 +3864,11 @@ function extractOccurrenceCandidates(html){
   let m;
   while((m = trRe.exec(src)) !== null){
     const tr = String(m[1] || '');
-    const urlM = tr.match(/href=["'](\/app\/occurrences\/occurrence\/\d+)[^"']*["']/i);
+    const urlM = tr.match(/href=["']([^"']*occurrences\/occurrence\/\d+)[^"']*["']/i);
     if(!urlM) continue;
     const dtM = tr.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})(?::\d{2})?/);
     const dateText = dtM ? (dtM[1] + ' ' + dtM[2]) : '';
-    const occUrl = 'https://elurikkus.ee' + String(urlM[1] || '');
+    const occUrl = _eluOccUrlFromHref(urlM[1]);
     candidates.push({ occUrl: occUrl, dateText: dateText, ms: parseEluDateMs(dateText) || 0 });
   }
   candidates.sort(function(a,b){ return (b.ms || 0) - (a.ms || 0); });
@@ -4500,6 +4516,7 @@ async function _fetchHtmlWithFallback(url, signal){
       if(sbUrl && anonKey && u.indexOf(sbUrl) === 0){
         fetchOpts.headers = { 'apikey': anonKey, 'Authorization': 'Bearer ' + anonKey };
       }
+      _addEluLangHeader(fetchOpts, u);
       const r = await fetch(u, fetchOpts);
       if(!r.ok) throw new Error('HTTP ' + r.status + ' via ' + u.slice(0,60));
       const text = await r.text();
@@ -4533,11 +4550,11 @@ async function fetchElurikkusHtml(url, signal, opts){
   let lastErr = null;
   for(const u of candidates){
     try{
-      const res = await fetch(u, { method: 'GET', cache: 'no-store', signal: signal });
+      const res = await fetch(u, _addEluLangHeader({ method: 'GET', cache: 'no-store', signal: signal }, u));
       if(!res.ok) throw new Error('HTTP ' + res.status);
       const txt = await res.text();
       const html = normalizeHtmlPayload(txt);
-      const occMatches = String(html || '').match(/\/app\/occurrences\/occurrence\/\d+/g) || [];
+      const occMatches = String(html || '').match(/occurrences\/occurrence\/\d+/g) || [];
       const hasOccLinks = occMatches.length > 0;
       window.__lastSearchHasOccLinks = hasOccLinks;
       window.__lastSearchOccLinkCount = occMatches.length;
@@ -4562,10 +4579,11 @@ function extractOccurrenceRowsFromSearch(html){
     const tds = tr.querySelectorAll('td');
     if(!tds || tds.length < 2) continue;
     const dateText = String((tds[0].textContent || '').trim());
-    const a = tr.querySelector('a[href*="/app/occurrences/occurrence/"]');
+    const a = tr.querySelector('a[href*="occurrences/occurrence/"]');
     const href = a ? String(a.getAttribute('href') || '').trim() : '';
     if(!href) continue;
-    const occUrl = href.startsWith('http') ? href : ('https://elurikkus.ee' + (href.startsWith('/') ? href : '/' + href));
+    const occUrl = _eluOccUrlFromHref(href);
+    if(!occUrl) continue;
     rows.push({ dateText: dateText, occUrl: occUrl });
   }
   return rows;
@@ -4576,11 +4594,11 @@ function extractOccurrenceRowsRegex(html){
   let m;
   while((m = trRe.exec(String(html || ''))) !== null){
     const tr = String(m[1] || '');
-    const urlM = tr.match(/href=["'](\/app\/occurrences\/occurrence\/\d+)[^"']*["']/i);
+    const urlM = tr.match(/href=["']([^"']*occurrences\/occurrence\/\d+)[^"']*["']/i);
     if(!urlM) continue;
     const dtM = tr.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})(?::\d{2})?/);
     const dateText = dtM ? (dtM[1] + ' ' + dtM[2]) : '';
-    const occUrl = 'https://elurikkus.ee' + String(urlM[1] || '');
+    const occUrl = _eluOccUrlFromHref(urlM[1]);
     rows.push({ dateText: dateText, occUrl: occUrl });
   }
   return rows;

@@ -51,3 +51,25 @@ Editing the JSON later:
 - Browsers may keep serving the old file from cache (`force-cache`) until the cache expires or the user does a hard refresh. Bump the filename or add a `?v=` to `MW_URL` if a change must show up immediately.
 
 Open item: on first load of the standalone page, the eBird `recent` data for all 7 countries (FI/SE/LV/LT/PL/BY/RU) was fetched 4 times in about 20 s (32 requests) and then stopped. This was seen during P76 testing and was there before P76. Probably existing refresh/retry logic; not yet investigated.
+
+## P77 — flag pin tags, eBird comment and recent obs on the per-country card
+
+Commits: `1f0e33c` (P77a helpers), `24ae8e9` (P77b flags), `92d5a2f` (P77b2 pin "1 RIIK"), `91d093f` (P77c card), `5f42f51` (Aedporr code), `f3dc9ed` (P77b3 card tag "1 riik").
+
+Rulings (Kristian, 24 Sep):
+1. Flags: in Riigiti mode, and in Uusim riik under a country chip, the pin tag shows an inline-SVG flag (CSS data URI, `.euf-<cc>`) with `title="<Estonian name> (CC)"`. Uusim riik without a chip keeps the text tag (`N RIIKI`, singular `1 RIIK`). Row chips and the card band tag keep text. The flag tag has `pointer-events:auto` so the title tooltip works; a click still opens the marker popup. The frame keeps the tag colour, so a rändel species gets a green frame.
+2. Comment box: per-country card only, only for `rarityLevel` rare/super/mega, and only when the region has a `subId`. On `popupopen` it fetches `GET /v2/product/checklist/view/<subId>` and shows `obs[].comments` for the card's `speciesCode`. It hides (`is-off`) when there is no comment or the fetch fails.
+3. Recent list: per-country card only. On `popupopen` it fetches `GET /v2/data/obs/<CC>/recent/<speciesCode>?back=7`. eBird returns the newest obs **per location**, so the list means "where it was seen in the last 7 days", with one row per place, newest first, max 5. The list is shown only with ≥ 2 rows, and then the Koht row is hidden. Rows link to `https://ebird.org/checklist/<subId>`. Time is `dd.mm HH:MM`, or `dd.mm` when eBird gives no time; it is sliced from the string, not parsed. `locationPrivate` rows keep the name as eBird shows it and add `title="Privaatne asukoht"`.
+4. The aggregated card and classic are unchanged, apart from the card tag reading "1 riik".
+
+Why not in the refresh: `GET /v2/data/obs/<CC>/recent` (the refresh feed) returns only one row per species per country, so a "last 5" list can't be built from it. The first P77a attempt did that and was reverted before commit. P77 leaves the snapshot and localStorage alone: no `recent` in `compactPoints`, and `SNAPSHOT_VERSION` is unchanged.
+
+Cache: `euChecklistComment` (key `subId`) and `euRecentObs` (key `CC:code`) are in-memory `Map`s for the page session, with one in-flight promise per key. Failures are cached as `null`, so each key is fetched at most once per session. Both call `safeFetchJson` with `timeoutMs: 8000, retries: 1`. Note that `safeFetchJson` treats `retries: 0` as the default of 2.
+
+Popup gotcha: markers use `bindPopup(function)`, so `popup.update()` re-renders the card and throws away anything filled in asynchronously. After filling, the handler calls `popup._updateLayout()` + `popup.setLatLng(popup.getLatLng())` instead (a private Leaflet 1.9.4 method, guarded). Use the same approach for any future async fill.
+
+Data fix: Aedporr (Short-toed Treecreeper) is `shttre1`. The Euroopa table had `shtre1`, which returns `400`. `src/lib/defaultEbirdCodes.ts` still has `shtre1`; that is outside P77 and not fixed yet.
+
+Known limitation: the card's stats ("1 vaatlust 7 p") come from the refresh feed (one row per species per country), while the list comes from the per-species call. A card can show "1 vaatlust" above a list of 5 locations. Accepted; no code change.
+
+Open item: "Ainult haruldased" (`#euSwRare`) was on after every reload in the test browser, so the map started empty. It is not yet known whether this is a saved setting or a default flipped by some change. Kristian checks on `main--`.

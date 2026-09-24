@@ -12,3 +12,21 @@ Open items:
 - Not yet checked signed in at `127.0.0.1:8080` (real avatars, rarity, scientific names).
 - Kristian's push, then a desktop and phone check on `main--estbirds.netlify.app`.
 - `europe_ebird_cache` is not used by the iframe.
+
+## P75 — eBird checklist links and automatic "rändel"
+
+Commits: `67ff271` (P75a subId), `46eb074` (P75b+c links + rändel).
+
+Rulings (Kristian, 24 Sep):
+1. "rändel" comes automatically from the Rändeajad histograms. There is no manual toggle.
+2. The card tile shows `kevad`, `sügis` or `—`, depending on which window is active this week.
+3. The same signal turns the country chips in the row (`.mig`) and the pin tag green.
+4. The card's "Ava eBirdis" opens the checklist (`https://ebird.org/checklist/<subId>`) of the card's own region. For the aggregated card that is the region shown as "viimati", so the link and the label always agree. Without a `subId` it falls back to the species page.
+5. The row-detail "Ava eBirdis" opens the newest checklist across countries (`euNewestRegion`: `tMs`, falling back to `t`), with the same fallback.
+6. Released together with P74. Claude checks the desktop on `main--`, Kristian checks his phone.
+
+`subId` storage: `refreshEuropeAggregated` stores `subId` (capped at 32 characters) per region and in `latest`. `compactPoints` keeps it only per region; `latest` and `tMs` are deliberately still not saved. Points saved earlier have no `subId` until the next "Uuenda eBirdist". `SNAPSHOT_VERSION` is unchanged.
+
+Cache is read-only: Euroopa only reads `bm_randeajad_v3`, which linnuliigid owns. It never writes it and never fetches histograms. A cache that is missing, malformed or 7 or more days old means no signal, and everything renders as before (`—`, no green). Classic still reads only `p.migration`, which nothing ever sets.
+
+Open item: during P75 testing, anon calls to the `get_species_week_histograms` RPC returned `500 57014` (statement timeout). On `main--` the real cache had 399 keys and was 24 h old, so it isn't blocking. But if the RPC keeps timing out, the cache will stop refreshing once its 7-day TTL runs out, and "rändel" will silently go back to `—`.

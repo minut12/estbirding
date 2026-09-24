@@ -30,3 +30,24 @@ Rulings (Kristian, 24 Sep):
 Cache is read-only: Euroopa only reads `bm_randeajad_v3`, which linnuliigid owns. It never writes it and never fetches histograms. A cache that is missing, malformed or 7 or more days old means no signal, and everything renders as before (`—`, no green). Classic still reads only `p.migration`, which nothing ever sets.
 
 Open item: during P75 testing, anon calls to the `get_species_week_histograms` RPC returned `500 57014` (statement timeout). On `main--` the real cache had 399 keys and was 24 h old, so it isn't blocking. But if the RPC keeps timing out, the cache will stop refreshing once its 7-day TTL runs out, and "rändel" will silently go back to `—`.
+
+## P76 — curated migration windows for rarities
+
+Commits: `ae54502` (P75d teadmata tile), `37552b7` (P76 curated windows).
+
+Rulings (Kristian, 24 Sep 13:56):
+1. The data source for rarities is a curated JSON file in the repo, reviewed by Kristian. No DB, no Storage, no species-meta change.
+2. Precedence: the Estonian histogram comes first. When it classifies the species (`migrant`, `resident` or `winter`), that result wins. The curated window is used only when the histogram gives `few` or has no entry for the species.
+3. Card tile: `kevad` / `sügis` when a window from either source is active this week; `—` when a source knows the species but no window is active; `teadmata` (tooltip "Rändeaja andmed puuduvad") only when neither source has it, or the curated entry has both halves `null`.
+4. The same signal drives the row chips and the pin tag (green only for kevad/sügis).
+5. Released separately, after P74/P75 go to production.
+
+File: `public/maps/shared/migration-windows.json` (UTF-8, no BOM, LF). Its layout is `species["<Estonian name>"] = { "spring": [a, b] | null, "autumn": [a, b] | null }`. Weeks run 1–52 in the same non-leap numbering as `randeajad.js`, and the bounds are inclusive. The `euRandel` IIFE fetches the file once (`cache: "force-cache"`) and calls `render()` once when it arrives. Classic never fetches it. If the fetch fails, it logs `[eu-randel] windows load failed` and everything behaves as P75d. `window.__euRandelSource(name)` returns `"hist" | "curated" | null` and is only meant for checking.
+
+Editing the JSON later:
+- Keep the key spelling identical to the species name in the list. Names are matched after mojibake repair, NFC normalisation and lowercasing, so case doesn't matter.
+- Windows must not wrap past week 52 (`R.isNow` has no wraparound): split a Dec–Jan window or cap it at 52.
+- Setting both halves to `null` gives `teadmata` on purpose. Leaving the species out gives the same result unless the histogram knows it.
+- Browsers may keep serving the old file from cache (`force-cache`) until the cache expires or the user does a hard refresh. Bump the filename or add a `?v=` to `MW_URL` if a change must show up immediately.
+
+Open item: on first load of the standalone page, the eBird `recent` data for all 7 countries (FI/SE/LV/LT/PL/BY/RU) was fetched 4 times in about 20 s (32 requests) and then stopped. This was seen during P76 testing and was there before P76. Probably existing refresh/retry logic; not yet investigated.

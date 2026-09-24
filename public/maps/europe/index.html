@@ -463,7 +463,7 @@ html:not(.sb-classic) .bm-sc-ft .is-ok{color:#2d7a4b;font-weight:700}
     <aside id="sidebar" aria-label="Sidebar">
       <div class="panel-header">
       <div id="stickyPanel">
-      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa"></template>
+      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa" data-title-checklist="Kontrollnimekiri" data-title-species="Liigi leht" data-spring="kevad" data-autumn="s&uuml;gis"></template>
       <div class="sb-titlebar" hidden>
         <div class="sb-brand"><img class="sb-brand-ico" src="/icons/estbirds-96.png" alt="" width="44" height="44"><div class="sb-brand-txt"><h2>EstBirds</h2><div class="sb-counts" id="euCounts"></div></div></div>
         <div class="sb-title-r"><span class="sb-src">eBird &middot; 7 p</span></div>
@@ -551,6 +551,7 @@ html:not(.sb-classic) .bm-sc-ft .is-ok{color:#2d7a4b;font-weight:700}
 <script src="/maps/shared/species-meta.js"></script>
 <script src="/maps/shared/rarity-style.js"></script>
 <script src="/maps/shared/et-strings.js"></script>
+<script src="/maps/shared/randeajad.js"></script>
 <script>
 /* ========= Embedded detection ========= */
 (function(){
@@ -2637,8 +2638,12 @@ if (!DEV_DEBUG) {
     return !!points[name] && points[name].visible === false;
   }
 
+  // P75c: randel signal from the euRandel IIFE (defined after euNewUi; read at render time).
+  function euMigKind(name){
+    return window.__euRandelKind ? window.__euRandelKind(name) : null;
+  }
   /* ----- rows ----- */
-  function euRowMeta(p, regs, hasLoc){
+  function euRowMeta(p, regs, hasLoc, isMig){
     if (!hasLoc) return '<span>' + esc(STR.noLoc) + '</span>';
     var parts = [];
     var fresh = relDay(p.t);
@@ -2646,10 +2651,30 @@ if (!DEV_DEBUG) {
     parts.push('<span class="sb-occ">7p ' + Number(p.occ7 || 0) + '</span>');
     if (regs.length) {
       parts.push('<span class="cc">' + regs.map(function(r){
-        return '<b' + (p.migration ? ' class="mig"' : '') + '>' + esc(r.rg) + ' ' + r.occ7 + '</b>';
+        return '<b' + (isMig ? ' class="mig"' : '') + '>' + esc(r.rg) + ' ' + r.occ7 + '</b>';
       }).join("") + '</span>');
     }
     return parts.join('<i class="sb-sep"></i>');
+  }
+  // Newest region by tMs (fallback t, since compactPoints does not keep tMs).
+  function euNewestRegion(regionsObj){
+    var best = null;
+    var bestKey = -Infinity;
+    Object.keys(regionsObj || {}).forEach(function(rg){
+      var r = regionsObj[rg];
+      if (!r) return;
+      var k = Number(r.tMs) || ymdToUtc(r.t);
+      if (isFinite(k) && k > bestKey) { bestKey = k; best = r; }
+    });
+    return best;
+  }
+  // eBird link for d: its checklist when subId is known, else the species page, else null (omit the button).
+  function euEbirdUrl(species, d){
+    if (d && typeof d.subId === "string" && d.subId) {
+      return { href: "https://ebird.org/checklist/" + encodeURIComponent(d.subId), title: STR.titleChecklist || "" };
+    }
+    var code = resolveEbirdCode(species) || EBIRD_CODES[species] || "";
+    return code ? { href: "https://ebird.org/species/" + encodeURIComponent(code), title: STR.titleSpecies || "" } : null;
   }
   function euRowDetail(name, regs){
     var ctry = regs.map(function(r){
@@ -2659,9 +2684,9 @@ if (!DEV_DEBUG) {
       if (rd) bits.push(esc(rd));
       return '<span title="' + esc(STR[r.rg.toLowerCase()] || r.rg) + '">' + esc(r.rg) + ' <i>' + bits.join(" &middot; ") + '</i></span>';
     }).join("");
-    var code = resolveEbirdCode(name) || EBIRD_CODES[name] || "";
-    var link = code
-      ? '<a class="dbtn" target="_blank" rel="noopener" href="https://ebird.org/species/' + encodeURIComponent(code) + '">' + esc(STR.openEbird) + ' &#8599;</a>'
+    var eb = euEbirdUrl(name, euNewestRegion((points[name] || {}).regions));
+    var link = eb
+      ? '<a class="dbtn" target="_blank" rel="noopener" href="' + esc(eb.href) + '" title="' + esc(eb.title) + '">' + esc(STR.openEbird) + ' &#8599;</a>'
       : "";
     return (ctry ? '<div class="ctry">' + ctry + '</div>' : "") + link;
   }
@@ -2682,7 +2707,7 @@ if (!DEV_DEBUG) {
         '</div>' +
         '<div class="sb-row-text">' +
           '<div class="name name-label' + (p.visible === false ? ' muted' : '') + '">' + esc(displayName) + '</div>' +
-          '<div class="sb-meta">' + euRowMeta(p, regs, hasLoc) + '</div>' +
+          '<div class="sb-meta">' + euRowMeta(p, regs, hasLoc, !!euMigKind(name)) + '</div>' +
         '</div>' +
         '<div class="sb-acts">' +
           '<button type="button" class="sb-ib sb-locate" data-open' + (hasLoc ? '' : ' disabled') + ' title="Kaardil" aria-label="Kaardil">' + ICO_PIN + '</button>' +
@@ -2802,16 +2827,16 @@ if (!DEV_DEBUG) {
     var html = '<div class="bm-pin' + (isOld ? ' is-old' : '') + '">' +
       '<div class="bm-pin-shape"' + shapeStyle + '></div>' +
       '<div class="bm-pin-head"' + (av ? ' style="background-image:url(\'' + esc(av) + '\')"' : '') + '></div>' +
-      '<div class="bm-pin-src' + (p.migration ? ' mig' : '') + '">' + esc(srcText) + '</div>' +
+      '<div class="bm-pin-src' + (euMigKind(species) ? ' mig' : '') + '">' + esc(srcText) + '</div>' +
       (rar.text ? '<div class="bm-pin-rb" style="color:' + rar.color + '">' + esc(rar.text) + '</div>' : '') +
       (Number.isFinite(count) && count >= 1 ? '<div class="bm-pin-cnt">' + count + '</div>' : '') +
       '<div class="bm-pin-tip"></div>' +
       '</div>';
     return L.divIcon(Object.assign({ html: html }, EU_PIN_OPTS));
   }
-  function euCardStats(isAgg, p, d, total7, nCountries){
+  function euCardStats(isAgg, p, d, total7, nCountries, kind){
     var dash = "&mdash;";
-    var migTxt = p.migration ? esc(STR.yes) : dash;
+    var migTxt = kind === "kevad" ? esc(STR.spring) : kind === "sygis" ? esc(STR.autumn) : dash;
     var stats = isAgg
       ? [[String(Number(total7) || 0), STR.obs7], [String(nCountries), STR.countries], [migTxt, STR.mig]]
       : [[String(Number(d.occ7) || 0), STR.obs7], [Number.isFinite(d.howMany) ? String(d.howMany) : dash, STR.ind], [migTxt, STR.mig]];
@@ -2852,12 +2877,13 @@ if (!DEV_DEBUG) {
       ? '<div class="bm-sc-when">' + (rel ? '<b class="bm-sc-rel">' + esc(rel) + '</b> &middot; ' : '') + esc(formatDateEt(d.t)) +
         (isAgg ? ' &middot; viimati ' + esc(cc) : '') + '</div>'
       : '';
-    var code = resolveEbirdCode(species) || EBIRD_CODES[species] || "";
+    // The card's own region (d): per-country = that country; aggregated = the region shown as "viimati".
+    var eb = euEbirdUrl(species, d);
     var lat = Number(d.lat);
     var lon = Number(d.lon);
     var hasXY = Number.isFinite(lat) && Number.isFinite(lon);
     var coordTxt = hasXY ? (lat.toFixed(4) + ", " + lon.toFixed(4)) : "";
-    var acts = (code ? '<a class="bm-sc-btn" href="https://ebird.org/species/' + encodeURIComponent(code) + '" target="_blank" rel="noopener">' + esc(STR.openEbird) + '</a>' : '') +
+    var acts = (eb ? '<a class="bm-sc-btn" href="' + esc(eb.href) + '" title="' + esc(eb.title) + '" target="_blank" rel="noopener">' + esc(STR.openEbird) + '</a>' : '') +
       (hasXY ? '<button type="button" class="bm-sc-ico bm-sc-copy" data-coords="' + coordTxt + '" title="' + esc(STR.copy) + '" aria-label="' + esc(STR.copy) + '">' + ICO_COPY + '</button>' : '');
     var ftNote = isAgg ? STR.newest : STR.site;
     var ft = hasXY
@@ -2871,7 +2897,7 @@ if (!DEV_DEBUG) {
           '<div class="bm-sc-id"><div class="bm-sc-name">' + esc(displayName) + '</div>' +
           (sci ? '<div class="bm-sc-sci">' + esc(sci) + '</div>' : '') + '</div></div>' +
         when +
-        euCardStats(isAgg, p, d, total7, regs.length) +
+        euCardStats(isAgg, p, d, total7, regs.length, euMigKind(species)) +
         euCardRows(isAgg, d, regs) +
         (acts ? '<div class="bm-sc-acts">' + acts + '</div>' : '') +
         ft +
@@ -3079,6 +3105,69 @@ if (!DEV_DEBUG) {
     }).observe(sidebar, { attributes: true, attributeFilter: ["class"] });
   }
   paintChrome();
+})();
+
+/* ========= P75c: automatic randel from the Randeajad cache (read-only; skipped under html.sb-classic) ========= */
+(function euRandel(){
+  if (document.documentElement.classList.contains("sb-classic")) return;
+  var R = window.__bmRandeajad;
+  var LS_KEY = "bm_randeajad_v3";
+  var TTL_MS = 7 * 24 * 3600 * 1000;
+  var WEEKS = 52;
+  var hist = null;
+  var slugToKey = {};
+  var memo = {};
+  // Same idea as linnuliigid slugifySpeciesKey: page normaliser (mojibake fix), then NFC + lowercase.
+  function slug(k){
+    var s = normalizeText(k);
+    if (s.normalize) s = s.normalize("NFC");
+    return s.toLowerCase();
+  }
+  // Never written and never fetched here; linnuliigid owns the cache.
+  try {
+    var o = JSON.parse(localStorage.getItem(LS_KEY) || "null");
+    if (o && o.h && typeof o.h === "object" && !Array.isArray(o.h) && (Date.now() - Number(o.t)) < TTL_MS) hist = o.h;
+  } catch(e){ console.warn("[eu-randel] cache read failed", e); hist = null; }
+  if (hist) {
+    Object.keys(hist).forEach(function(k){ var sl = slug(k); if (!(sl in slugToKey)) slugToKey[sl] = k; });
+  }
+  function lookup(name){
+    if (!hist) return null;
+    if (Object.prototype.hasOwnProperty.call(hist, name)) return { key: name, pairs: hist[name] };
+    var k = slugToKey[slug(name)];
+    return k ? { key: k, pairs: hist[k] } : null;
+  }
+  // Non-leap day of year, as linnuliigid todayDoy().
+  function todayDoy(){
+    var d = new Date();
+    var y = d.getFullYear();
+    var doy = Math.round((new Date(y, d.getMonth(), d.getDate()) - new Date(y, 0, 1)) / 864e5) + 1;
+    var leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+    if (leap && doy > 59) doy--;
+    return Math.min(365, doy);
+  }
+  function compute(name, wk){
+    var found = lookup(name);
+    if (!found || !Array.isArray(found.pairs) || !found.pairs.length) return null;
+    var res = R.analyse(found.pairs, { resident: R.isResident(found.key) || R.isResident(name) });
+    if (!res || res.kind !== "migrant") return null;
+    if (R.isNow(res.spring, wk)) return "kevad";
+    if (R.isNow(res.autumn, wk)) return "sygis";
+    return null;
+  }
+  // Returns "kevad" | "sygis" | null; memoised per name per day.
+  function euRandelKind(name){
+    if (!hist || !R) return null;
+    var doy = todayDoy();
+    var hit = memo[name];
+    if (hit && hit.doy === doy) return hit.kind;
+    var kind = null;
+    try { kind = compute(name, Math.min(WEEKS, Math.floor((doy - 1) / 7) + 1)); }
+    catch(e){ console.warn("[eu-randel]", name, e); kind = null; }
+    memo[name] = { doy: doy, kind: kind };
+    return kind;
+  }
+  window.__euRandelKind = euRandelKind;
 })();
 
 /* ========= Init ========= */

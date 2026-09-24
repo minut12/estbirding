@@ -159,6 +159,14 @@
 .bm-card-media .mc{display:inline-flex;align-items:center;gap:4px;font-weight:600;white-space:nowrap}
 .bm-card-media a{margin-left:auto;color:#155e75;font-weight:600;text-decoration:none;white-space:nowrap}
 .bm-card-media.is-off{display:none}
+.bm-card-rem{display:flex;gap:8px;margin-top:10px;padding:8px 10px;border-radius:10px;background:#eef6f0;border:1px solid #cfe3d5;color:#1f5a36;font-size:12px;line-height:1.4}
+.bm-card-rem b{display:block;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#2d7a4b;margin-bottom:2px}
+.bm-card-thumbs{display:flex;gap:6px;margin-top:10px}
+.bm-card-thumb{position:relative;flex:1 1 0;aspect-ratio:4/3;border-radius:8px;overflow:hidden;background:#cbd5d1 center/cover no-repeat;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.bm-card-cr{position:absolute;left:0;right:0;bottom:0;padding:2px 5px;font-size:9px;line-height:1.2;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bm-card-more{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.55);color:#fff;font:700 14px system-ui}
+.bm-card-mlnote{margin-top:6px;font-size:10.5px;color:#6b7a75}
+.bm-card-mlnote a{color:#155e75}
 .bm-card-recent{margin-top:11px;padding-top:9px;border-top:1px solid #e7eeea}
 .bm-card-recent.is-off{display:none}
 .bm-card-recent-h{font:700 10px/1.2 system-ui,Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#6c7f74}
@@ -4713,7 +4721,7 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
     items: []
   };
 }
-function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, occ7, detailFields, rowExtra, newestRawDate){
+function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, occ7, detailFields, rowExtra, newestRawDate, remarkMedia){
   const p = points[species] = points[species] || {};
   const oldLat = Number.isFinite(Number(p.lat)) ? Number(p.lat) : null;
   const oldLon = Number.isFinite(Number(p.lon)) ? Number(p.lon) : null;
@@ -4835,6 +4843,7 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
   p.eluExtra.communes = String(detailExact.communes || p.eluExtra.communes || '');
   p.eluExtra.eestiOmavalitsused = String(detailExact.eestiOmavalitsused || p.eluExtra.eestiOmavalitsused || '');
   p.eluExtra.detailExact = detailExact;
+  if(remarkMedia) Object.assign(p.eluExtra, remarkMedia);
   const latlon = (Number.isFinite(detailExact.lat) && Number.isFinite(detailExact.lon)) ? [detailExact.lat, detailExact.lon] : null;
   let moved = false;
   if(latlon && Number.isFinite(Number(latlon[0])) && Number.isFinite(Number(latlon[1]))){
@@ -4902,6 +4911,55 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
     detailUrl: p.openUrl || ''
   };
 }
+// P80b: results[] of the embedded SvelteKit search JSON (envelope body is a JSON
+// string -> double parse). Any failure -> null; never throws into the refresh.
+function _parseEluSearchJson(html){
+  try {
+    var src = String(html || '');
+    var re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+    var m;
+    while ((m = re.exec(src))) {
+      var attrs = m[1] || '';
+      if (attrs.indexOf('data-sveltekit-fetched') === -1) continue;
+      if (attrs.indexOf('api/occurrences/search') === -1) continue;
+      var env = JSON.parse(m[2]);
+      var body = (env && typeof env.body === 'string') ? JSON.parse(env.body) : (env && env.body);
+      var res = body && body.results;
+      return Array.isArray(res) ? res : null;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+// P80b: remark/photo fields for the row whose id matches detailUrl (id only, no
+// results[0] fallback). No match -> cleared fields so a stale remark cannot linger.
+function _eluRemarkMediaFields(searchHtml, detailUrl){
+  var id = (String(detailUrl || '').match(/occurrence\/(\d+)/) || [])[1] || '';
+  var out = { remark: '', occId: id, media: [], mediaN: 0 };
+  if (!id) return out;
+  var results = _parseEluSearchJson(searchHtml);
+  if (!results) return out;
+  var row = null;
+  for (var i = 0; i < results.length; i++) {
+    if (results[i] && String(results[i].id) === id) { row = results[i]; break; }
+  }
+  if (!row) return out;
+  var files = Array.isArray(row.files) ? row.files : [];
+  var imgs = files.filter(function(f){ return f && f.media_type === 'Image'; });
+  out.remark = String(row.remarks || row.identification_remarks || '').trim().slice(0, 300);
+  out.occId = String(row.id);
+  out.mediaN = imgs.length;
+  out.media = imgs.filter(function(f){ return f.preview_url; }).slice(0, 3).map(function(f){
+    return {
+      t: String(f.preview_url),
+      l: String(f.large_url || f.url || f.preview_url),
+      by: String(f.rights_holder || (Array.isArray(f.creators) && f.creators[0]) || ''),
+      lic: String(f.license || '')
+    };
+  });
+  return out;
+}
 async function autoFetchCoords(key, searchUrl, signal){
   const species = String(key || '').trim();
   if(!species) throw new Error('Species missing');
@@ -4949,6 +5007,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   p.eluExtra.__occ7debug = occ7Multi || { occ7_page1: occ7Page1 };
   if(!detailUrl){
     if(latestIso) p.t = latestIso;
+    Object.assign(p.eluExtra, _eluRemarkMediaFields('', ''));
     if(_shouldDeferEeRefreshUi()){
       if(ctx) _logEeRefreshStage({ view: ctx.view, jobId: ctx.jobId, index: ctx.index, species: species, stage: 'applyDataNoDetailDeferredUi' });
     } else {
@@ -4984,7 +5043,7 @@ async function autoFetchCoords(key, searchUrl, signal){
     eestiOmavalitsused: detailExact.eestiOmavalitsused || '',
     coordsStatus: (Number.isFinite(detailExact.lat) && Number.isFinite(detailExact.lon)) ? 'public' : 'restricted_or_missing'
   };
-  const result = applyElurikkusExactCoords(species, detailHtml, detailUrl, latestIso, finalOcc7, detailFields, rowExtra, latestRawDate);
+  const result = applyElurikkusExactCoords(species, detailHtml, detailUrl, latestIso, finalOcc7, detailFields, rowExtra, latestRawDate, _eluRemarkMediaFields(searchHtml, detailUrl));
   p.eluExtra = p.eluExtra || {};
   p.eluExtra.__coordDebug = {
     detailUrl,
@@ -8519,7 +8578,15 @@ async function _loadElurikkusCacheFromSupabase(){
         delete merged.lat;
         delete merged.lon;
       }
+      // P80b: remark/photos are client-only; carry them only while the client point
+      // still describes the same occurrence as the merged openUrl.
+      var _pxOcc = (String(merged.openUrl || '').match(/occurrence\/(\d+)/) || [])[1] || '';
+      var _px = (p.eluExtra && _pxOcc && String(p.eluExtra.occId || '') === _pxOcc) ? p.eluExtra : null;
       merged.eluExtra = {
+        remark:          _px ? String(_px.remark || '') : '',
+        occId:           _px ? _pxOcc : '',
+        media:           (_px && Array.isArray(_px.media)) ? _px.media : [],
+        mediaN:          (_px && Number(_px.mediaN)) || 0,
         locality:        row.locality        != null ? row.locality        : null,
         municipality:    row.municipality    != null ? row.municipality    : null,
         county:          row.county          != null ? row.county          : null,
@@ -10589,6 +10656,38 @@ function _isCoordsApprox(p){
   } catch (_e) {}
   return coordsApprox;
 }
+// P80b: Elurikkus photo strip (up to 3 tiles, +N on the 3rd) + credit/link note.
+// Only https:// URLs; the thumb URL is stripped of quote/paren/backslash chars
+// because it sits inside style="background-image:url('...')".
+function _bmEluThumbsHtml(x){
+  var media = (x && Array.isArray(x.media)) ? x.media : [];
+  var mediaN = Number(x && x.mediaN) || 0;
+  var tiles = [];
+  for (var i = 0; i < media.length && tiles.length < 3; i++) {
+    var f = media[i] || {};
+    var t = String(f.t || '').replace(/['"()\\]/g, '');
+    var l = String(f.l || '');
+    if (t.indexOf('https://') !== 0 || l.indexOf('https://') !== 0) continue;
+    var lic = String(f.lic || '');
+    var licM = /\(([^)]+)\)/.exec(lic);
+    var licShort = licM ? licM[1].trim() : lic;
+    var by = String(f.by || '');
+    var cr = (by ? '&copy; ' + escapeHtml(by) + (licShort ? ' &middot; ' : '') : '') + escapeHtml(licShort);
+    tiles.push({ t: t, l: l, cr: cr });
+  }
+  if (!tiles.length) return '';
+  var html = '\n        <div class="bm-card-thumbs">';
+  for (var j = 0; j < tiles.length; j++) {
+    html += '<a class="bm-card-thumb" href="' + escapeHtml(tiles[j].l) + '" target="_blank" rel="noopener" style="background-image:url(\'' + escapeHtml(tiles[j].t) + '\')">'
+      + (tiles[j].cr ? '<span class="bm-card-cr">' + tiles[j].cr + '</span>' : '')
+      + ((j === 2 && mediaN > 3) ? '<span class="bm-card-more">+' + (mediaN - 3) + '</span>' : '')
+      + '</a>';
+  }
+  html += '</div><div class="bm-card-mlnote">Fotod: Elurikkus / PlutoF'
+    + (x.occId ? ' &middot; <a href="https://elurikkus.ee/app/occurrences/occurrence/' + encodeURIComponent(String(x.occId)) + '" target="_blank" rel="noopener">ava vaatlus Elurikkuses &#8599;</a>' : '')
+    + '</div>';
+  return html;
+}
 function buildPopupHtml(key, p, opts){
   const isEb = !!(opts && opts.source === 'ebird');
   const x = (p && p.eluExtra) ? p.eluExtra : {};
@@ -10700,6 +10799,13 @@ function buildPopupHtml(key, p, opts){
       + '<div><b>eBirdi m&auml;rkus</b><span class="bm-card-cmt-t">&hellip;</span></div></div>'
     : '';
   const mediaBox = isEb ? '\n        <div class="bm-card-media is-off"></div>' : '';
+  // P80b (Elurikkus only): observer remark + photo strip; '' for eBird and for
+  // points without these fields, so those cards stay byte-identical.
+  const remBox = (!isEb && x.remark)
+    ? '\n        <div class="bm-card-rem"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M11.3 1.6a1.5 1.5 0 0 1 2.1 0l1 1a1.5 1.5 0 0 1 0 2.1L6.2 12.9 2.5 14l1.1-3.7 7.7-8.7ZM10.6 4 4.9 10.9l-.5 1.7 1.7-.5L12 6.4 10.6 4Z"/></svg>'
+      + '<div><b>Vaatleja m&auml;rkus</b><span>' + escapeHtml(x.remark) + '</span></div></div>'
+    : '';
+  const thumbs = (!isEb && Array.isArray(x.media) && x.media.length) ? _bmEluThumbsHtml(x) : '';
   const rows = [
     (!coordsApprox && locText) ? `<div class="bm-card-row">${SVG_PIN}<span title="${escapeHtml(locText)}">${escapeHtml(locText)}</span></div>` : '',
     (col !== '-') ? `<div class="bm-card-row">${SVG_USER}<span title="${escapeHtml(col)}">${escapeHtml(col)}</span></div>` : '',
@@ -10743,7 +10849,7 @@ function buildPopupHtml(key, p, opts){
           <div class="bm-card-stat"><b>${escapeHtml(dash(ind))}</b><span>${indLabel}</span></div>
           <div class="bm-card-stat${isEb ? ' bm-card-stat--ebird' : ''}"><b>${escapeHtml(isEb ? 'eBird' : dash(src))}</b><span>allikas</span></div>
         </div>
-        ${rows ? '<div class="bm-card-rows">' + rows + '</div>' : ''}${cmtBox}${mediaBox}${recentBox}
+        ${rows ? '<div class="bm-card-rows">' + rows + '</div>' : ''}${cmtBox}${mediaBox}${remBox}${thumbs}${recentBox}
         ${approxNote}
         <div class="bm-card-acts">${isEb ? (wazeBtn + copyBtn + extBtn) : (coordsApprox ? eluBtn + copyBtn : wazeBtn + copyBtn + eluBtn)}</div>
         ${foot}

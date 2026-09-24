@@ -444,6 +444,13 @@ html:not(.sb-classic) .cc-line+.cc-line{border-top:1px solid #eef2ef}
 html:not(.sb-classic) .cc-line b{font-weight:700;color:var(--sc-ink);white-space:nowrap}
 html:not(.sb-classic) .cc-line span{color:#4a5852;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 html:not(.sb-classic) .cc-line i{font-style:normal;font-weight:700;color:#222a26;font-variant-numeric:tabular-nums}
+html:not(.sb-classic) a.cc-line{text-decoration:none;color:inherit}
+html:not(.sb-classic) .bm-sc-recent.is-off{display:none}
+html:not(.sb-classic) .bm-sc-row-place.is-off{display:none}
+html:not(.sb-classic) .bm-sc-cmt{display:flex;gap:8px;margin-top:10px;background:#fbeedd;border:1px solid #f0d9b8;color:#5b4423;border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.4}
+html:not(.sb-classic) .bm-sc-cmt b{display:block;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#b45309;margin-bottom:2px}
+html:not(.sb-classic) .bm-sc-cmt.is-off{display:none}
+html:not(.sb-classic) .bm-sc-cmt-t{white-space:pre-wrap;word-break:break-word}
 html:not(.sb-classic) .bm-sc-acts{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:12px}
 html:not(.sb-classic) .bm-sc .bm-sc-btn,html:not(.sb-classic) .bm-sc a.bm-sc-btn,html:not(.sb-classic) .bm-sc a.bm-sc-btn:visited,html:not(.sb-classic) .bm-sc a.bm-sc-btn:hover{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 13px;border-radius:10px;border:1px solid var(--sc);background:var(--sc);color:#fff!important;font:600 12.5px/1 system-ui,Arial,sans-serif;cursor:pointer;text-decoration:none}
 html:not(.sb-classic) .bm-sc-ico{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;border-radius:10px;border:1px solid #dde4df;background:#fff;color:#4a5852;cursor:pointer}
@@ -472,7 +479,7 @@ html:not(.sb-classic) .bm-sc-ft .is-ok{color:#2d7a4b;font-weight:700}
     <aside id="sidebar" aria-label="Sidebar">
       <div class="panel-header">
       <div id="stickyPanel">
-      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa" data-title-checklist="Kontrollnimekiri" data-title-species="Liigi leht" data-spring="kevad" data-autumn="s&uuml;gis" data-unknown="teadmata" data-unknown-title="R&auml;ndeaja andmed puuduvad (v&auml;he Eesti vaatlusi)" data-unknown-title-2="R&auml;ndeaja andmed puuduvad"></template>
+      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa" data-title-checklist="Kontrollnimekiri" data-title-species="Liigi leht" data-spring="kevad" data-autumn="s&uuml;gis" data-unknown="teadmata" data-unknown-title="R&auml;ndeaja andmed puuduvad (v&auml;he Eesti vaatlusi)" data-unknown-title-2="R&auml;ndeaja andmed puuduvad" data-comment="eBirdi m&auml;rkus" data-recent="Viimased eBirdi vaatlused" data-priv-title="Privaatne asukoht" data-days7="7 p"></template>
       <div class="sb-titlebar" hidden>
         <div class="sb-brand"><img class="sb-brand-ico" src="/icons/estbirds-96.png" alt="" width="44" height="44"><div class="sb-brand-txt"><h2>EstBirds</h2><div class="sb-counts" id="euCounts"></div></div></div>
         <div class="sb-title-r"><span class="sb-src">eBird &middot; 7 p</span></div>
@@ -2979,8 +2986,45 @@ if (!DEV_DEBUG) {
     var cc = d.rg || "";
     return '<div class="bm-sc-rows">' +
       '<div class="bm-sc-row"><span class="bm-sc-m">' + esc(STR.country) + ':</span><span>' + esc(STR[cc.toLowerCase()] || cc) + ' (' + esc(cc) + ')</span></div>' +
-      (d.loc ? '<div class="bm-sc-row"><span class="bm-sc-m">' + esc(STR.place) + ':</span><span>' + esc(d.loc) + '</span></div>' : '') +
+      (d.loc ? '<div class="bm-sc-row bm-sc-row-place"><span class="bm-sc-m">' + esc(STR.place) + ':</span><span>' + esc(d.loc) + '</span></div>' : '') +
     '</div>';
+  }
+  // P77c: per-country card extras (after the Riik/Koht rows): eBird comment box (rarity + subId) and the
+  // hidden recent-obs placeholder; both are filled on popupopen. Aggregated card: nothing.
+  var EU_RECENT_MAX = 5;
+  var EU_CMT_LEVELS = ["rare", "super", "mega"];
+  function euCardExtras(isAgg, species, d){
+    if (isAgg) return "";
+    var code = resolveEbirdCode(species) || "";
+    var cc = d.rg || "";
+    var level = (getSpeciesMeta(species) || {}).rarityLevel || "none";
+    var out = "";
+    if (EU_CMT_LEVELS.indexOf(level) !== -1 && d.subId) {
+      out += '<div class="bm-sc-cmt" data-sub="' + esc(d.subId) + '" data-code="' + esc(code) + '">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
+        '<div><b>' + esc(STR.comment) + '</b><span class="bm-sc-cmt-t">&hellip;</span></div></div>';
+    }
+    if (code && cc) out += '<div class="bm-sc-recent is-off" data-cc="' + esc(cc) + '" data-code="' + esc(code) + '"></div>';
+    return out;
+  }
+  // "YYYY-MM-DD HH:MM" -> "dd.mm HH:MM"; date-only -> "dd.mm" (slice, no Date parsing)
+  function euFmtDt(dt){
+    var s = String(dt || "");
+    if (s.length < 10) return esc(s);
+    return esc(s.slice(8, 10) + "." + s.slice(5, 7) + (s.length >= 16 ? " " + s.slice(11, 16) : ""));
+  }
+  function euRecentHtml(list, cc){
+    var rows = (Array.isArray(list) ? list : []).slice(0, EU_RECENT_MAX).map(function(o){
+      var loc = String((o && o.loc) || "");
+      var title = o && o.priv ? esc(STR.privTitle) : esc(loc);
+      var cells = '<b>' + euFmtDt(o && o.dt) + '</b><span title="' + title + '">' + esc(loc) + '</span>' +
+        '<i>' + (o && o.n != null ? esc(String(o.n)) : '&mdash;') + '</i>';
+      return o && o.subId
+        ? '<a class="cc-line" href="https://ebird.org/checklist/' + esc(o.subId) + '" target="_blank" rel="noopener">' + cells + '</a>'
+        : '<div class="cc-line">' + cells + '</div>';
+    }).join("");
+    return '<div class="cc-list"><div class="cc-list-h">' + esc(STR.recent) + ' &middot; ' + esc(cc) + ' &middot; ' + esc(STR.days7) + '</div>' +
+      rows + '</div>';
   }
   // mode: "country" (d = that country's region + rg) or "agg" (d = best region + rg)
   function euCardHtml(species, mode, d, total7, regionsObj){
@@ -3023,6 +3067,7 @@ if (!DEV_DEBUG) {
         when +
         euCardStats(isAgg, p, d, total7, regs.length, euMigState(species)) +
         euCardRows(isAgg, d, regs) +
+        euCardExtras(isAgg, species, d) +
         (acts ? '<div class="bm-sc-acts">' + acts + '</div>' : '') +
         ft +
       '</div></div>';
@@ -3091,6 +3136,31 @@ if (!DEV_DEBUG) {
       popup.setLatLng(popup.getLatLng());
     };
     map.on("moveend", repan);
+    // P77c: fill the per-country comment box / recent-obs list (async; the popup may close meanwhile).
+    if (!el) return;
+    // Not popup.update(): content is bindPopup(function), so update() re-renders the card and drops the fill.
+    var euPopupUpdate = function(){
+      if (!popup || !popup.isOpen || !popup.isOpen()) return;
+      if (popup._updateLayout) popup._updateLayout();
+      popup.setLatLng(popup.getLatLng());
+    };
+    var cmt = el.querySelector(".bm-sc-cmt");
+    if (cmt) euChecklistComment(cmt.getAttribute("data-sub"), cmt.getAttribute("data-code"), function(text){
+      if (!el.isConnected) return;
+      var t = cmt.querySelector(".bm-sc-cmt-t");
+      if (text && t) { t.textContent = String(text); } else { cmt.classList.add("is-off"); }
+      euPopupUpdate();
+    });
+    var rec = el.querySelector(".bm-sc-recent");
+    if (rec) euRecentObs(rec.getAttribute("data-cc"), rec.getAttribute("data-code"), function(list){
+      if (!el.isConnected) return;
+      if (!Array.isArray(list) || list.length < 2) return;
+      rec.innerHTML = euRecentHtml(list, rec.getAttribute("data-cc"));
+      rec.classList.remove("is-off");
+      var pl = el.querySelector(".bm-sc-row-place");
+      if (pl) pl.classList.add("is-off");
+      euPopupUpdate();
+    });
   });
   // Classic rebuilt every marker on zoomend (scheduleRefreshMarkerIcons), which also re-synced their
   // positions. With that guarded off, a flyTo interrupted by popup autoPan (row locate opens the popup

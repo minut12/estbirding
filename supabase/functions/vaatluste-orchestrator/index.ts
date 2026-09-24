@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 // vaatluste-orchestrator
 // M7.4c: port of the n8n workflow "vaatluste-koordinaator" (0Uq1kLK8wwfZ9PBJ,
 // schedule `0 6,18 * * *` Tallinn + webhook vaatluste-refresh). n8n dies
@@ -41,7 +42,7 @@ const EBIRD_RELAY_URL = Deno.env.get("EBIRD_RELAY_URL") ||
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_MODEL = "claude-sonnet-5";
 const MAX_TOKENS = 65536;
 
 // M7.4a: beforeunload ~360 s, hard kill ~400 s.

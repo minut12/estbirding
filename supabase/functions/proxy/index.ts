@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 // Redeploy marker spatula-fix 2026-04-30T15:30 — force re-bundle for spatula discors Map entry
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Add more domains here as needed.
@@ -165,7 +166,7 @@ Return ONLY the translation. No commentary, no quotes around the result, no mark
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY")?.trim();
     if (anthropicKey) {
       try {
-        const model = Deno.env.get("ANTHROPIC_TRANSLATION_MODEL") || "claude-sonnet-4-6";
+        const model = Deno.env.get("ANTHROPIC_TRANSLATION_MODEL") || "claude-sonnet-5";
         const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {

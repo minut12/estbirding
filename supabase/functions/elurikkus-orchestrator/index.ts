@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 // elurikkus-orchestrator
 // M7.4b: port of the n8n workflow "vaatluste-koordinaator-elurikkus"
 // (fEABCYFcwKzHwUZ5, schedule `5 6,18 * * *` Tallinn + webhook
@@ -35,7 +36,7 @@ const SPECIES_META_URL = SUPABASE_URL +
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_MODEL = "claude-sonnet-5";
 const MAX_TOKENS = 12_000;
 
 // M7.4a: beforeunload lands at ~360 s, hard kill at ~400 s. Everything -- the

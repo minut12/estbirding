@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-5-20250929 -> claude-sonnet-5 (env override unchanged)
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
@@ -72,7 +73,7 @@ const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 // n8n's model node ran claude-sonnet-4-5-20250929 (cred w3NzgYQmhVki1UQ3).
 // Flipping the model is its own gate, so it comes from the environment.
-const DEFAULT_SONNET_MODEL = 'claude-sonnet-4-5-20250929';
+const DEFAULT_SONNET_MODEL = 'claude-sonnet-5';
 const MODEL_ENV_KEY = 'ANTHROPIC_MODEL_SPECIES_PREDICTION';
 // n8n's langchain node carried `options: {}` = the node default, and the export
 // does not record what that resolved to. 4096 is OUR figure, not a recovered

@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 import { fixBirdNamesInText } from "./bird-names-et.ts";
 
 export interface AnthropicConfig {
@@ -8,7 +9,7 @@ export interface AnthropicConfig {
 export function getAnthropicConfig(): AnthropicConfig | null {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY")?.trim() || "";
   if (!apiKey) return null;
-  const model = Deno.env.get("ANTHROPIC_TRANSLATION_MODEL") || "claude-sonnet-4-6";
+  const model = Deno.env.get("ANTHROPIC_TRANSLATION_MODEL") || "claude-sonnet-5";
   return { apiKey, model };
 }
 

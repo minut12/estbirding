@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 // P6b.1 2026-09-05: effort-normalised site share ranking (ennustus P6b.1)
 // P6b 2026-09-05: predicted_sites[] on entries + watch-list (ennustus P6b-EF)
 // P4 2026-09-05: score v4 (phenology gate, direction, source, upstream), EE badge, upstream_obs (ennustus P4)
@@ -70,7 +71,7 @@
 //
 // 5. MODEL LITERAL. n8n's Parse + Merge hardcoded model: 'claude-sonnet-4-6'
 //    independently of what the Sonnet node actually sent. Here the row records
-//    the model id actually used (sonnetModel(), default claude-sonnet-4-6), so
+//    the model id actually used (sonnetModel(), default claude-sonnet-5), so
 //    the column cannot drift from reality when ANTHROPIC_MODEL_TOENAOSUS_RAPORT
 //    is set.
 //
@@ -155,7 +156,7 @@ const EBIRD_RELAY_URL = Deno.env.get("EBIRD_RELAY_URL") ||
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_MODEL = "claude-sonnet-5";
 const MAX_TOKENS = 16384;
 
 // M7.4a: beforeunload ~360 s, hard kill ~400 s.

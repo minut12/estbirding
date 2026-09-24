@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 // news-translate-v2
 // M7.3: port of the n8n workflow "estbirding-news-ingest-translate-v13"
 // (id 5KvMxoDgMlc2nJcL, daily 08:00 Tallinn). One Edge Function replaces the
@@ -617,7 +618,7 @@ Deno.serve(async (req) => {
   const maxTokens = dryRun && Number.isFinite(rawOverride) && rawOverride > 0
     ? Math.floor(rawOverride)
     : 4096;
-  const model = Deno.env.get("ANTHROPIC_MODEL_NEWS") || "claude-sonnet-4-6";
+  const model = Deno.env.get("ANTHROPIC_MODEL_NEWS") || "claude-sonnet-5";
 
   const started = Date.now();
   const runId = crypto.randomUUID();

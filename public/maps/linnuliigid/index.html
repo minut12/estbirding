@@ -150,6 +150,15 @@
   background:#f2f8f4;border-radius:5px;padding:0 4px;color:#222a26}
 .bm-card-cl{display:none}
 .bm-card-cl.is-on{display:flex}
+.bm-card-cmt{display:flex;gap:8px;margin-top:10px;background:#fbeedd;border:1px solid #f0d9b8;color:#5b4423;border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.4}
+.bm-card-cmt b{display:block;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#b45309;margin-bottom:2px}
+.bm-card-cmt.is-off{display:none}
+.bm-card-cmt-t{white-space:pre-wrap;word-break:break-word}
+.bm-card-media{display:flex;align-items:center;gap:8px;margin-top:10px;padding:7px 10px;border-radius:10px;background:#eef6f8;border:1px solid #d5e7ec;color:#155e75;font-size:12px}
+.bm-card-media svg{width:15px;height:15px;flex:0 0 auto}
+.bm-card-media .mc{display:inline-flex;align-items:center;gap:4px;font-weight:600;white-space:nowrap}
+.bm-card-media a{margin-left:auto;color:#155e75;font-weight:600;text-decoration:none;white-space:nowrap}
+.bm-card-media.is-off{display:none}
 .bm-card-recent{margin-top:11px;padding-top:9px;border-top:1px solid #e7eeea}
 .bm-card-recent.is-off{display:none}
 .bm-card-recent-h{font:700 10px/1.2 system-ui,Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#6c7f74}
@@ -10683,6 +10692,14 @@ function buildPopupHtml(key, p, opts){
       + '<div class="bm-card-recent-list"></div>'
       + '</div>';
   }
+  // P80a (eBird only): comment box for R/SR/MR species and a media-counts strip for
+  // all species, both hidden placeholders filled on popupopen from the cached
+  // checklist call. Both are '' for non-eBird, so the Elurikkus card is unchanged.
+  const cmtBox = (isEb && ['rare', 'super', 'mega'].indexOf(_rarLevel) !== -1)
+    ? '\n        <div class="bm-card-cmt"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M2.5 2h11A1.5 1.5 0 0 1 15 3.5v7a1.5 1.5 0 0 1-1.5 1.5H6l-3.5 3v-3A1.5 1.5 0 0 1 1 10.5v-7A1.5 1.5 0 0 1 2.5 2Z"/></svg>'
+      + '<div><b>eBirdi m&auml;rkus</b><span class="bm-card-cmt-t">&hellip;</span></div></div>'
+    : '';
+  const mediaBox = isEb ? '\n        <div class="bm-card-media is-off"></div>' : '';
   const rows = [
     (!coordsApprox && locText) ? `<div class="bm-card-row">${SVG_PIN}<span title="${escapeHtml(locText)}">${escapeHtml(locText)}</span></div>` : '',
     (col !== '-') ? `<div class="bm-card-row">${SVG_USER}<span title="${escapeHtml(col)}">${escapeHtml(col)}</span></div>` : '',
@@ -10726,7 +10743,7 @@ function buildPopupHtml(key, p, opts){
           <div class="bm-card-stat"><b>${escapeHtml(dash(ind))}</b><span>${indLabel}</span></div>
           <div class="bm-card-stat${isEb ? ' bm-card-stat--ebird' : ''}"><b>${escapeHtml(isEb ? 'eBird' : dash(src))}</b><span>allikas</span></div>
         </div>
-        ${rows ? '<div class="bm-card-rows">' + rows + '</div>' : ''}${recentBox}
+        ${rows ? '<div class="bm-card-rows">' + rows + '</div>' : ''}${cmtBox}${mediaBox}${recentBox}
         ${approxNote}
         <div class="bm-card-acts">${isEb ? (wazeBtn + copyBtn + extBtn) : (coordsApprox ? eluBtn + copyBtn : wazeBtn + copyBtn + eluBtn)}</div>
         ${foot}
@@ -14388,7 +14405,30 @@ var __sharedDefaults = {};
   var __bmEbirdSpInflight = {};
   var BM_EBIRD_SP_TTL_MS = 10 * 60 * 1000;
 
-  function _fillChecklistRow(e, subId){
+  // P80a: media-counts strip for the eBird card (port of the Euroopa euMediaHtml).
+  // Leading icon = first non-zero type; each later type carries its own icon.
+  var BM_MEDIA_SVG_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+  var BM_MEDIA_TYPES = [
+    { k: 'p', one: '1 foto', many: 'fotot', ico: '<path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/>' },
+    { k: 'a', one: '1 heli', many: 'heli', ico: '<path d="M12 3v18M7 8v8M17 8v8M3 11v2M21 11v2"/>' },
+    { k: 'v', one: '1 video', many: 'videot', ico: '<path d="M6 4l14 8-14 8z"/>' }
+  ];
+  function _bmMediaHtml(m, subId){
+    var out = '';
+    var lead = true;
+    BM_MEDIA_TYPES.forEach(function(t){
+      var n = Number(m && m[t.k]) || 0;
+      if(n <= 0) return;
+      var svg = BM_MEDIA_SVG_OPEN + t.ico + '</svg>';
+      var label = n === 1 ? t.one : n + ' ' + t.many;
+      if(lead){ out += svg; lead = false; svg = ''; }
+      out += '<span class="mc">' + svg + escapeHtml(label) + '</span>';
+    });
+    out += '<a href="https://ebird.org/checklist/' + encodeURIComponent(String(subId || '')) + '" target="_blank" rel="noopener">Vaata eBirdis &#8599;</a>';
+    return out;
+  }
+
+  function _fillChecklistRow(e, subId, code){
     var cache = window.__bmEbirdCl = window.__bmEbirdCl || {};
     function paint(){
       try {
@@ -14406,8 +14446,41 @@ var __sharedDefaults = {};
         row.classList.add('is-on');
       } catch(err){}
     }
-    if(cache[subId]){ paint(); return; }
-    if(__bmEbirdClInflight[subId]){ __bmEbirdClInflight[subId].then(paint, function(){}); return; }
+    // P80a: comment + media for this species from the same checklist entry. Older
+    // cache entries (no `by`), an empty code or a species absent from the checklist
+    // all read as no comment / no media.
+    function paintExtras(){
+      try {
+        var data = cache[subId];
+        if(!data) return;
+        var root = e.popup.getElement();
+        if(!root || !root.isConnected) return;
+        var by = (data.by && code) ? data.by[code] : null;
+        var cmt = (by && typeof by.c === 'string') ? by.c : '';
+        var m = (by && by.m) ? by.m : { p: 0, a: 0, v: 0 };
+        var filled = false;
+        var cmtEl = root.querySelector('.bm-card-cmt');
+        if(cmtEl){
+          var t = cmtEl.querySelector('.bm-card-cmt-t');
+          if(cmt && t){ t.textContent = cmt; cmtEl.classList.remove('is-off'); }
+          else cmtEl.classList.add('is-off');
+          filled = true;
+        }
+        var mediaEl = root.querySelector('.bm-card-media');
+        if(mediaEl && ((Number(m.p) || 0) + (Number(m.a) || 0) + (Number(m.v) || 0)) > 0){
+          mediaEl.innerHTML = _bmMediaHtml(m, subId);
+          mediaEl.classList.remove('is-off');
+          filled = true;
+        }
+        if(filled && e.popup.isOpen && e.popup.isOpen()){
+          if(e.popup._updateLayout) e.popup._updateLayout();
+          e.popup.setLatLng(e.popup.getLatLng());
+        }
+      } catch(err){}
+    }
+    function paintAll(){ paint(); paintExtras(); }
+    if(cache[subId]){ paintAll(); return; }
+    if(__bmEbirdClInflight[subId]){ __bmEbirdClInflight[subId].then(paintAll, function(){}); return; }
     var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
     var pReq = fetch('https://api.ebird.org/v2/product/checklist/view/' + encodeURIComponent(subId), { headers: { 'X-eBirdApiToken': token } })
       .then(function(res){ if(!res.ok) throw new Error('checklist HTTP ' + res.status); return res.json(); })
@@ -14416,10 +14489,18 @@ var __sharedDefaults = {};
         if(!Number.isFinite(nSp)) throw new Error('checklist: no numSpecies');
         var hrsRaw = j ? j.durationHrs : null;
         var hrs = (hrsRaw === null || hrsRaw === undefined || hrsRaw === '') ? NaN : Number(hrsRaw);
-        cache[subId] = { n: nSp, min: Number.isFinite(hrs) ? Math.round(hrs * 60) : null };
+        var by = {};
+        (Array.isArray(j.obs) ? j.obs : []).forEach(function(o){
+          var sc = (o && typeof o.speciesCode === 'string') ? o.speciesCode : '';
+          if(!sc) return;
+          var c = (typeof o.comments === 'string') ? o.comments.trim() : '';
+          var mc = o.mediaCounts || {};
+          by[sc] = { c: c, m: { p: Number(mc.P || 0), a: Number(mc.A || 0), v: Number(mc.V || 0) } };
+        });
+        cache[subId] = { n: nSp, min: Number.isFinite(hrs) ? Math.round(hrs * 60) : null, by: by };
       });
     __bmEbirdClInflight[subId] = pReq;
-    pReq.then(paint, function(){}).then(function(){ try { delete __bmEbirdClInflight[subId]; } catch(err){} });
+    pReq.then(paintAll, function(){}).then(function(){ try { delete __bmEbirdClInflight[subId]; } catch(err){} });
   }
 
   // P64c: the real 7-day history. The bulk /obs/EE/recent feed returns only the
@@ -14463,7 +14544,7 @@ var __sharedDefaults = {};
 
   function _bindEbirdCard(marker, subId, code){
     marker.on('popupopen', function(e){
-      if(subId) _fillChecklistRow(e, subId);
+      if(subId) _fillChecklistRow(e, subId, code);
       if(code) _fillSpeciesFeed(e, code);
     });
   }

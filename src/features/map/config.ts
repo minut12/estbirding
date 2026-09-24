@@ -22,8 +22,8 @@ export const maps: MapDefinition[] = [
   },
   {
     id: 'europe',
-    name: 'Europe',
-    region: 'Europe',
+    name: 'Euroopa',
+    region: 'Euroopa',
     type: 'asset',
     source: '/maps/europe/index.html',
     enabled: true,

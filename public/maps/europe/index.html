@@ -463,7 +463,7 @@ html:not(.sb-classic) .bm-sc-ft .is-ok{color:#2d7a4b;font-weight:700}
     <aside id="sidebar" aria-label="Sidebar">
       <div class="panel-header">
       <div id="stickyPanel">
-      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa" data-title-checklist="Kontrollnimekiri" data-title-species="Liigi leht" data-spring="kevad" data-autumn="s&uuml;gis" data-unknown="teadmata" data-unknown-title="R&auml;ndeaja andmed puuduvad (v&auml;he Eesti vaatlusi)"></template>
+      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa" data-title-checklist="Kontrollnimekiri" data-title-species="Liigi leht" data-spring="kevad" data-autumn="s&uuml;gis" data-unknown="teadmata" data-unknown-title="R&auml;ndeaja andmed puuduvad (v&auml;he Eesti vaatlusi)" data-unknown-title-2="R&auml;ndeaja andmed puuduvad"></template>
       <div class="sb-titlebar" hidden>
         <div class="sb-brand"><img class="sb-brand-ico" src="/icons/estbirds-96.png" alt="" width="44" height="44"><div class="sb-brand-txt"><h2>EstBirds</h2><div class="sb-counts" id="euCounts"></div></div></div>
         <div class="sb-title-r"><span class="sb-src">eBird &middot; 7 p</span></div>
@@ -2843,7 +2843,7 @@ if (!DEV_DEBUG) {
     var kind = mig ? mig.kind : null;
     var known = !!(mig && mig.known);
     var migTxt = kind === "kevad" ? esc(STR.spring) : kind === "sygis" ? esc(STR.autumn) : known ? dash : esc(STR.unknown);
-    var migStat = (kind || known) ? [migTxt, STR.mig] : [migTxt, STR.mig, STR.unknownTitle];
+    var migStat = (kind || known) ? [migTxt, STR.mig] : [migTxt, STR.mig, STR["unknownTitle-2"]];
     var stats = isAgg
       ? [[String(Number(total7) || 0), STR.obs7], [String(nCountries), STR.countries], migStat]
       : [[String(Number(d.occ7) || 0), STR.obs7], [Number.isFinite(d.howMany) ? String(d.howMany) : dash, STR.ind], migStat];
@@ -3123,6 +3123,10 @@ if (!DEV_DEBUG) {
   var TTL_MS = 7 * 24 * 3600 * 1000;
   var WEEKS = 52;
   var hist = null;
+  // P76: curated windows for rarities the histogram cannot classify (fallback only).
+  var MW_URL = "/maps/shared/migration-windows.json";
+  var mw = null;
+  var mwSlugToKey = {};
   var slugToKey = {};
   var memo = {};
   // Same idea as linnuliigid slugifySpeciesKey: page normaliser (mojibake fix), then NFC + lowercase.
@@ -3139,11 +3143,38 @@ if (!DEV_DEBUG) {
   if (hist) {
     Object.keys(hist).forEach(function(k){ var sl = slug(k); if (!(sl in slugToKey)) slugToKey[sl] = k; });
   }
+  // Fetched once; a real data arrival, so re-render exactly once on success.
+  if (typeof fetch === "function") {
+    fetch(MW_URL, { cache: "force-cache" })
+      .then(function(r){
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function(payload){
+        var sp = payload && payload.species;
+        if (!sp || typeof sp !== "object" || Array.isArray(sp)) throw new Error("bad shape");
+        var idx = {};
+        Object.keys(sp).forEach(function(k){ var sl = slug(k); if (!(sl in idx)) idx[sl] = k; });
+        mw = sp;
+        mwSlugToKey = idx;
+        memo = {};
+      })
+      // Two-arg then: a render error is not reported as a load failure.
+      .then(function(){
+        if (typeof render === "function") render();
+      }, function(e){ console.warn("[eu-randel] windows load failed", e); mw = null; mwSlugToKey = {}; });
+  }
   function lookup(name){
     if (!hist) return null;
     if (Object.prototype.hasOwnProperty.call(hist, name)) return { key: name, pairs: hist[name] };
     var k = slugToKey[slug(name)];
     return k ? { key: k, pairs: hist[k] } : null;
+  }
+  function lookupMw(name){
+    if (!mw) return null;
+    if (Object.prototype.hasOwnProperty.call(mw, name)) return mw[name];
+    var k = mwSlugToKey[slug(name)];
+    return k ? mw[k] : null;
   }
   // Non-leap day of year, as linnuliigid todayDoy().
   function todayDoy(){
@@ -3155,8 +3186,9 @@ if (!DEV_DEBUG) {
     return Math.min(365, doy);
   }
   var KNOWN_KINDS = { migrant: true, resident: true, winter: true };
-  // Returns { kind: "kevad" | "sygis" | null, known: boolean }.
-  function compute(name, wk){
+  // Histogram path; { kind: null, known: false } when it cannot classify (missing, empty, few, other).
+  function computeHist(name, wk){
+    if (!hist || !R) return { kind: null, known: false };
     var found = lookup(name);
     if (!found || !Array.isArray(found.pairs) || !found.pairs.length) return { kind: null, known: false };
     var res = R.analyse(found.pairs, { resident: R.isResident(found.key) || R.isResident(name) });
@@ -3166,24 +3198,52 @@ if (!DEV_DEBUG) {
     if (R.isNow(res.autumn, wk)) return { kind: "sygis", known: true };
     return { kind: null, known: true };
   }
-  // Returns a fresh { kind, known }; memoised per name per day (memo entries are never handed out).
-  function euRandelState(name){
-    if (!hist || !R) return { kind: null, known: false };
+  // Curated path (P76): windows are [a, b] in the same 1..52 week numbering as randeajad.js.
+  function computeMw(name, wk){
+    var e = lookupMw(name);
+    var none = { kind: null, known: false, source: null };
+    if (!e || typeof e !== "object") return none;
+    var hasSpring = Array.isArray(e.spring);
+    var hasAutumn = Array.isArray(e.autumn);
+    if (!hasSpring && !hasAutumn) return none;
+    if (R && hasSpring && R.isNow({ a: e.spring[0], b: e.spring[1] }, wk)) return { kind: "kevad", known: true, source: "curated" };
+    if (R && hasAutumn && R.isNow({ a: e.autumn[0], b: e.autumn[1] }, wk)) return { kind: "sygis", known: true, source: "curated" };
+    return { kind: null, known: true, source: "curated" };
+  }
+  // Returns { kind: "kevad" | "sygis" | null, known: boolean, source: "hist" | "curated" | null }.
+  function compute(name, wk){
+    var h = computeHist(name, wk);
+    if (h.known) return { kind: h.kind, known: true, source: "hist" };
+    return computeMw(name, wk);
+  }
+  // Returns a fresh { kind, known, source }; memoised per name per day (memo entries are never handed out).
+  function stateFor(name){
+    if (!mw && (!hist || !R)) return { kind: null, known: false, source: null };
     var doy = todayDoy();
     var hit = memo[name];
-    if (hit && hit.doy === doy) return { kind: hit.kind, known: hit.known };
-    var st = { kind: null, known: false };
+    if (hit && hit.doy === doy) return { kind: hit.kind, known: hit.known, source: hit.source };
+    var st = { kind: null, known: false, source: null };
     try { st = compute(name, Math.min(WEEKS, Math.floor((doy - 1) / 7) + 1)); }
-    catch(e){ console.warn("[eu-randel]", name, e); st = { kind: null, known: false }; }
-    memo[name] = { doy: doy, kind: st.kind, known: st.known };
+    catch(e){ console.warn("[eu-randel]", name, e); st = { kind: null, known: false, source: null }; }
+    memo[name] = { doy: doy, kind: st.kind, known: st.known, source: st.source };
+    return { kind: st.kind, known: st.known, source: st.source };
+  }
+  // Returns a fresh { kind, known } (source is not leaked here).
+  function euRandelState(name){
+    var st = stateFor(name);
     return { kind: st.kind, known: st.known };
   }
   // Returns "kevad" | "sygis" | null (contract unchanged).
   function euRandelKind(name){
     return euRandelState(name).kind;
   }
+  // Returns "hist" | "curated" | null (verify aid).
+  function euRandelSource(name){
+    return stateFor(name).source;
+  }
   window.__euRandelKind = euRandelKind;
   window.__euRandelState = euRandelState;
+  window.__euRandelSource = euRandelSource;
 })();
 
 /* ========= Init ========= */

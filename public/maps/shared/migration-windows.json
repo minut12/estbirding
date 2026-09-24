@@ -1,0 +1,1275 @@
+{
+ "version": 1,
+ "source": "P76 curated windows for rarities the Estonian histogram cannot classify (reviewed by Kristian 2026-09-24)",
+ "weeks": "1-52, non-leap, same as randeajad.js",
+ "species": {
+  "Aafrika harksaba": {
+   "spring": [
+    17,
+    24
+   ],
+   "autumn": null
+  },
+  "Aedporr": {
+   "spring": null,
+   "autumn": [
+    40,
+    48
+   ]
+  },
+  "Alverüdi": {
+   "spring": null,
+   "autumn": [
+    30,
+    40
+   ]
+  },
+  "Ameerika piilpart": {
+   "spring": [
+    14,
+    20
+   ],
+   "autumn": [
+    36,
+    44
+   ]
+  },
+  "Ameerika tuuletallaja": {
+   "spring": null,
+   "autumn": [
+    38,
+    46
+   ]
+  },
+  "Ameerika vihitaja": {
+   "spring": null,
+   "autumn": [
+    33,
+    41
+   ]
+  },
+  "Ameerika viupart": {
+   "spring": [
+    13,
+    19
+   ],
+   "autumn": [
+    38,
+    46
+   ]
+  },
+  "Atlantise tormilind": {
+   "spring": null,
+   "autumn": [
+    35,
+    44
+   ]
+  },
+  "Baleaari tormilind": {
+   "spring": null,
+   "autumn": [
+    33,
+    42
+   ]
+  },
+  "Eskimo lagle": {
+   "spring": [
+    14,
+    20
+   ],
+   "autumn": [
+    39,
+    46
+   ]
+  },
+  "Grööni suur-laukhani": {
+   "spring": [
+    12,
+    18
+   ],
+   "autumn": [
+    40,
+    46
+   ]
+  },
+  "Hallrüdi": {
+   "spring": null,
+   "autumn": [
+    29,
+    38
+   ]
+  },
+  "Halltsiitsitaja": {
+   "spring": [
+    15,
+    22
+   ],
+   "autumn": [
+    39,
+    45
+   ]
+  },
+  "Harksaba-kajakas": {
+   "spring": null,
+   "autumn": [
+    36,
+    44
+   ]
+  },
+  "Haugaskotkas": {
+   "spring": null,
+   "autumn": null
+  },
+  "Heleflamingo": {
+   "spring": null,
+   "autumn": null
+  },
+  "Hiid-merikotkas": {
+   "spring": null,
+   "autumn": null
+  },
+  "Hõbehaugas": {
+   "spring": [
+    14,
+    22
+   ],
+   "autumn": [
+    34,
+    42
+   ]
+  },
+  "Ida-mustvaeras": {
+   "spring": [
+    15,
+    21
+   ],
+   "autumn": [
+    40,
+    47
+   ]
+  },
+  "Jahipistrik": {
+   "spring": [
+    10,
+    16
+   ],
+   "autumn": [
+    40,
+    48
+   ]
+  },
+  "Jämejalg": {
+   "spring": [
+    15,
+    22
+   ],
+   "autumn": [
+    35,
+    42
+   ]
+  },
+  "Jääkaur": {
+   "spring": [
+    17,
+    23
+   ],
+   "autumn": [
+    41,
+    48
+   ]
+  },
+  "Kaeluskotkas": {
+   "spring": [
+    20,
+    26
+   ],
+   "autumn": null
+  },
+  "Kalda-rädilind": {
+   "spring": null,
+   "autumn": [
+    39,
+    46
+   ]
+  },
+  "Kanada kurg": {
+   "spring": [
+    17,
+    23
+   ],
+   "autumn": [
+    36,
+    42
+   ]
+  },
+  "Kirde-mustlagle": {
+   "spring": [
+    20,
+    23
+   ],
+   "autumn": [
+    39,
+    45
+   ]
+  },
+  "Kiripugu-rüdi": {
+   "spring": [
+    20,
+    24
+   ],
+   "autumn": [
+    30,
+    41
+   ]
+  },
+  "Kivipääsuke": {
+   "spring": [
+    14,
+    20
+   ],
+   "autumn": [
+    40,
+    45
+   ]
+  },
+  "Kivisiirak": {
+   "spring": [
+    19,
+    24
+   ],
+   "autumn": null
+  },
+  "Koldhaigur": {
+   "spring": [
+    19,
+    26
+   ],
+   "autumn": null
+  },
+  "Kuldtsiitsitaja": {
+   "spring": [
+    22,
+    26
+   ],
+   "autumn": [
+    33,
+    38
+   ]
+  },
+  "Kumai-kaeluskotkas": {
+   "spring": [
+    20,
+    26
+   ],
+   "autumn": null
+  },
+  "Kõnnu-pääsujooksur": {
+   "spring": [
+    19,
+    26
+   ],
+   "autumn": [
+    32,
+    37
+   ]
+  },
+  "Kõrbe-kivitäks": {
+   "spring": null,
+   "autumn": [
+    42,
+    48
+   ]
+  },
+  "Kõrbe-põõsalind": {
+   "spring": null,
+   "autumn": [
+    41,
+    46
+   ]
+  },
+  "Kõrbeleevike": {
+   "spring": [
+    20,
+    25
+   ],
+   "autumn": null
+  },
+  "Kõrbetüll": {
+   "spring": [
+    20,
+    25
+   ],
+   "autumn": [
+    30,
+    36
+   ]
+  },
+  "Käharpelikan": {
+   "spring": [
+    17,
+    24
+   ],
+   "autumn": [
+    36,
+    44
+   ]
+  },
+  "Kääbuskormoran": {
+   "spring": [
+    15,
+    22
+   ],
+   "autumn": [
+    38,
+    46
+   ]
+  },
+  "Kääbuskotkas": {
+   "spring": [
+    18,
+    24
+   ],
+   "autumn": [
+    35,
+    40
+   ]
+  },
+  "Kääpakotkas": {
+   "spring": [
+    16,
+    24
+   ],
+   "autumn": [
+    36,
+    41
+   ]
+  },
+  "Kübarkoskel": {
+   "spring": [
+    12,
+    18
+   ],
+   "autumn": [
+    43,
+    50
+   ]
+  },
+  "Laanenäär": {
+   "spring": null,
+   "autumn": [
+    38,
+    46
+   ]
+  },
+  "Lannuvart": {
+   "spring": [
+    12,
+    19
+   ],
+   "autumn": [
+    42,
+    50
+   ]
+  },
+  "Lasuurtihane": {
+   "spring": null,
+   "autumn": [
+    41,
+    50
+   ]
+  },
+  "Leet-käosulane": {
+   "spring": [
+    21,
+    25
+   ],
+   "autumn": [
+    33,
+    38
+   ]
+  },
+  "Liiv-kivitäks": {
+   "spring": [
+    15,
+    21
+   ],
+   "autumn": [
+    36,
+    42
+   ]
+  },
+  "Loorkakk": {
+   "spring": null,
+   "autumn": [
+    40,
+    48
+   ]
+  },
+  "Luitsnokk-iibis": {
+   "spring": [
+    16,
+    23
+   ],
+   "autumn": [
+    34,
+    41
+   ]
+  },
+  "Lumehani": {
+   "spring": [
+    13,
+    19
+   ],
+   "autumn": [
+    39,
+    46
+   ]
+  },
+  "Lõuna-hõbekajakas": {
+   "spring": [
+    12,
+    18
+   ],
+   "autumn": [
+    30,
+    40
+   ]
+  },
+  "Lääne-lehelind": {
+   "spring": [
+    18,
+    23
+   ],
+   "autumn": [
+    34,
+    39
+   ]
+  },
+  "Lääne-sabatihane": {
+   "spring": null,
+   "autumn": [
+    40,
+    46
+   ]
+  },
+  "Läänesõtkas": {
+   "spring": [
+    10,
+    16
+   ],
+   "autumn": [
+    44,
+    50
+   ]
+  },
+  "Mongoolia kiur": {
+   "spring": null,
+   "autumn": [
+    37,
+    43
+   ]
+  },
+  "Mongoolia kõnnuõgija": {
+   "spring": null,
+   "autumn": [
+    38,
+    44
+   ]
+  },
+  "Mustjalg-tüll": {
+   "spring": [
+    17,
+    23
+   ],
+   "autumn": [
+    31,
+    37
+   ]
+  },
+  "Mustkurk-raat": {
+   "spring": null,
+   "autumn": [
+    40,
+    46
+   ]
+  },
+  "Mustpea-hänilane": {
+   "spring": [
+    18,
+    23
+   ],
+   "autumn": null
+  },
+  "Mustpea-tsiitsitaja": {
+   "spring": [
+    21,
+    26
+   ],
+   "autumn": null
+  },
+  "Mustpugu-rästas": {
+   "spring": [
+    12,
+    18
+   ],
+   "autumn": [
+    40,
+    48
+   ]
+  },
+  "Mustvares": {
+   "spring": [
+    12,
+    18
+   ],
+   "autumn": [
+    40,
+    46
+   ]
+  },
+  "Mõrsjapart": {
+   "spring": null,
+   "autumn": null
+  },
+  "Mägikiur": {
+   "spring": [
+    12,
+    17
+   ],
+   "autumn": [
+    39,
+    45
+   ]
+  },
+  "Mägiraat": {
+   "spring": null,
+   "autumn": [
+    41,
+    47
+   ]
+  },
+  "Männitalvike": {
+   "spring": [
+    12,
+    17
+   ],
+   "autumn": [
+    39,
+    46
+   ]
+  },
+  "Naerutiir": {
+   "spring": [
+    19,
+    25
+   ],
+   "autumn": [
+    32,
+    37
+   ]
+  },
+  "Neitsikurg": {
+   "spring": [
+    17,
+    23
+   ],
+   "autumn": [
+    34,
+    40
+   ]
+  },
+  "Niidu-kaelustäks": {
+   "spring": [
+    17,
+    22
+   ],
+   "autumn": [
+    39,
+    45
+   ]
+  },
+  "Niidu-ritsiklind": {
+   "spring": null,
+   "autumn": [
+    34,
+    40
+   ]
+  },
+  "Niidukiur": {
+   "spring": [
+    18,
+    22
+   ],
+   "autumn": [
+    37,
+    44
+   ]
+  },
+  "Nunn-kivitäks": {
+   "spring": [
+    20,
+    24
+   ],
+   "autumn": [
+    37,
+    42
+   ]
+  },
+  "Nõgipart": {
+   "spring": [
+    13,
+    19
+   ],
+   "autumn": [
+    40,
+    46
+   ]
+  },
+  "Ohhoota hõbekajakas": {
+   "spring": null,
+   "autumn": [
+    44,
+    52
+   ]
+  },
+  "Peegel-tormilind": {
+   "spring": null,
+   "autumn": [
+    35,
+    43
+   ]
+  },
+  "Pelikan": {
+   "spring": [
+    18,
+    25
+   ],
+   "autumn": [
+    35,
+    42
+   ]
+  },
+  "Pikkjalg-rüdi": {
+   "spring": [
+    20,
+    24
+   ],
+   "autumn": [
+    30,
+    38
+   ]
+  },
+  "Polaarkajakas": {
+   "spring": [
+    9,
+    16
+   ],
+   "autumn": [
+    44,
+    52
+   ]
+  },
+  "Prillvaeras": {
+   "spring": [
+    15,
+    21
+   ],
+   "autumn": [
+    41,
+    48
+   ]
+  },
+  "Puna-rägapart": {
+   "spring": [
+    15,
+    21
+   ],
+   "autumn": [
+    36,
+    42
+   ]
+  },
+  "Punakurk-põõsalind": {
+   "spring": [
+    18,
+    23
+   ],
+   "autumn": [
+    38,
+    43
+   ]
+  },
+  "Punapea-tsiitsitaja": {
+   "spring": [
+    22,
+    27
+   ],
+   "autumn": null
+  },
+  "Punapea-õgija": {
+   "spring": [
+    19,
+    25
+   ],
+   "autumn": [
+    35,
+    39
+   ]
+  },
+  "Punasaba-kõnnuõgija": {
+   "spring": [
+    20,
+    24
+   ],
+   "autumn": [
+    37,
+    43
+   ]
+  },
+  "Punasaba-õgija": {
+   "spring": [
+    20,
+    24
+   ],
+   "autumn": [
+    37,
+    43
+   ]
+  },
+  "Purpurhaigur": {
+   "spring": [
+    16,
+    23
+   ],
+   "autumn": [
+    34,
+    40
+   ]
+  },
+  "Põhja-kirjurästas": {
+   "spring": null,
+   "autumn": [
+    40,
+    46
+   ]
+  },
+  "Põhja-lehelind": {
+   "spring": [
+    24,
+    27
+   ],
+   "autumn": [
+    34,
+    39
+   ]
+  },
+  "Põhja-tormilind": {
+   "spring": null,
+   "autumn": [
+    33,
+    42
+   ]
+  },
+  "Põhja-tormipääsu": {
+   "spring": null,
+   "autumn": [
+    37,
+    46
+   ]
+  },
+  "Põhjatsiitsitaja": {
+   "spring": [
+    18,
+    22
+   ],
+   "autumn": [
+    36,
+    41
+   ]
+  },
+  "Raipekotkas": {
+   "spring": [
+    20,
+    26
+   ],
+   "autumn": null
+  },
+  "Raisakotkas": {
+   "spring": [
+    19,
+    26
+   ],
+   "autumn": null
+  },
+  "Randkajakas": {
+   "spring": [
+    15,
+    22
+   ],
+   "autumn": [
+    36,
+    44
+   ]
+  },
+  "Randpiiritaja": {
+   "spring": [
+    19,
+    23
+   ],
+   "autumn": [
+    40,
+    46
+   ]
+  },
+  "Roherähn": {
+   "spring": null,
+   "autumn": null
+  },
+  "Roosatiir": {
+   "spring": [
+    22,
+    27
+   ],
+   "autumn": [
+    30,
+    36
+   ]
+  },
+  "Roostepääsuke": {
+   "spring": [
+    16,
+    23
+   ],
+   "autumn": [
+    36,
+    42
+   ]
+  },
+  "Rubiinööbik": {
+   "spring": null,
+   "autumn": [
+    39,
+    44
+   ]
+  },
+  "Ruskerästas": {
+   "spring": [
+    12,
+    17
+   ],
+   "autumn": [
+    41,
+    48
+   ]
+  },
+  "Ruugerüdi": {
+   "spring": null,
+   "autumn": [
+    34,
+    40
+   ]
+  },
+  "Salupäll": {
+   "spring": [
+    18,
+    24
+   ],
+   "autumn": [
+    33,
+    38
+   ]
+  },
+  "Siberi lehelind": {
+   "spring": null,
+   "autumn": [
+    38,
+    44
+   ]
+  },
+  "Siberi raat": {
+   "spring": null,
+   "autumn": [
+    40,
+    46
+   ]
+  },
+  "Siberi tõmmuvaeras": {
+   "spring": [
+    15,
+    21
+   ],
+   "autumn": [
+    40,
+    47
+   ]
+  },
+  "Sini-rägapart": {
+   "spring": [
+    15,
+    21
+   ],
+   "autumn": [
+    36,
+    42
+   ]
+  },
+  "Sinisaba": {
+   "spring": [
+    22,
+    26
+   ],
+   "autumn": [
+    38,
+    42
+   ]
+  },
+  "Stepi-hallõgija": {
+   "spring": null,
+   "autumn": [
+    40,
+    46
+   ]
+  },
+  "Stepi-tuuletallaja": {
+   "spring": [
+    17,
+    23
+   ],
+   "autumn": null
+  },
+  "Stepikajakas": {
+   "spring": [
+    13,
+    20
+   ],
+   "autumn": [
+    34,
+    42
+   ]
+  },
+  "Stepikiivitaja": {
+   "spring": [
+    15,
+    21
+   ],
+   "autumn": [
+    35,
+    41
+   ]
+  },
+  "Stepilõoke": {
+   "spring": [
+    16,
+    22
+   ],
+   "autumn": null
+  },
+  "Stepipistrik": {
+   "spring": [
+    15,
+    21
+   ],
+   "autumn": [
+    36,
+    42
+   ]
+  },
+  "Stepiviu": {
+   "spring": [
+    15,
+    22
+   ],
+   "autumn": [
+    36,
+    42
+   ]
+  },
+  "Stepivuril": {
+   "spring": [
+    19,
+    24
+   ],
+   "autumn": null
+  },
+  "Suula": {
+   "spring": [
+    14,
+    21
+   ],
+   "autumn": [
+    36,
+    45
+   ]
+  },
+  "Suur-veetallaja": {
+   "spring": [
+    20,
+    24
+   ],
+   "autumn": [
+    33,
+    40
+   ]
+  },
+  "Suurpiiritaja": {
+   "spring": [
+    19,
+    25
+   ],
+   "autumn": [
+    35,
+    40
+   ]
+  },
+  "Suuränn": {
+   "spring": [
+    15,
+    21
+   ],
+   "autumn": [
+    36,
+    45
+   ]
+  },
+  "Sõnnpea-sõtkas": {
+   "spring": [
+    12,
+    18
+   ],
+   "autumn": [
+    43,
+    50
+   ]
+  },
+  "Taigakiur": {
+   "spring": null,
+   "autumn": [
+    38,
+    43
+   ]
+  },
+  "Taigatihane": {
+   "spring": null,
+   "autumn": [
+    40,
+    46
+   ]
+  },
+  "Tarna-roolind": {
+   "spring": [
+    20,
+    23
+   ],
+   "autumn": [
+    32,
+    37
+   ]
+  },
+  "Triip-ritsiklind": {
+   "spring": null,
+   "autumn": [
+    36,
+    41
+   ]
+  },
+  "Tundra-neppvigle": {
+   "spring": null,
+   "autumn": [
+    33,
+    42
+   ]
+  },
+  "Tundrarüüt": {
+   "spring": [
+    20,
+    24
+   ],
+   "autumn": [
+    31,
+    40
+   ]
+  },
+  "Turteltuvi": {
+   "spring": [
+    18,
+    23
+   ],
+   "autumn": [
+    34,
+    39
+   ]
+  },
+  "Tutt-karakaara": {
+   "spring": null,
+   "autumn": null
+  },
+  "Tõmmu-lehelind": {
+   "spring": null,
+   "autumn": [
+    39,
+    45
+   ]
+  },
+  "Tõmmuiibis": {
+   "spring": [
+    16,
+    23
+   ],
+   "autumn": [
+    34,
+    42
+   ]
+  },
+  "Vaaraohani": {
+   "spring": [
+    12,
+    20
+   ],
+   "autumn": [
+    36,
+    44
+   ]
+  },
+  "Vahemere tormilind": {
+   "spring": null,
+   "autumn": [
+    33,
+    42
+   ]
+  },
+  "Valgesaba-kiivitaja": {
+   "spring": [
+    18,
+    24
+   ],
+   "autumn": [
+    32,
+    38
+   ]
+  },
+  "Vandelkajakas": {
+   "spring": [
+    9,
+    14
+   ],
+   "autumn": [
+    45,
+    52
+   ]
+  },
+  "Veisehaigur": {
+   "spring": [
+    16,
+    22
+   ],
+   "autumn": [
+    38,
+    46
+   ]
+  },
+  "Väike-lumehani": {
+   "spring": [
+    13,
+    19
+   ],
+   "autumn": [
+    39,
+    46
+   ]
+  },
+  "Väikealk": {
+   "spring": [
+    9,
+    14
+   ],
+   "autumn": [
+    43,
+    50
+   ]
+  },
+  "Väiketrapp": {
+   "spring": [
+    15,
+    21
+   ],
+   "autumn": [
+    40,
+    46
+   ]
+  },
+  "Väiketsiitsitaja": {
+   "spring": [
+    19,
+    23
+   ],
+   "autumn": [
+    37,
+    42
+   ]
+  },
+  "Välja-väikelõoke": {
+   "spring": [
+    18,
+    23
+   ],
+   "autumn": [
+    37,
+    42
+   ]
+  },
+  "Värbhuik": {
+   "spring": [
+    18,
+    23
+   ],
+   "autumn": [
+    33,
+    38
+   ]
+  },
+  "Vöötnokk-kajakas": {
+   "spring": [
+    12,
+    19
+   ],
+   "autumn": [
+    40,
+    47
+   ]
+  },
+  "Älverüdi": {
+   "spring": null,
+   "autumn": [
+    30,
+    40
+   ]
+  },
+  "Ööhaigur": {
+   "spring": [
+    17,
+    24
+   ],
+   "autumn": [
+    33,
+    39
+   ]
+  },
+  "Stepikotkas": {
+   "spring": [
+    15,
+    21
+   ],
+   "autumn": [
+    36,
+    42
+   ]
+  },
+  "Roosakajakas": {
+   "spring": null,
+   "autumn": [
+    42,
+    50
+   ]
+  }
+ }
+}

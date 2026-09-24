@@ -1319,6 +1319,7 @@ function compactPoints(){
         if (d.loc) rd.loc = d.loc;
         if (Number.isFinite(d.occ7) && d.occ7 > 0) rd.occ7 = d.occ7;
         if (Number.isFinite(d.howMany)) rd.howMany = d.howMany;
+        if (d.subId) rd.subId = d.subId;
         cr[rg] = rd;
       }
       if (Object.keys(cr).length > 0) cp.regions = cr;
@@ -2190,6 +2191,7 @@ async function refreshEuropeAggregated(keys, onProgress){
           loc: latestObs.locName || "",
           occ7: Number(regionStats.occ7 || 0),
           howMany: latestObs.howMany != null ? Number(latestObs.howMany) : null,
+          subId: (typeof latestObs.subId === "string" && latestObs.subId) ? latestObs.subId.slice(0, 32) : null,
         };
         aggregate[speciesName].total7 += Number(regionStats.occ7 || 0);
         if (lastSeenMs && (!aggregate[speciesName].latest.tMs || lastSeenMs > aggregate[speciesName].latest.tMs)) {
@@ -2200,6 +2202,7 @@ async function refreshEuropeAggregated(keys, onProgress){
             lat,
             lon,
             loc: latestObs.locName || "",
+            subId: (typeof latestObs.subId === "string" && latestObs.subId) ? latestObs.subId.slice(0, 32) : null,
           };
         }
       }

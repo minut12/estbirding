@@ -91,3 +91,27 @@ Cache shape change: `euChecklistCommentCache` now stores **every** species in `o
 Open items:
 - The audio and video icons are untested; no checklist in the test data had audio or video.
 - Lumehani FI (`S395292982`) is flagged `exoticCategory:"X"`, `present:false` in the checklist, so an escapee shows as an SR pin. The recent feed carries no exotic flag, so a filter could only come from the checklist call, which runs only when a card opens. This is a P79 locate candidate; nothing changes now.
+
+## P79 — Euroopa lag: species meta memo, pins without CSS filters
+
+Root cause (measured in Kristian's Chrome on `main--`, 24 Sep): one `render()` took 985 ms, and it runs on every row expand, switch, chip, filter input, parent meta message and auto-sync chunk. One render made **1,345 `getSpeciesMeta()` calls**. Each went through `getSpeciesMetaShared` → `loadSpeciesMeta()`, which parses the ~98 KB `estbirding.speciesMeta.v1` JSON, sanitises ~450 entries and **writes it back to localStorage** (about 0.65 ms per call). The P74 sweep, card build and marker count were not the cause.
+
+P79a: `getSpeciesMeta` memoises the loaded map, keyed on the stored JSON string. It reloads only when the string changes, and the key is re-read after the load because `loadSpeciesMetaShared()` may rewrite it into normalised form. `species-meta.js` is not touched: it is shared with Linnuliigid, and its `loadSpeciesMeta` name collides with the React one. Sequence: the memo was measured live in Kristian's Chrome first (`render()` 783 ms to 29 ms) and applied to the repo afterwards, as the throttled variant: `__euMetaChecked` limits the staleness check (one `getItem` of the stored string) to once per 100 ms, so a changed meta shows up in lookups at most ~100 ms after the write. Re-verified locally (static server, tab in front, 900 pins, seeded 125 KB meta): `render()` 1,340 ms before vs 55-64 ms after, `loadsPerRender` 0, meta `getItem` per render 2,325 before vs 0-1 after; a changed rarity was returned 100 ms after the write, and the restore came back too.
+
+P79b: the new-UI pins no longer use CSS filters. `.bm-pin-tip` drops `filter:blur(1px)` for a radial-gradient shadow. `.bm-pin.is-old .bm-pin-head` drops `filter:grayscale(.75)`, keeps `opacity:.8` and gets `background-color:#b9c4bd`, so an old pin with no avatar still reads grey. The card's `.bm-sc-wash` blur stays, because it is one element per open popup. FPS probe (local static server, tab in front, 900 pins in Riigiti, zoom 6, 1.6 s `flyTo`):
+
+| | fps | worst frame | p95 | frames > 50 ms |
+|---|---|---|---|---|
+| before (3 runs) | 34 / 34 / 37 | 98 / 78 / 76 ms | 80 / 66 / 62 ms | 25 / 28 / 29 |
+| after (3 runs) | 31 / 31 / 30 | 86 / 70 / 93 ms | 67 / 65 / 85 ms | 29 / 27 / 23 |
+| same page, A/B with the old filters | 34 / 25 / 27 | 86 / 90 / 90 ms | 82 / 81 / 82 ms | 24 / 26 / 25 |
+| same page, A/B without | 26 / 33 / 26 | 89 / 92 / 91 ms | 84 / 80 / 63 ms | 26 / 26 / 27 |
+
+The filters were not the pan bottleneck: the difference is inside run-to-run noise. The change is neutral on frame rate, but it is strictly less compositor work and has no visual regression, so it is kept.
+
+P79c (render list-only, so markers aren't rebuilt on every render) is skipped: after P79a, `render()` is 29 ms, well under the 150 ms threshold.
+
+Open items:
+- Linnuliigid's P73 freeze is probably the same path. `linnuliigid/index.html:806` and `rariliin/index.html:303` also load `species-meta.js`, and every `getSpeciesMetaShared` call there still does the parse plus write-back. Fixing it in the shared file would help both pages, but that file is off-limits until the `loadSpeciesMeta` name collision is handled.
+- At ~900 pins the pan cost comes from the Leaflet DOM markers themselves. Deferred to a later viewport-culling/cluster phase.
+- The P79a memo re-reads the ~98 KB string with `getItem` at most once per 100 ms, to compare it with the memo key. A version counter or storage-event invalidation would remove even that.

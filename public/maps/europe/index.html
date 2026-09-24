@@ -3043,7 +3043,7 @@ if (!DEV_DEBUG) {
       // region): that country's occ7 + CC. Uusim riik without a chip: total7 + "N RIIKI".
       m.setIcon((mode === "country" || euCountryFilter)
         ? euPinIcon(species, Number(cardD.occ7 || 0), rg)
-        : euPinIcon(species, total7, nActive + " " + String(STR.countries || "").toUpperCase()));
+        : euPinIcon(species, total7, nActive === 1 ? "1 RIIK" : nActive + " " + String(STR.countries || "").toUpperCase()));
       // Under a country chip the card is the per-country card for that country in both modes (matches the pin).
       var cardMode = (mode === "country" || euCountryFilter) ? "country" : "agg";
       m.bindPopup(function(){ return euCardHtml(species, cardMode, cardD, total7, regionsObj); }, EU_POPUP_OPTS);

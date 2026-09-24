@@ -73,3 +73,21 @@ Data fix: Aedporr (Short-toed Treecreeper) is `shttre1`. The Euroopa table had `
 Known limitation: the card's stats ("1 vaatlust 7 p") come from the refresh feed (one row per species per country), while the list comes from the per-species call. A card can show "1 vaatlust" above a list of 5 locations. Accepted; no code change.
 
 Open item: "Ainult haruldased" (`#euSwRare`) was on after every reload in the test browser, so the map started empty. It is not yet known whether this is a saved setting or a default flipped by some change. Kristian checks on `main--`.
+
+## P78a — eBird media counts strip on the per-country card
+
+Commit: `164cbc6`.
+
+Rulings (Kristian, 24 Sep):
+1. Info only: a strip with the photo / audio / video counts for this species from the card's checklist, plus a "Vaata eBirdis" link to the checklist. No thumbnails; those are P78b, which waits on a Macaulay Library probe.
+2. All species, not only rarities. Per-country card only, and only when the region has a `subId`. The aggregated card and classic are unchanged.
+3. The data comes from the checklist call P77c already makes (`product/checklist/view/<subId>` → `obs[].mediaCounts` `{P, A, V}`, matched on `speciesCode`). A rarity card showing both the comment box and the strip makes one request per checklist.
+4. The strip stays hidden (`is-off`) when all counts are 0 or missing, or the fetch fails. It sits between the comment box and the recent list.
+
+Cache shape change: `euChecklistCommentCache` now stores **every** species in `obs[]` as `{code: {c: comment or "", m: {p, a, v}}}`, where it used to store `{code: comment}` for commented species only. `euChecklistCommentPick` returns `c`, or `null` when `c` is empty, so the P77c contract is unchanged. The new `euChecklistMedia` / `euChecklistMediaPick` return `m` only when `p+a+v > 0`. Cache, in-flight and retry behaviour is unchanged.
+
+`#euStr` keys are `data-photos1`, `data-audio1` and `data-video1`, not `data-photos-1`. The browser keeps the `-1` in the key, so `STR.photos1` would not find `data-photos-1`.
+
+Open items:
+- The audio and video icons are untested; no checklist in the test data had audio or video.
+- Lumehani FI (`S395292982`) is flagged `exoticCategory:"X"`, `present:false` in the checklist, so an escapee shows as an SR pin. The recent feed carries no exotic flag, so a filter could only come from the checklist call, which runs only when a card opens. This is a P79 locate candidate; nothing changes now.

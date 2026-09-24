@@ -295,6 +295,101 @@
     :root{--appBottomNav:0px}
     .leaflet-bottom{bottom:var(--appBottomNav,0px)}
   </style>
+  <style id="sbNewUi">
+/* P74b new sidebar UI (look copied from linnuliigid P37-P38). Every rule scoped html:not(.sb-classic); new markup carries [hidden] so classic never shows it. */
+html:not(.sb-classic){--sb-bg:#fff;--sb-bg2:#f2f8f4;--sb-ink:#222a26;--sb-ink2:#4a5852;--sb-muted:#6c7f74;--sb-line:#dde4df;--sb-line2:#eef2ef;--sb-primary:#2d7a4b;--sb-primary-soft:#e4f1e8;--sb-r:10px}
+html:not(.sb-classic) body{--topbar-h:0px}
+html:not(.sb-classic) #topbar,html:not(.sb-classic) #btnReloadSnapshot,html:not(.sb-classic) #settingsBtn,html:not(.sb-classic) #debugPanel,html:not(.sb-classic) #progressLine,html:not(.sb-classic) .small.header-copy,html:not(.sb-classic) #snapshotBanner{display:none!important}
+html:not(.sb-classic) #sidebar .sidebarHeader,html:not(.sb-classic) #controls{display:none}
+html:not(.sb-classic) #sidebar .panel-header{padding:12px 14px 10px;border-bottom:1px solid var(--sb-line)}
+html:not(.sb-classic) #stickyPanel{padding:0;display:flex;flex-direction:column;gap:10px}
+html:not(.sb-classic) #warnBanner{margin:0}
+/* title bar */
+html:not(.sb-classic) .sb-titlebar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+html:not(.sb-classic) .sb-brand{display:flex;align-items:center;gap:10px;flex:1 1 auto;min-width:0}
+html:not(.sb-classic) .sb-brand-ico{width:44px;height:44px;border-radius:12px;flex:0 0 auto;display:block}
+html:not(.sb-classic) .sb-brand-txt{min-width:0}
+html:not(.sb-classic) .sb-titlebar h2{margin:0;font-size:17px;font-weight:700;letter-spacing:-.01em;line-height:1.1;color:var(--sb-ink)}
+html:not(.sb-classic) .sb-counts{margin-top:2px;color:var(--sb-muted);font-size:12.5px;font-weight:500;line-height:1.3}
+html:not(.sb-classic) .sb-counts:not(:empty)::before{content:"";display:inline-block;width:7px;height:7px;border-radius:999px;background:var(--sb-primary);margin-right:6px;vertical-align:1px}
+html:not(.sb-classic) .sb-title-r{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+html:not(.sb-classic) .sb-src{font:600 11px system-ui;color:var(--sb-ink2);background:var(--sb-bg2);border:1px solid var(--sb-line);border-radius:999px;padding:3px 8px;white-space:nowrap}
+html:not(.sb-classic) .sb-titlebar #closeSidebarBtn{flex:0 0 auto;width:36px;height:36px;margin:0;border-radius:9px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink);box-shadow:none}
+@media (min-width:901px){
+  html:not(.sb-classic) .sb-titlebar #closeSidebarBtn{display:none}
+}
+/* search + country chips */
+html:not(.sb-classic) #filterBox{height:40px;border:1px solid var(--sb-line);border-radius:var(--sb-r);padding:0 12px;font-size:14px;margin:0}
+html:not(.sb-classic) .sb-chips{display:flex;flex-wrap:wrap;gap:4px}
+html:not(.sb-classic) .sb-chip{height:28px;padding:0 9px;border-radius:999px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink2);font:600 11.5px system-ui;display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap}
+html:not(.sb-classic) .sb-chip span{font-size:10.5px;opacity:.8}
+html:not(.sb-classic) .sb-chip.on{background:var(--sb-primary);border-color:var(--sb-primary);color:#fff}
+/* filters panel */
+html:not(.sb-classic) .sb-filters{display:block;border:1px solid var(--sb-line);border-radius:10px;overflow:hidden;background:var(--sb-bg)}
+html:not(.sb-classic) .sb-filters>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;padding:8px 10px;font:600 12.5px system-ui;color:var(--sb-ink2);cursor:pointer;background:var(--sb-bg2)}
+html:not(.sb-classic) .sb-filters>summary::-webkit-details-marker{display:none}
+html:not(.sb-classic) .sb-filters>summary::after{content:"";width:8px;height:8px;border-right:2px solid var(--sb-muted);border-bottom:2px solid var(--sb-muted);transform:rotate(45deg);margin-right:4px;transition:transform .2s}
+html:not(.sb-classic) .sb-filters[open]>summary::after{transform:rotate(-135deg);margin-top:4px}
+html:not(.sb-classic) .sb-filters-body{padding:10px;display:flex;flex-direction:column;gap:10px}
+html:not(.sb-classic) .sb-frow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;font:500 13px system-ui;color:var(--sb-ink)}
+html:not(.sb-classic) .sb-sw{width:42px;height:24px;padding:0;border-radius:12px;border:0;background:var(--sb-line);position:relative;font-size:0;color:transparent;cursor:pointer;box-shadow:none}
+html:not(.sb-classic) .sb-sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--sb-bg);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .18s}
+html:not(.sb-classic) .sb-sw.on{background:var(--sb-primary)}
+html:not(.sb-classic) .sb-sw.on::after{transform:translateX(18px)}
+html:not(.sb-classic) .sb-seg{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--sb-line);border-radius:9px;background:var(--sb-bg2)}
+html:not(.sb-classic) .sb-seg button{height:26px;padding:0 10px;border:0;border-radius:7px;background:transparent;color:var(--sb-ink2);font:600 12px system-ui;cursor:pointer;white-space:nowrap}
+html:not(.sb-classic) .sb-seg button.on{background:var(--sb-primary);color:#fff}
+html:not(.sb-classic) .sb-filters-body #btnRefreshData{justify-self:start;align-self:flex-start;height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink);font:500 12.5px system-ui}
+html:not(.sb-classic) .sb-filters-body .elu-updated{margin:0;font-size:11.5px;color:var(--sb-muted);display:flex;align-items:center;gap:6px}
+html:not(.sb-classic) .sb-filters-body .elu-updated:empty{display:none}
+html:not(.sb-classic) .sb-filters-body .elu-updated::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--sb-primary);flex-shrink:0}
+@media (prefers-reduced-motion:reduce){ html:not(.sb-classic) .sb-sw::after,html:not(.sb-classic) .sb-filters>summary::after{transition:none} }
+/* compact rows + expand */
+html:not(.sb-classic) .panel-content-scroll{padding-left:0;padding-right:0}
+html:not(.sb-classic) .row{display:block;grid-template-columns:none;gap:0;padding:0;border-bottom:1px solid var(--sb-line2)}
+html:not(.sb-classic) .sb-row-main{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 6px 9px 12px;min-height:60px;cursor:pointer}
+html:not(.sb-classic) .sb-row-main:hover,html:not(.sb-classic) .row.sb-open .sb-row-main{background:var(--sb-bg2)}
+html:not(.sb-classic) .avatar{width:44px;height:44px;box-sizing:border-box;border-width:3px;border-style:solid;position:relative;background-color:var(--sb-bg2)}
+html:not(.sb-classic) .sb-rarity{position:absolute;right:-6px;top:-6px;min-width:18px;height:18px;padding:0 4px;box-sizing:border-box;border-radius:9px;background:var(--sb-ink);color:#fff;font:800 10px/14px system-ui;text-align:center;border:2px solid var(--sb-bg)}
+html:not(.sb-classic) .sb-row-text{min-width:0}
+html:not(.sb-classic) .name-label{font-weight:600;font-size:14px;line-height:1.25;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:break-word;color:var(--sb-ink)}
+html:not(.sb-classic) .name-label.muted{text-decoration:line-through;color:var(--sb-muted);opacity:1}
+html:not(.sb-classic) .sb-meta{font-size:12px;color:var(--sb-muted);display:flex;flex-wrap:wrap;gap:0 8px;align-items:center;margin-top:2px;min-width:0;font-variant-numeric:tabular-nums}
+html:not(.sb-classic) .sb-meta span{white-space:nowrap;flex-shrink:0}
+html:not(.sb-classic) .sb-meta span:only-child{white-space:normal;flex-shrink:1;min-width:0}
+html:not(.sb-classic) .sb-meta .sb-fresh{color:var(--sb-primary);font-weight:600}
+html:not(.sb-classic) .sb-meta .sb-occ{color:var(--sb-ink);font-weight:600}
+html:not(.sb-classic) .sb-meta .cc{display:inline-flex;flex-wrap:wrap;gap:3px;white-space:normal;flex-shrink:1;min-width:0}
+html:not(.sb-classic) .sb-meta .cc b{font:600 10.5px/16px system-ui;padding:0 4px;border-radius:4px;background:var(--sb-line2);color:var(--sb-ink2);white-space:nowrap}
+html:not(.sb-classic) .sb-meta .cc b.mig{background:var(--sb-primary-soft);color:var(--sb-primary)}
+html:not(.sb-classic) .sb-sep{width:3px;height:3px;border-radius:50%;background:var(--sb-line);flex-shrink:0}
+html:not(.sb-classic) .sb-acts{display:flex;gap:0;align-items:center}
+html:not(.sb-classic) .sb-ib{width:32px;height:32px;min-width:0;padding:0;border-radius:9px;border:0;background:transparent;color:var(--sb-ink2);display:inline-flex;align-items:center;justify-content:center;box-shadow:none;cursor:pointer}
+html:not(.sb-classic) .sb-ib:hover{background:var(--sb-bg2);color:var(--sb-ink)}
+html:not(.sb-classic) .sb-ib[disabled]{opacity:.35;cursor:default;background:transparent}
+html:not(.sb-classic) .sb-chev svg{transition:transform .2s}
+html:not(.sb-classic) .row.sb-open .sb-chev svg{transform:rotate(180deg)}
+html:not(.sb-classic) .sb-row-detail{display:none;flex-direction:column;align-items:flex-start;gap:8px;padding:8px 14px 12px 66px;background:var(--sb-bg2);border-top:1px dashed var(--sb-line)}
+html:not(.sb-classic) .row.sb-open .sb-row-detail{display:flex}
+html:not(.sb-classic) .sb-row-detail .ctry{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--sb-ink);min-width:0;max-width:100%}
+html:not(.sb-classic) .sb-row-detail .ctry span{font-weight:600;overflow-wrap:anywhere}
+html:not(.sb-classic) .sb-row-detail .ctry i{font-style:normal;font-weight:400;color:var(--sb-ink2)}
+html:not(.sb-classic) .sb-row-detail .dbtn{display:inline-flex;align-items:center;height:30px;padding:0 12px;border-radius:9px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink);font:500 12px system-ui;text-decoration:none}
+html:not(.sb-classic) .sb-row-detail .dbtn:hover{border-color:var(--sb-primary)}
+@media (prefers-reduced-motion:reduce){ html:not(.sb-classic) .sb-chev svg{transition:none} }
+/* mobile: full-screen list + floating pill (linnuliigid P37c) */
+html:not(.sb-classic) #sbPill{display:none}
+@media (max-width:900px){
+  html:not(.sb-classic) #sbPill{display:inline-flex;position:fixed;left:50%;bottom:calc(16px + var(--appBottomNav,0px) + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:7100;height:40px;padding:0 16px;border-radius:999px;border:0;background:var(--sb-ink);color:#fff;font:600 13px system-ui;align-items:center;gap:8px;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer;white-space:nowrap}
+  html:not(.sb-classic) #sidebar{position:fixed;left:0;right:0;top:0;height:100dvh;width:100%;max-width:none;transform:translateX(100%);transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:none;border-right:0;padding-top:0}
+  html:not(.sb-classic) #sidebar.open{transform:translateX(0)}
+  html:not(.sb-classic) .sidebar-backdrop,html:not(.sb-classic) .sidebar-backdrop.show{display:none!important}
+  html:not(.sb-classic) .map-hamburger-leaflet{display:none!important}
+  html:not(.sb-classic) .panel-content-scroll{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+}
+@media (prefers-reduced-motion:reduce){ html:not(.sb-classic) #sidebar{transition:none} }
+  </style>
+  <script>try{ if(localStorage.getItem('estbirding.sidebarUi')==='classic') document.documentElement.classList.add('sb-classic'); }catch(e){}</script>
 </head>
 
 <body>
@@ -313,6 +408,11 @@
     <aside id="sidebar" aria-label="Sidebar">
       <div class="panel-header">
       <div id="stickyPanel">
+      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa"></template>
+      <div class="sb-titlebar" hidden>
+        <div class="sb-brand"><img class="sb-brand-ico" src="/icons/estbirds-96.png" alt="" width="44" height="44"><div class="sb-brand-txt"><h2>EstBirds</h2><div class="sb-counts" id="euCounts"></div></div></div>
+        <div class="sb-title-r"><span class="sb-src">eBird &middot; 7 p</span></div>
+      </div>
 <div class="sidebarHeader">
         <div class="sidebarHeaderTop">
           <div class="header-copy">
@@ -348,6 +448,14 @@
       </details>
       <div id="progressLine">Ready.</div>
       <input id="filterBox" type="text" placeholder="Filter species..."/>
+      <div class="sb-chips" id="euChips" hidden></div>
+      <details class="sb-filters" id="euFilters" open hidden><summary>Filtrid</summary><div class="sb-filters-body">
+        <div class="sb-frow"><span>Ainult viimased 7 p&auml;eva</span><button type="button" class="sb-sw" id="euSw7" role="switch" aria-checked="false" aria-label="Ainult viimased 7 p&auml;eva"></button></div>
+        <div class="sb-frow"><span>M&auml;rgised</span><div class="sb-seg" id="euSeg" role="group" aria-label="M&auml;rgised"><button type="button" data-pc="1">Riigiti</button><button type="button" data-pc="0">Uusim riik</button></div></div>
+        <div class="sb-frow"><span>Ainult haruldased</span><button type="button" class="sb-sw" id="euSwRare" role="switch" aria-checked="false" aria-label="Ainult haruldased"></button></div>
+        <div class="sb-frow"><span>Peida n&auml;htud liigid</span><button type="button" class="sb-sw" id="euSwSeen" role="switch" aria-checked="false" aria-label="Peida n&auml;htud liigid"></button></div>
+        <div class="elu-updated" id="euUpdated"></div>
+      </div></details>
       </div>
       </div>
       <div class="panel-content-scroll">
@@ -2407,6 +2515,313 @@ if (!DEV_DEBUG) {
   const panel = document.getElementById("debugPanel");
   if (panel) panel.style.display = "none";
 }
+
+/* ========= P74b: new sidebar UI (skipped under html.sb-classic) ========= */
+(function euNewUi(){
+  if (document.documentElement.classList.contains("sb-classic")) return;
+
+  var STR = (document.getElementById("euStr") || {}).dataset || {};
+  var LS_HIDE_SEEN_KEY = "bm_eu_hide_seen";
+  var euCountryFilter = "";
+  var sbOpenKey = null;
+  var tallinnFmt = null;
+  try { tallinnFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Tallinn", year: "numeric", month: "2-digit", day: "2-digit" }); } catch(e){ tallinnFmt = null; }
+
+  var ICO_PIN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>';
+  var ICO_CHEV = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+  var ICO_MAP = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14"/></svg>';
+  var ICO_LIST = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>';
+
+  function esc(s){
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+  function readHideSeen(){
+    try { return localStorage.getItem(LS_HIDE_SEEN_KEY) === "1"; } catch(e){ return false; }
+  }
+  function writeHideSeen(on){
+    try { localStorage.setItem(LS_HIDE_SEEN_KEY, on ? "1" : "0"); } catch(e){ console.warn("[quota] bm_eu_hide_seen save failed", e); }
+  }
+  function ymdToUtc(v){
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || ""));
+    return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : NaN;
+  }
+  function tallinnTodayYmd(){
+    if (tallinnFmt) { try { return tallinnFmt.format(new Date()); } catch(e){ /* fall through to UTC date */ } }
+    return new Date().toISOString().slice(0, 10);
+  }
+  // 0 d -> today, 1 -> yesterday, n -> "n daysAgo" (Europe/Tallinn calendar days)
+  function relDay(t){
+    var a = ymdToUtc(t);
+    var b = ymdToUtc(tallinnTodayYmd());
+    if (!isFinite(a) || !isFinite(b)) return "";
+    var n = Math.max(0, Math.round((b - a) / 86400000));
+    if (n === 0) return STR.today || "";
+    if (n === 1) return STR.yesterday || "";
+    return n + " " + (STR.daysAgo || "");
+  }
+  // Countries with occ7 > 0, sorted by occ7 desc
+  function activeRegions(p){
+    var out = [];
+    var regs = (p && p.regions && typeof p.regions === "object") ? p.regions : {};
+    Object.keys(regs).forEach(function(rg){
+      var d = regs[rg];
+      var occ7 = Number((d && d.occ7) || 0);
+      if (occ7 > 0) out.push({ rg: rg, d: d, occ7: occ7 });
+    });
+    out.sort(function(x, y){ return y.occ7 - x.occ7; });
+    return out;
+  }
+  function hasOccIn(name, cc){
+    var d = ((points[name] || {}).regions || {})[cc];
+    return !!d && Number(d.occ7 || 0) > 0;
+  }
+  function isHiddenSpecies(name){
+    return !!points[name] && points[name].visible === false;
+  }
+
+  /* ----- rows ----- */
+  function euRowMeta(p, regs, hasLoc){
+    if (!hasLoc) return '<span>' + esc(STR.noLoc) + '</span>';
+    var parts = [];
+    var fresh = relDay(p.t);
+    if (fresh) parts.push('<span class="sb-fresh">' + esc(fresh) + '</span>');
+    parts.push('<span class="sb-occ">7p ' + Number(p.occ7 || 0) + '</span>');
+    if (regs.length) {
+      parts.push('<span class="cc">' + regs.map(function(r){
+        return '<b' + (p.migration ? ' class="mig"' : '') + '>' + esc(r.rg) + ' ' + r.occ7 + '</b>';
+      }).join("") + '</span>');
+    }
+    return parts.join('<i class="sb-sep"></i>');
+  }
+  function euRowDetail(name, regs){
+    var ctry = regs.map(function(r){
+      var bits = [String(r.occ7)];
+      if (r.d && r.d.loc) bits.push(esc(r.d.loc));
+      var rd = relDay(r.d && r.d.t);
+      if (rd) bits.push(esc(rd));
+      return '<span title="' + esc(STR[r.rg.toLowerCase()] || r.rg) + '">' + esc(r.rg) + ' <i>' + bits.join(" &middot; ") + '</i></span>';
+    }).join("");
+    var code = resolveEbirdCode(name) || EBIRD_CODES[name] || "";
+    var link = code
+      ? '<a class="dbtn" target="_blank" rel="noopener" href="https://ebird.org/species/' + encodeURIComponent(code) + '">' + esc(STR.openEbird) + ' &#8599;</a>'
+      : "";
+    return (ctry ? '<div class="ctry">' + ctry + '</div>' : "") + link;
+  }
+  function euRowHTML(name){
+    var p = points[name] || {};
+    var meta = getSpeciesMeta(name);
+    var displayName = window.normalizeUiText ? window.normalizeUiText(name) : name;
+    var hasLoc = Number.isFinite(p.lat) && Number.isFinite(p.lon);
+    var rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(meta.rarityLevel) : "";
+    var regs = activeRegions(p);
+    var isOpen = sbOpenKey === name;
+    var keyAttr = esc(name);
+    var avatarUrl = meta.avatarUrl || avatars[name] || "";
+    return '<div class="row' + (isOpen ? ' sb-open' : '') + '" data-key="' + keyAttr + '">' +
+      '<div class="sb-row-main" data-sb-toggle="' + keyAttr + '">' +
+        '<div class="avatar" style="background-image:url(\'' + esc(avatarUrl) + '\');border-color:' + borderColorByDate(p.t) + '">' +
+          (rarityText ? '<span class="sb-rarity" title="Haruldus">' + esc(rarityText) + '</span>' : '') +
+        '</div>' +
+        '<div class="sb-row-text">' +
+          '<div class="name name-label' + (p.visible === false ? ' muted' : '') + '">' + esc(displayName) + '</div>' +
+          '<div class="sb-meta">' + euRowMeta(p, regs, hasLoc) + '</div>' +
+        '</div>' +
+        '<div class="sb-acts">' +
+          '<button type="button" class="sb-ib sb-locate" data-open' + (hasLoc ? '' : ' disabled') + ' title="Kaardil" aria-label="Kaardil">' + ICO_PIN + '</button>' +
+          '<button type="button" class="sb-ib sb-chev" data-sb-toggle="' + keyAttr + '" title="Rohkem" aria-label="Rohkem" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' + ICO_CHEV + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="sb-row-detail">' + euRowDetail(name, regs) + '</div>' +
+    '</div>';
+  }
+
+  /* ----- chrome (counts, chips, filters, updated, pill) ----- */
+  function paintCounts(){
+    var el = document.getElementById("euCounts");
+    if (!el) return;
+    var active = 0;
+    var hidden = 0;
+    SPECIES.forEach(function(n){
+      if (activeRegions(points[n]).length) active++;
+      if (isHiddenSpecies(n)) hidden++;
+    });
+    el.innerHTML = 'Euroopa &middot; ' + active + ' ' + esc(STR.active) + ' &middot; ' + hidden + ' ' + esc(STR.hidden);
+  }
+  function chipHTML(cc, label, n, title){
+    var on = euCountryFilter === cc;
+    return '<button type="button" class="sb-chip' + (on ? ' on' : '') + '" data-cc="' + cc + '" aria-pressed="' + (on ? 'true' : 'false') + '"' +
+      (title ? ' title="' + esc(title) + '"' : '') + '>' + label + ' <span>' + n + '</span></button>';
+  }
+  function paintChips(){
+    var el = document.getElementById("euChips");
+    if (!el) return;
+    var counts = {};
+    var all = 0;
+    REGIONS.forEach(function(rg){ counts[rg] = 0; });
+    SPECIES.forEach(function(n){
+      var regs = activeRegions(points[n]);
+      if (regs.length) all++;
+      regs.forEach(function(r){ if (Object.prototype.hasOwnProperty.call(counts, r.rg)) counts[r.rg]++; });
+    });
+    var html = chipHTML("", "K&otilde;ik", all, "");
+    REGIONS.forEach(function(rg){ html += chipHTML(rg, rg, counts[rg], STR[rg.toLowerCase()] || ""); });
+    el.innerHTML = html;
+  }
+  function setSwitch(id, on){
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle("on", !!on);
+    el.setAttribute("aria-checked", on ? "true" : "false");
+  }
+  function paintFilters(){
+    var cb = document.getElementById("toggle7days");
+    setSwitch("euSw7", !!(cb && cb.checked));
+    setSwitch("euSwRare", rareOnly);
+    setSwitch("euSwSeen", readHideSeen());
+    var seg = document.getElementById("euSeg");
+    if (seg) seg.querySelectorAll("button[data-pc]").forEach(function(b){
+      var on = (b.getAttribute("data-pc") === "1") === perCountry;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+  function paintUpdated(){
+    var el = document.getElementById("euUpdated");
+    if (!el) return;
+    el.textContent = lastSnapshotAt ? ((STR.updated || "") + " " + formatDateTimeEt(lastSnapshotAt)) : "";
+  }
+  var pill = null;
+  function paintPill(){
+    if (!pill) return;
+    var open = sidebar.classList.contains("open");
+    var n = listEl.querySelectorAll(".row").length;
+    pill.innerHTML = open ? (ICO_MAP + "Kaart") : (ICO_LIST + "Nimekiri &middot; " + n);
+    pill.setAttribute("aria-label", open ? "Kaart" : "Nimekiri");
+  }
+  function paintChrome(){
+    paintCounts();
+    paintChips();
+    paintFilters();
+    paintUpdated();
+    paintPill();
+  }
+
+  /* ----- new-UI branches of rowHTML / render / updateMarker (classic keeps the originals) ----- */
+  rowHTML = euRowHTML;
+  render = function(){
+    var q = norm((filterBox.value || "").trim());
+    var hideSeen = readHideSeen();
+    var html = "";
+    SPECIES
+      .filter(function(n){ return passesRareOnlyFilter(n); })
+      .filter(function(n){ return norm(n).includes(q); })
+      .filter(function(n){ return !recentOnly || activeRegions(points[n]).length > 0; })
+      .filter(function(n){ return euCountryFilter === "" || hasOccIn(n, euCountryFilter); })
+      .filter(function(n){ return !hideSeen || !isHiddenSpecies(n); })
+      .forEach(function(n){ html += rowHTML(n); });
+    listEl.innerHTML = html;
+    wireRows();
+    SPECIES.forEach(updateMarker);
+    paintChrome();
+  };
+  // Country chip gates markers in both modes (Riigiti and Uusim riik). The original updateMarker
+  // builds markers only from its loop over p.regions, so for the duration of the call it is handed
+  // a copy holding just the chip's region. The swap is safe because: the original is fully
+  // synchronous (no await/timer can observe the swapped object); p.regions is restored in finally,
+  // even if the original throws; and nothing between swap and restore saves points
+  // (saveAll/compactPoints/snapshots are never called from updateMarker).
+  var _updateMarker0 = updateMarker;
+  updateMarker = function(species){
+    var p = euCountryFilter ? points[species] : null;
+    if (!p || !p.regions || typeof p.regions !== "object") return _updateMarker0(species);
+    var allRegions = p.regions;
+    var only = {};
+    if (allRegions[euCountryFilter]) only[euCountryFilter] = allRegions[euCountryFilter];
+    p.regions = only;
+    try { return _updateMarker0(species); } finally { p.regions = allRegions; }
+  };
+  // Repaint switches / "Uuendatud" wherever the debug panel is refreshed (perCountry toggle, snapshot save).
+  var _updateDebugPanel0 = updateDebugPanel;
+  updateDebugPanel = function(){
+    _updateDebugPanel0();
+    paintChrome();
+  };
+
+  /* ----- move kept elements into the new layout ----- */
+  var titleR = document.querySelector(".sb-title-r");
+  if (titleR && closeBtn) titleR.appendChild(closeBtn);
+  var filtersBody = document.querySelector("#euFilters .sb-filters-body");
+  var refreshBtn = document.getElementById("btnRefreshData");
+  if (filtersBody && refreshBtn) {
+    filtersBody.insertBefore(refreshBtn, document.getElementById("euUpdated"));
+    refreshBtn.textContent = "Uuenda eBirdist";
+  }
+  filterBox.placeholder = "Otsi liiki\u2026";
+
+  /* ----- wiring ----- */
+  var chipsEl = document.getElementById("euChips");
+  if (chipsEl) chipsEl.addEventListener("click", function(e){
+    var b = e.target && e.target.closest ? e.target.closest("[data-cc]") : null;
+    if (!b) return;
+    euCountryFilter = b.getAttribute("data-cc") || "";
+    render();
+  });
+  function onClick(id, fn){
+    var el = document.getElementById(id);
+    if (el) el.addEventListener("click", fn);
+  }
+  onClick("euSw7", function(){
+    var cb = document.getElementById("toggle7days");
+    if (!cb) return;
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event("change", { bubbles: true }));
+    paintFilters();
+  });
+  onClick("euSwRare", function(){
+    rareOnlyBtn.click();
+    paintFilters();
+  });
+  onClick("euSwSeen", function(){
+    writeHideSeen(!readHideSeen());
+    render();
+  });
+  onClick("euSeg", function(e){
+    var b = e.target && e.target.closest ? e.target.closest("button[data-pc]") : null;
+    if (!b) return;
+    if ((b.getAttribute("data-pc") === "1") !== perCountry) perCountryBtn.click();
+    paintFilters();
+  });
+  // Row expand: whole main row + chevron; name (visibility toggle) and locate keep their own handlers.
+  listEl.addEventListener("click", function(e){
+    var t = e.target;
+    if (!t || !t.closest) return;
+    if (t.closest(".name-label, [data-open]")) return;
+    var tg = t.closest("[data-sb-toggle]");
+    if (!tg) return;
+    var key = tg.getAttribute("data-sb-toggle");
+    sbOpenKey = (sbOpenKey === key) ? null : key;
+    render();
+  });
+
+  /* ----- mobile pill; observer keeps body.sidebar-open in step with #sidebar.open (P40) ----- */
+  var mapWrapEl = document.getElementById("mapWrap");
+  if (mapWrapEl) {
+    pill = document.createElement("button");
+    pill.id = "sbPill";
+    pill.type = "button";
+    mapWrapEl.appendChild(pill);
+    pill.addEventListener("click", function(){
+      if (sidebar.classList.contains("open")) closeSidebar(); else openSidebar();
+    });
+  }
+  if (window.MutationObserver) {
+    new MutationObserver(function(){
+      document.body.classList.toggle("sidebar-open", sidebar.classList.contains("open"));
+      paintPill();
+    }).observe(sidebar, { attributes: true, attributeFilter: ["class"] });
+  }
+  paintChrome();
+})();
 
 /* ========= Init ========= */
 preloadAvatars();

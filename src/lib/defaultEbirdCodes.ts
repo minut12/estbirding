@@ -2,7 +2,7 @@
 export const DEFAULT_EBIRD_CODES: Record<string, string> = {
   "Aed-põõsalind": "garwar1",
   "Aed-roolind": "blrwar1",
-  "Aedporr": "shtre1",
+  "Aedporr": "shttre1",
   "Alk": "razorb",
   "Alverüdi": "shtsan",
   "Ameerika piilpart": "amewig",

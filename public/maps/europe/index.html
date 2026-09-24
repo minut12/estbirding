@@ -1015,9 +1015,24 @@ function normalizeSpeciesMetaStorage(){
     try { localStorage.setItem(LS_SPECIES_META, JSON.stringify(normalized)); } catch(e){ console.warn("[quota] LS_SPECIES_META save failed", e); }
   }
 }
+var __euMetaRaw = null, __euMetaMap = null, __euMetaChecked = 0;
 function getSpeciesMeta(name){
-  if (window.getSpeciesMetaShared) return window.getSpeciesMetaShared(name);
-  return { name, rarityLevel: "none" };
+  if (!window.loadSpeciesMetaShared || !window.normalizeUiText) {
+    if (window.getSpeciesMetaShared) return window.getSpeciesMetaShared(name);
+    return { name: name, rarityLevel: "none" };
+  }
+  var now = Date.now();
+  if (!__euMetaMap || now - __euMetaChecked > 100) {
+    __euMetaChecked = now;
+    var raw = "";
+    try { raw = localStorage.getItem(LS_SPECIES_META) || ""; } catch(e){ raw = ""; }
+    if (raw !== __euMetaRaw || !__euMetaMap) {
+      __euMetaMap = window.loadSpeciesMetaShared() || {};
+      try { __euMetaRaw = localStorage.getItem(LS_SPECIES_META) || ""; } catch(e){ __euMetaRaw = raw; }
+    }
+  }
+  var clean = window.normalizeUiText(name);
+  return __euMetaMap[clean] || { name: clean, rarityLevel: "none" };
 }
 function resolveEbirdCode(name){
   const meta = getSpeciesMeta(name);

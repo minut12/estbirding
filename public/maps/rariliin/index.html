@@ -217,7 +217,7 @@
       .recent-rarities-title{font-size:17px}
       .recent-rarities-actions .btn{flex:1 1 120px;justify-content:center}
     }
-    /* P84d: "Uued leiud" notice on the sidebar tokens (mock 4 A). html.sb-classic keeps the rules above unchanged. */
+    /* P84d: "Viimased vaatlused" notice (P84e title) on the sidebar tokens (mock 4 A). html.sb-classic keeps the rules above unchanged. */
     html:not(.sb-classic) .recent-rarities-card{border-radius:14px;padding:12px 14px;color:var(--sb-ink);background:var(--sb-bg);border:1px solid var(--sb-line);box-shadow:0 8px 30px rgba(20,40,30,.14);backdrop-filter:none;box-sizing:border-box}
     html:not(.sb-classic) .recent-rarities-top{gap:8px}
     html:not(.sb-classic) .recent-rarities-top>div{min-width:0}
@@ -285,7 +285,6 @@
 .bm-pin.is-approx .bm-pin-shape{background:#f4f6f5;border-style:dashed;border-color:#9aa9a0}
 .bm-pin.is-approx .bm-pin-head{filter:saturate(.35);opacity:.85}
 .bm-pin-src{position:absolute;left:50%;top:57px;transform:translateX(-50%);z-index:2;height:15px;padding:0 5px;border-radius:5px;color:#fff;font:800 8.5px/15px system-ui,Arial,sans-serif;letter-spacing:.02em;box-shadow:0 0 0 1.5px #fff;pointer-events:none;white-space:nowrap}
-.bm-pin-src.elu{background:#1d5fa8}
 .bm-pin-src.eb{background:#0e7490}
 .bm-pin.is-sel{transform:scale(1.2);transform-origin:50% 100%}
 .bm-pin.is-sel .bm-pin-shape{box-shadow:0 0 0 3px rgba(45,122,75,.55),0 2px 8px rgba(20,40,30,.35)}
@@ -305,6 +304,9 @@
   font:800 11px/16px system-ui,Arial,sans-serif;letter-spacing:.02em;box-shadow:0 1px 2px rgba(0,0,0,.18)}
 .bm-card-rar{position:absolute;right:12px;top:10px;z-index:2;padding:2px 9px;border-radius:999px;background:#fff;
   border:1px solid currentColor;font:800 11px/16px system-ui,Arial,sans-serif;letter-spacing:.02em}
+/* P84e: card popups get a round close button in the band corner; the rarity tag moves left of it. */
+.leaflet-popup:has(.bm-card) .leaflet-popup-close-button{top:8px;right:8px;width:26px;height:26px;padding:0;border-radius:999px;background:rgba(255,255,255,.88);color:#4a5852;font:400 18px/26px system-ui;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.leaflet-popup:has(.bm-card) .bm-card-rar{right:42px}
 .bm-card-body{padding:0 16px 14px}
 .bm-card-head{position:relative;z-index:2;display:flex;align-items:flex-end;gap:12px;margin-top:-32px}
 .bm-card-av{flex:0 0 auto;width:56px;height:56px;border-radius:50%;box-sizing:border-box;border:2px solid #dde4df;
@@ -316,18 +318,19 @@
 .bm-card-media{display:flex;align-items:center;gap:8px;margin-top:8px;padding:7px 10px;border-radius:10px;background:#fff4e0;border:1px solid #f2c78a;color:#8a4b06;font-size:12px}
 .bm-card-media svg{width:15px;height:15px;flex:0 0 auto}
 .bm-card-media b{font-weight:800;color:#8a4b06;margin-right:2px}
-.bm-card-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:12px;
+.bm-card-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;margin-top:12px;
   background:#eef2ef;border:1px solid #eef2ef;border-radius:10px;overflow:hidden}
 .bm-card-stat{background:#f2f8f4;padding:7px 8px;text-align:center;min-width:0}
 .bm-card-stat b{display:block;font:700 15px/1.2 system-ui,Arial,sans-serif;color:#222a26;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bm-card-stat span{display:block;margin-top:1px;font-size:10.5px;color:#6c7f74}
 .bm-card-stat--src b{color:var(--sc)}
-.bm-card-stat--mig b{color:#2d7a4b}
 .bm-card-rows{margin-top:10px;display:flex;flex-direction:column;gap:6px}
 .bm-card-row{display:flex;gap:8px;align-items:flex-start;color:#4a5852;font-size:12.5px}
 .bm-card-row svg{flex:0 0 auto;margin-top:2px;color:#6c7f74}
 .bm-card-row span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.bm-card-row code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#f2f8f4;border-radius:5px;padding:0 4px;color:#222a26}
+.bm-card-row.e{color:#9aa9a0}
 .bm-card-cmt{display:flex;gap:8px;margin-top:10px;background:#fbeedd;border:1px solid #f0d9b8;color:#5b4423;border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.4}
 .bm-card-cmt b{display:block;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#b45309;margin-bottom:2px}
 .bm-card-cmt-t{white-space:pre-wrap;word-break:break-word}
@@ -427,6 +430,7 @@ html:not(.sb-classic) .sb-meta span{white-space:nowrap;flex-shrink:0}
 html:not(.sb-classic) .sb-meta span:only-child{white-space:normal;flex-shrink:1;min-width:0}
 html:not(.sb-classic) .sb-meta .sb-fresh{color:var(--sb-primary);font-weight:600;flex-shrink:0}
 html:not(.sb-classic) .sb-meta .sb-occ{color:var(--sb-ink);font-weight:600}
+html:not(.sb-classic) .sb-meta .sb-date{color:var(--sb-ink);font-weight:600;flex-shrink:0}
 html:not(.sb-classic) .sb-meta .sb-place{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0;max-width:100%}
 html:not(.sb-classic) .sb-sep{width:3px;height:3px;border-radius:50%;background:var(--sb-line);flex-shrink:0}
 html:not(.sb-classic) .sb-src{display:inline-flex;gap:4px;align-items:center;flex-shrink:0}
@@ -495,6 +499,7 @@ html:not(.sb-classic) .sbh-body p{margin:0;color:var(--sb-ink2);font-size:13.5px
 </div>
 <div class="sb-seen-row sb-rl-new"><span>Peida n&auml;htud liigid</span><button id="hideSeenToggle" type="button" role="switch" aria-checked="false" aria-label="Peida n&auml;htud liigid" title="Peida l&auml;bikriipsutatud liigid nimekirjast"></button></div>
 <div class="sb-src-row sb-rl-new"><span>Allikas</span><div class="sb-seg" id="srcSeg" role="group" aria-label="Allikas"><button type="button" data-src="all" class="on" aria-pressed="true">K&otilde;ik</button><button type="button" data-src="elu" aria-pressed="false">Elurikkus</button><button type="button" data-src="ebird" aria-pressed="false">eBird</button></div></div>
+<div class="sb-src-row sb-rl-new"><span>J&auml;rjestus</span><div class="sb-seg" id="sortSeg" role="group" aria-label="J&auml;rjestus"><button type="button" data-sort="date" class="on" aria-pressed="true">Uusim enne</button><button type="button" data-sort="az" aria-pressed="false">T&auml;hestikuline</button></div></div>
 <div id="sbUpdated" class="sb-updated sb-rl-new"></div>
 </div></details>
 <div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
@@ -515,7 +520,7 @@ html:not(.sb-classic) .sbh-body p{margin:0;color:var(--sb-ink2);font-size:13.5px
         <div class="recent-rarities-top">
           <div>
             <div class="recent-rarities-kicker">Rariliin &middot; 7 p&auml;eva</div>
-            <h4 id="recentRaritiesTitle" class="recent-rarities-title">Uued leiud</h4>
+            <h4 id="recentRaritiesTitle" class="recent-rarities-title">Viimased vaatlused</h4>
             <p id="recentRaritiesSubtitle" class="recent-rarities-subtitle"></p>
           </div>
           <button id="recentRaritiesClose" class="recent-rarities-close" type="button" aria-label="Sulge">×</button>
@@ -523,7 +528,7 @@ html:not(.sb-classic) .sbh-body p{margin:0;color:var(--sb-ink2);font-size:13.5px
         <div id="recentRaritiesList" class="recent-rarities-list"></div>
         <div id="recentRaritiesActions" class="recent-rarities-actions">
           <button id="recentRaritiesShowMap" class="btn primary" type="button">N&auml;ita kaardil</button>
-          <button id="recentRaritiesHideToday" class="btn secondary" type="button">T&auml;na enam mitte</button>
+          <button id="recentRaritiesHideToday" class="btn secondary" type="button">&Auml;ra t&auml;na teavitust rohkem kuva</button>
         </div>
       </div>
     </div>
@@ -533,14 +538,14 @@ html:not(.sb-classic) .sbh-body p{margin:0;color:var(--sb-ink2);font-size:13.5px
 
 <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
-<template id="rlStr" data-today="T&auml;na" data-yesterday="Eile" data-daysago="p&auml;eva tagasi" data-recent="Viimased 7 p&auml;eva" data-earlier="Varasemad" data-noloc="Asukoht puudub" data-seen="n&auml;htud" data-species="liiki" data-last7="viimase 7 p" data-place="Koht" data-muni="Vald" data-county="Maakond" data-count="Isendeid" data-beh="K&auml;itumine" data-obs="Vaatleja" data-code="Kood" data-sci="Teaduslik nimi" data-note="Teate m&auml;rkus" data-loc="Asukoht" data-obsh="Vaatlus" data-remark="M&auml;rkus" data-openelu="Ava Elurikkuses" data-openeb="Ava eBirdis" data-more="Rohkem" data-fotoga="Fotoga vaatlus" data-heliga="Heliga vaatlus" data-videoga="Videoga vaatlus" data-randel="r&auml;ndel" data-kevad="kevad" data-sygis="s&uuml;gis" data-eluremark="Elurikkuse m&auml;rkus" data-ebremark="eBirdi m&auml;rkus" data-approx="ligikaudne" data-vkoht="vaatluskoht" data-obs7="vaatlust 7 p" data-ind="isendit" data-ind1="isend" data-waze="Ava Waze&#39;is" data-copy="Kopeeri koordinaadid" data-srcelu="Elurikkus" data-srceb="eBird &middot; EE" data-ntcsub="viimase 7 p&auml;eva jooksul" data-ntcnew="uusim" data-species1="liik"></template>
+<template id="rlStr" data-today="T&auml;na" data-yesterday="Eile" data-daysago="p&auml;eva tagasi" data-recent="Viimased 7 p&auml;eva" data-earlier="Varasemad" data-noloc="Asukoht puudub" data-seen="n&auml;htud" data-species="liiki" data-last7="viimase 7 p" data-place="Koht" data-muni="Vald" data-county="Maakond" data-count="Isendeid" data-beh="K&auml;itumine" data-obs="Vaatleja" data-code="Kood" data-sci="Teaduslik nimi" data-note="Teate m&auml;rkus" data-loc="Asukoht" data-obsh="Vaatlus" data-remark="M&auml;rkus" data-openelu="Ava Elurikkuses" data-openeb="Ava eBirdis" data-more="Rohkem" data-fotoga="Fotoga vaatlus" data-heliga="Heliga vaatlus" data-videoga="Videoga vaatlus" data-eluremark="Elurikkuse m&auml;rkus" data-ebremark="eBirdi m&auml;rkus" data-approx="ligikaudne" data-vkoht="vaatluskoht" data-obs7="vaatlust 7 p" data-ind="isendit" data-ind1="isend" data-waze="Ava Waze&#39;is" data-copy="Kopeeri koordinaadid" data-srcelu="Elurikkus" data-srceb="eBird &middot; EE" data-ntcsub="viimase 7 p&auml;eva jooksul" data-ntcnew="uusim" data-species1="liik"></template>
 
 <div id="sbHelp" class="hidden-in-export"><div class="sbh" role="dialog" aria-modal="true" aria-labelledby="sbHelpTitle">
   <div class="sbh-head"><h2 id="sbHelpTitle">Rariliin</h2><button type="button" class="sbh-x" aria-label="Sulge">&times;</button></div>
   <div class="sbh-body">
-    <!-- P84e text --><p>Juhendi tekst lisandub hiljem (1/3).</p>
-    <!-- P84e text --><p>Juhendi tekst lisandub hiljem (2/3).</p>
-    <!-- P84e text --><p>Juhendi tekst lisandub hiljem (3/3).</p>
+    <p>Rariliin n&auml;itab Eesti haruldaste linnuliikide v&auml;rskeimaid vaatlusi. Andmed tulevad kahest allikast: Elurikkuse andmebaasist ja eBirdist (rohekassinine m&auml;rgis eBird). Iga liik on nimekirjas &uuml;he korra; kaardil v&otilde;ib samal liigil olla kummastki allikast oma m&auml;rk.</p>
+    <p>Haruldusaste on avatari nurgas: R t&auml;histab haruldast, SR v&auml;ga haruldast ja MR eriti haruldast liiki. L&uuml;liti &bdquo;Ainult viimased 7 p&auml;eva&ldquo; j&auml;tab alles liigid, mida on viimase n&auml;dala jooksul n&auml;htud. Liigi nimele kl&otilde;psates m&auml;rgid selle n&auml;htuks; n&auml;htud liigid saab nimekirjast peita.</p>
+    <p>Kaardil kl&otilde;psatud m&auml;rgi kaart n&auml;itab vaatluskohta, kuup&auml;eva, isendite arvu, vaatlejat ja k&auml;itumist. Tundlike leiukohtade puhul kuvatakse ligikaudne asukoht ja navigeerimisnupp puudub. Andmed uuenevad automaatselt; nupp &bdquo;Uuenda Elurikkusest&ldquo; laadib v&auml;rsked vaatlused kohe.</p>
   </div>
 </div></div>
 
@@ -550,7 +555,6 @@ html:not(.sb-classic) .sbh-body p{margin:0;color:var(--sb-ink2);font-size:13.5px
 <script src="/maps/shared/species-meta.js"></script>
 <script src="/maps/shared/rarity-style.js"></script>
 <script src="/maps/shared/et-strings.js"></script>
-<script src="/maps/shared/randeajad.js"></script>
 
 <script>
 // Define the prediction selector EARLY so popup onclick handlers can find it
@@ -725,6 +729,32 @@ function rlSrcEff(){
       btns[i].setAttribute('aria-pressed', on ? 'true' : 'false');
     }
     if (typeof rlApplySrcToMarkers === 'function') rlApplySrcToMarkers();
+    if (typeof render === 'function') render();
+  });
+})();
+/* P84e Jarjestus segment (new UI only): 'date' = last sighting first (default) | 'az' = alphabetical. Persisted in bm_rariliin_sort. */
+(function(){
+  var LS_SORT = 'bm_rariliin_sort';
+  var v = null;
+  try { v = localStorage.getItem(LS_SORT); } catch(e) { v = null; }
+  window.__rlSort = (v === 'az') ? 'az' : 'date';
+  var seg = document.getElementById('sortSeg');
+  if (!seg) return;
+  function sync(){
+    var btns = seg.querySelectorAll('button[data-sort]');
+    for (var i = 0; i < btns.length; i++){
+      var on = btns[i].getAttribute('data-sort') === window.__rlSort;
+      btns[i].classList.toggle('on', on);
+      btns[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+  }
+  sync();
+  seg.addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('button[data-sort]') : null;
+    if (!b) return;
+    window.__rlSort = (b.getAttribute('data-sort') === 'az') ? 'az' : 'date';
+    try { localStorage.setItem(LS_SORT, window.__rlSort); } catch(err) {}
+    sync();
     if (typeof render === 'function') render();
   });
 })();
@@ -4157,15 +4187,15 @@ function renderRecentRaritiesNotice(items, signature){
   if(!card || !title || !subtitle || !list || !actions) return;
   const preview = items;   // P84d-fix: no row cap; the list scrolls
   if(!(window.__sbIsClassic && window.__sbIsClassic())){
-    /* P84d new UI: "Uued leiud" + "N liiki viimase 7 paeva jooksul . uusim <fresh>" + rows. Classic keeps the chips below. */
+    /* P84d new UI: title + "N <species> <ntcsub> . <ntcnew> <fresh>" (words from template#rlStr) + rows. Classic keeps the chips below. */
     const n = items.length;
     const newest = items[0] ? rlFresh(items[0].iso) : '';
-    title.textContent = 'Uued leiud';
-    subtitle.textContent = n + ' ' + (n === 1 ? (rlStr('species1') || 'liik') : (rlStr('species') || 'liiki')) + ' ' + (rlStr('ntcsub') || 'viimase 7 paeva jooksul') +
-      (newest ? (' ' + String.fromCharCode(183) + ' ' + (rlStr('ntcnew') || 'uusim') + ' ' + newest.toLowerCase()) : '');
+    title.textContent = 'Viimased vaatlused';   // P84e
+    subtitle.textContent = n + ' ' + (n === 1 ? rlStr('species1') : rlStr('species')) + ' ' + rlStr('ntcsub') +   // P84e: template only, no ASCII fallback
+      (newest ? (' ' + String.fromCharCode(183) + ' ' + rlStr('ntcnew') + ' ' + newest.toLowerCase()) : '');
     list.innerHTML = preview.map(rlNoticeRowHTML).join('');
   } else {
-  title.textContent = 'Uued leiud viimase 7 päeva jooksul';
+  title.textContent = 'Viimased vaatlused';   // P84e: same title in classic (notice is shared map UI)
   subtitle.textContent = items.length === 1
     ? 'Rariliinis on 1 liik, mida tasub kaardilt vaadata.'
     : 'Rariliinis on ' + items.length + ' liiki, mida tasub kaardilt vaadata.';
@@ -7096,13 +7126,17 @@ function rebuildAllMarkers(){
   try{
     const clusterGroup = window.__markerClusterGroup || window.markerClusterGroup || null;
     if(markers && typeof markers.forEach === 'function'){
-      markers.forEach(function(m){
+      /* P84e: updateMarker reuses pins (open card stays open) and removes the ones that must disappear;
+         here drop only pins whose key is no longer a SPECIES entry. */
+      const inSpecies = new Set(SPECIES);
+      markers.forEach(function(m, key){
+        if(inSpecies.has(key)) return;
         try{
           if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(m);
           else map.removeLayer(m);
         }catch(e){}
+        markers.delete(key);
       });
-      markers.clear();
     }
   }catch(e){}
   prunePointsToWhitelist();
@@ -7875,7 +7909,7 @@ function rarityToBorder(level, fallback){
   var style = window.getRarityStyle ? window.getRarityStyle(level || 'none') : null;
   return (style && style.ringColor) || fallback || '#222';
 }
-/* P84c pin v2 (port of linnuliigid _markerIcon P58c). opts: { approx, srcTag:'elu'|'ebird'|'none' } (optional; default 'elu'). */
+/* P84c pin v2 (port of linnuliigid _markerIcon P58c). opts: { approx, srcTag:'ebird' } (optional). P84e: Elurikkus pins are bare (no source tag), as Linnuliigid. */
 function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel, opts){
   const o = opts || {};
   const approx = o.approx === true;
@@ -7889,8 +7923,7 @@ function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel, opts){
     ? '<div class="bm-pin-rb" style="color:' + color + '">' + badge + '</div>'
     : '';
   const bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#29c";
-  const tag = o.srcTag || 'elu';
-  const srcTag = (tag === 'ebird') ? '<div class="bm-pin-src eb">eBird</div>' : (tag === 'elu' ? '<div class="bm-pin-src elu">ELU</div>' : '');
+  const srcTag = (o.srcTag === 'ebird') ? '<div class="bm-pin-src eb">eBird</div>' : '';
   const html = '<div class="bm-pin' + (approx ? ' is-approx' : '') + '">'
     + '<div class="bm-pin-shape"' + shapeStyle + '></div>'
     + '<div class="bm-pin-head" style="' + bg + '"></div>'
@@ -7988,8 +8021,8 @@ window.refreshEbirdEEBulk = refreshEbirdEEBulk;
 
 function refreshEbirdEEMarkers(){
   var cluster = window.__markerClusterGroup || window.markerClusterGroup || null;
-  ebirdEEMarkers.forEach(function(m){ try { if(cluster && cluster.removeLayer) cluster.removeLayer(m); else map.removeLayer(m); } catch(e){} });
-  ebirdEEMarkers.clear();
+  /* P84e: diff instead of clear-and-rebuild, so an open eBird card stays open. Keys that stay eligible are updated in place. */
+  var keep = {};
   var now = Date.now(), win7 = 7*24*60*60*1000;
   var keys = Object.keys(ebirdEEPoints);
   for(var i=0;i<keys.length;i++){
@@ -8006,13 +8039,27 @@ function refreshEbirdEEMarkers(){
     var avatar = (typeof getDisplayAvatar === 'function') ? getDisplayAvatar(key) : ((typeof avatars !== 'undefined' && avatars[key]) || '');
     var metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel:'none' };
     var icon = _ebirdMarkerIcon(avatar, Number(ep.occ7 || 0), metaCfg.rarityLevel || 'none');
-    var m = L.marker([ep.lat, ep.lon], { icon: icon });
-    m.bindPopup(ebirdEEPopupHtml(key, ep), { closeButton:true, autoPan:true, autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) });   // P84c/P83
-    rlWireSel(m);
-    if(cluster && typeof cluster.addLayer === 'function') cluster.addLayer(m); else m.addTo(map);
-    ebirdEEMarkers.set(key, m);
-    if(rlSrcEff() === 'elu') rlLayerOff(m);   // P84b Allikas segment
+    var html = ebirdEEPopupHtml(key, ep);
+    var m = ebirdEEMarkers.get(key);
+    keep[key] = true;
+    if(m){
+      var ll = m.getLatLng ? m.getLatLng() : null;
+      if(!ll || Math.abs(ll.lat - ep.lat) > 1e-6 || Math.abs(ll.lng - ep.lon) > 1e-6){ try{ m.setLatLng([ep.lat, ep.lon]); }catch(e){} }
+      rlRefreshMarker(m, icon, html);
+    } else {
+      m = L.marker([ep.lat, ep.lon], { icon: icon });
+      m.bindPopup(html, { closeButton:true, autoPan:true, autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) });   // P84c/P83
+      rlWireSel(m);
+      if(cluster && typeof cluster.addLayer === 'function') cluster.addLayer(m); else m.addTo(map);
+      ebirdEEMarkers.set(key, m);
+    }
+    if(rlSrcEff() === 'elu') rlLayerOff(m); else rlLayerOn(m);   // P84b Allikas segment
   }
+  ebirdEEMarkers.forEach(function(m, key){
+    if(keep[key]) return;
+    try { if(cluster && cluster.removeLayer) cluster.removeLayer(m); else map.removeLayer(m); } catch(e){}
+    ebirdEEMarkers.delete(key);
+  });
 }
 window.refreshEbirdEEMarkers = refreshEbirdEEMarkers;
 
@@ -8026,6 +8073,13 @@ function rlSetSel(m, on){
   var pin = rlPinEl(m);
   if (pin) pin.classList.toggle('is-sel', !!on);
   try{ if (m && m.setZIndexOffset) m.setZIndexOffset(on ? 1000 : 0); }catch(e){}
+}
+/* P84e: update a reused pin in place (icon + card HTML); an open card stays open and the selected pin keeps .is-sel. */
+function rlRefreshMarker(m, icon, html){
+  try{ m.setIcon(icon); }catch(e){}
+  if (__rlSelMarker === m) rlSetSel(m, true);
+  var pop = m.getPopup ? m.getPopup() : null;
+  if (pop && pop.getContent() !== html) m.setPopupContent(html);
 }
 function rlWireSel(m){
   if (!m || m.__rlSelWired) return;
@@ -8270,44 +8324,40 @@ function updateMarker(key) {
   const icon = _markerIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none', { approx: rlIsApprox(p) });   // P84c: pin v2 + approx (avatarIcon untouched)
   const popupHtml = buildPopupHtml(key, p);
   const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;
-  if(prevMarker && old && (Math.abs(Number(old.lat) - Number(p.lat)) > 1e-6 || Math.abs(Number(old.lng) - Number(p.lon)) > 1e-6) && typeof prevMarker.setLatLng === 'function'){
-    try{ prevMarker.setLatLng([p.lat, p.lon]); }catch(e){}
-  }
-  if(prevMarker){
-    try{
-      if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(prevMarker);
-      else map.removeLayer(prevMarker);
-      markers.delete(key);
-    }catch(_e){}
-  }
-  console.log('[fix] updateMarker: placing', key, 'at lat=', p.lat, 'lon=', p.lon);
-  const m = L.marker([p.lat,p.lon], {icon});
-  if(clusterGroup && typeof clusterGroup.addLayer === 'function'){
-    try{ clusterGroup.addLayer(m); }catch(e){ m.addTo(map); }
+  const moved = !old || Math.abs(Number(old.lat) - Number(p.lat)) > 1e-6 || Math.abs(Number(old.lng) - Number(p.lon)) > 1e-6;
+  /* P84e: reuse the marker while it stays visible, so an open card survives avatar / snapshot / refresh updates.
+     A new marker is created only when none exists; removal happens only in the not-visible branches above. */
+  let m = prevMarker;
+  if(m){
+    if(moved && typeof m.setLatLng === 'function'){ try{ m.setLatLng([p.lat, p.lon]); }catch(e){} }
+    rlRefreshMarker(m, icon, popupHtml);
   } else {
-    m.addTo(map);
-  }
-  if(m.getPopup()){
-    m.setPopupContent(popupHtml);
-  } else {
+    console.log('[fix] updateMarker: placing', key, 'at lat=', p.lat, 'lon=', p.lon);
+    m = L.marker([p.lat,p.lon], {icon});
+    if(clusterGroup && typeof clusterGroup.addLayer === 'function'){
+      try{ clusterGroup.addLayer(m); }catch(e){ m.addTo(map); }
+    } else {
+      m.addTo(map);
+    }
     m.bindPopup(popupHtml, { closeButton:true, autoPan:true, closeOnClick:false, autoClose:false, autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) });   // P84c/P83
+    m.on('click', () => m.openPopup());
+    m.on('touchend', () => m.openPopup());
   }
   rlWireSel(m);
-  m.on('click', () => m.openPopup());
-  m.on('touchend', () => m.openPopup());
   p.lastMarkerMove = {
     oldLat: old ? Number(old.lat) : Number(p.lat),
     oldLon: old ? Number(old.lng) : Number(p.lon),
     newLat: Number(p.lat),
     newLon: Number(p.lon),
-    changed: !old || Math.abs(old.lat - p.lat) > 1e-6 || Math.abs(old.lng - p.lon) > 1e-6,
+    changed: moved,
     atISO: new Date().toISOString()
   };
-  if(p.lastMarkerMove.changed && clusterGroup && typeof clusterGroup.removeLayer === 'function' && typeof clusterGroup.addLayer === 'function'){
+  /* Cluster re-add for a moved pin; skipped while its card is open (removing the layer would close it). */
+  if(moved && clusterGroup && typeof clusterGroup.removeLayer === 'function' && typeof clusterGroup.addLayer === 'function' && !(m.isPopupOpen && m.isPopupOpen())){
     try{ clusterGroup.removeLayer(m); clusterGroup.addLayer(m); }catch(e){}
   }
   markers.set(key, m);
-  if(rlSrcEff() === 'ebird') rlLayerOff(m);   // P84b Allikas segment
+  if(rlSrcEff() === 'ebird') rlLayerOff(m); else rlLayerOn(m);   // P84b Allikas segment (a reused pin may have been hidden)
 }
 
 
@@ -8363,8 +8413,6 @@ function buildPopupHtml(key, p, opts){
   const dateLine = (rel && rel !== dateEE ? escapeHtml(rel) + ' &middot; ' : '') + (dateEE !== '-' ? escapeHtml(dateEE) : '');
   const indNum = parseFloat(ind.replace(',', '.'));
   const indLabel = (Number.isFinite(indNum) && Math.abs(indNum) === 1) ? rlStr('ind1') : rlStr('ind');
-  const kind = (typeof window.__rlRandelKind === 'function') ? window.__rlRandelKind(key) : null;
-  const migTxt = kind === 'kevad' ? escapeHtml(rlStr('kevad')) : (kind === 'sygis' ? escapeHtml(rlStr('sygis')) : DASH);
   const place = isEb ? str(p.placeText)
     : [str(x.locality), str(x.county)].filter(function(v){ return v && v !== '-'; }).join(', ');
   const remark = isEb ? str(p.comment) : str(x.remark || x.remarks);
@@ -8377,12 +8425,18 @@ function buildPopupHtml(key, p, opts){
   const SVG_WAZE = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M14.5 1.5 1.8 6.6c-.7.3-.6 1.3.1 1.5l4.6 1.4 1.4 4.6c.2.7 1.2.8 1.5.1L14.5 1.5Z"/></svg>';
   const SVG_COPY = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M5.5 1.5h6A1.5 1.5 0 0 1 13 3v7h-1.5V3h-6V1.5Zm-2 2.5h6A1.5 1.5 0 0 1 11 5.5v8A1.5 1.5 0 0 1 9.5 15h-6A1.5 1.5 0 0 1 2 13.5v-8A1.5 1.5 0 0 1 3.5 4Z"/></svg>';
   const SVG_REM = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M2.5 2h11A1.5 1.5 0 0 1 15 3.5v7a1.5 1.5 0 0 1-1.5 1.5H6l-3.5 3v-3A1.5 1.5 0 0 1 1 10.5v-7A1.5 1.5 0 0 1 2.5 2Z"/></svg>';
+  const SVG_EYE = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 3C4.5 3 1.8 5.5 1 8c.8 2.5 3.5 5 7 5s6.2-2.5 7-5c-.8-2.5-3.5-5-7-5Zm0 8a3 3 0 1 1 0-6 3 3 0 0 1 0 6Zm0-1.6a1.4 1.4 0 1 0 0-2.8 1.4 1.4 0 0 0 0 2.8Z"/></svg>';
   const srcTag = '<div class="bm-card-src">' + escapeHtml(isEb ? rlStr('srceb') : rlStr('srcelu')) + '</div>';
   const rarPill = rBadge ? '<div class="bm-card-rar" style="color:' + rColor + '">' + escapeHtml(rBadge) + '</div>' : '';
-  const rows = [
-    place ? '<div class="bm-card-row" title="' + escapeHtml(rlStr('place')) + '">' + SVG_PIN + '<span>' + escapeHtml(place) + '</span></div>' : '',
-    (col && col !== '-') ? '<div class="bm-card-row" title="' + escapeHtml(rlStr('obs')) + '">' + SVG_USER + '<span>' + escapeHtml(col) + '</span></div>' : ''
-  ].join('');
+  /* P84e: fixed rows, never omitted. Elurikkus = Koht / Vaatleja / Kaitumine; eBird = Koht / Vaatleja (no behaviour data). Empty -> dash, class e. */
+  const cardRow = (label, svg, val, pre) => {
+    const v = (val && val !== '-') ? val : '';
+    return '<div class="bm-card-row' + (v ? '' : ' e') + '" title="' + escapeHtml(label) + '">' + svg
+      + '<span>' + (pre ? escapeHtml(label) + ': ' : '') + (v ? (pre ? '<code>' + escapeHtml(v) + '</code>' : escapeHtml(v)) : DASH) + '</span></div>';
+  };
+  const rows = cardRow(rlStr('place'), SVG_PIN, place)
+    + cardRow(rlStr('obs'), SVG_USER, col)
+    + (isEb ? '' : cardRow(rlStr('beh'), SVG_EYE, str(x.behavior ?? p.behavior), true));
   const remBox = remark
     ? (isEb
       ? '<div class="bm-card-cmt">' + SVG_REM + '<div><b>' + escapeHtml(rlStr('ebremark')) + '</b><span class="bm-card-cmt-t">' + escapeHtml(remark) + '</span></div></div>'
@@ -8409,7 +8463,6 @@ function buildPopupHtml(key, p, opts){
       + '<div class="bm-card-stats">'
         + '<div class="bm-card-stat bm-card-stat--src"><b>' + (occ7 > 0 ? occ7 : DASH) + '</b><span>' + escapeHtml(rlStr('obs7')) + '</span></div>'
         + '<div class="bm-card-stat"><b>' + ((ind && ind !== '-') ? escapeHtml(ind) : DASH) + '</b><span>' + escapeHtml(indLabel) + '</span></div>'
-        + '<div class="bm-card-stat' + (kind ? ' bm-card-stat--mig' : '') + '"><b>' + migTxt + '</b><span>' + escapeHtml(rlStr('randel')) + '</span></div>'
       + '</div>'
       + (rows ? '<div class="bm-card-rows">' + rows + '</div>' : '')
       + remBox
@@ -8444,7 +8497,13 @@ function openWaze(lat, lon){
 /* P84b: list predicates. Elurikkus record = points[key] with coords; eBird record = ebirdEEPoints[key]; recent = the 7p filter predicate. */
 function rlHasElu(p){ return !!(p && Number.isFinite(p.lat) && Number.isFinite(p.lon)); }
 function rlHasEb(key){ return !!(typeof ebirdEEPoints !== 'undefined' && ebirdEEPoints && ebirdEEPoints[key]); }
-function rlIsRecent(p){ return rlHasElu(p) && hasRecentObservation(p); }
+/* P84e-fix: recent = Elurikkus point within 7 d OR ebirdEEPoints[key] within 7 d (rlEbIsRecent, as getRecentRaritiesItems). */
+function rlIsEluRecent(p){ return rlHasElu(p) && hasRecentObservation(p); }
+function rlIsRecent(p, key){
+  if (rlIsEluRecent(p)) return true;
+  var ep = (key && typeof ebirdEEPoints !== 'undefined' && ebirdEEPoints) ? ebirdEEPoints[key] : null;
+  return rlEbIsRecent(ep);
+}
 function rlYear(){
   try{ return new Intl.DateTimeFormat('en', { timeZone: 'Europe/Tallinn', year: 'numeric' }).format(new Date()); }
   catch(e){ return String(new Date().getFullYear()); }
@@ -8463,7 +8522,7 @@ function rlPaintCounts(){
       if (typeof isWhitelistedSpecies === 'function' && !isWhitelistedSpecies(k)) continue;
       total++;
       var p = points[k];
-      if (rlIsRecent(p)) recent++;
+      if (rlIsRecent(p, k)) recent++;
       if (p && p.visible === false) seen++;
     }
     el.textContent = 'Rariliin ' + y + dot + total + ' ' + rlStr('species') + dot + recent + ' ' + rlStr('last7') + dot + seen + ' ' + rlStr('seen');
@@ -8494,102 +8553,6 @@ function rlFresh(t){
   var s = formatDateEE(ts);
   return s === '-' ? '' : s;
 }
-/* ========= P84c: "randel" tile from the Randeajad cache (port of Euroopa P75c/P76 euRandel; read-only, both modes) =========
-   Reads bm_randeajad_v3 (owned by linnuliigid; never written here, no RPC) and the curated /maps/shared/migration-windows.json.
-   Missing / malformed / >= 7 days old cache and no curated entry -> null (tile shows a dash). */
-(function rlRandel(){
-  var R = window.__bmRandeajad;
-  var LS_KEY = 'bm_randeajad_v3';
-  var TTL_MS = 7 * 24 * 3600 * 1000;
-  var WEEKS = 52;
-  var MW_URL = '/maps/shared/migration-windows.json';
-  var hist = null, mw = null, slugToKey = {}, mwSlugToKey = {}, memo = {};
-  function slug(k){
-    var s = _normText(String(k == null ? '' : k));
-    if (s.normalize) s = s.normalize('NFC');
-    return s.toLowerCase();
-  }
-  try {
-    var o = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
-    if (o && o.h && typeof o.h === 'object' && !Array.isArray(o.h) && (Date.now() - Number(o.t)) < TTL_MS) hist = o.h;
-  } catch(e){ console.warn('[rl-randel] cache read failed', e); hist = null; }
-  if (hist) Object.keys(hist).forEach(function(k){ var sl = slug(k); if (!(sl in slugToKey)) slugToKey[sl] = k; });
-  function lookup(name){
-    if (!hist) return null;
-    if (Object.prototype.hasOwnProperty.call(hist, name)) return { key: name, pairs: hist[name] };
-    var k = slugToKey[slug(name)];
-    return k ? { key: k, pairs: hist[k] } : null;
-  }
-  function lookupMw(name){
-    if (!mw) return null;
-    if (Object.prototype.hasOwnProperty.call(mw, name)) return mw[name];
-    var k = mwSlugToKey[slug(name)];
-    return k ? mw[k] : null;
-  }
-  /* Non-leap day of year, as linnuliigid todayDoy(). */
-  function todayDoy(){
-    var d = new Date();
-    var y = d.getFullYear();
-    var doy = Math.round((new Date(y, d.getMonth(), d.getDate()) - new Date(y, 0, 1)) / 864e5) + 1;
-    var leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
-    if (leap && doy > 59) doy--;
-    return Math.min(365, doy);
-  }
-  var KNOWN = { migrant: true, resident: true, winter: true };
-  function computeHist(name, wk){
-    if (!hist || !R) return { kind: null, known: false };
-    var f = lookup(name);
-    if (!f || !Array.isArray(f.pairs) || !f.pairs.length) return { kind: null, known: false };
-    var res = R.analyse(f.pairs, { resident: R.isResident(f.key) || R.isResident(name) });
-    var known = !!(res && Object.prototype.hasOwnProperty.call(KNOWN, res.kind));
-    if (!res || res.kind !== 'migrant') return { kind: null, known: known };
-    if (R.isNow(res.spring, wk)) return { kind: 'kevad', known: true };
-    if (R.isNow(res.autumn, wk)) return { kind: 'sygis', known: true };
-    return { kind: null, known: true };
-  }
-  function computeMw(name, wk){
-    var e = lookupMw(name);
-    if (!e || typeof e !== 'object' || !R) return { kind: null };
-    if (Array.isArray(e.spring) && R.isNow({ a: e.spring[0], b: e.spring[1] }, wk)) return { kind: 'kevad' };
-    if (Array.isArray(e.autumn) && R.isNow({ a: e.autumn[0], b: e.autumn[1] }, wk)) return { kind: 'sygis' };
-    return { kind: null };
-  }
-  /* Returns 'kevad' | 'sygis' | null. Histogram first; curated windows only when the histogram cannot classify. Memoised per day. */
-  function kindFor(name){
-    if (!mw && (!hist || !R)) return null;
-    var doy = todayDoy();
-    var hit = memo[name];
-    if (hit && hit.doy === doy) return hit.kind;
-    var kind = null;
-    try {
-      var wk = Math.min(WEEKS, Math.floor((doy - 1) / 7) + 1);
-      var h = computeHist(name, wk);
-      kind = h.known ? h.kind : computeMw(name, wk).kind;
-    } catch(e){ console.warn('[rl-randel]', name, e); kind = null; }
-    memo[name] = { doy: doy, kind: kind };
-    return kind;
-  }
-  window.__rlRandelKind = kindFor;
-  /* Cards are bound as static HTML: refresh the popup contents of both layers once the data is known. */
-  function refreshCards(){
-    try{ markers.forEach(function(m, key){ var p = points[key]; if (p && m && m.getPopup && m.getPopup()) m.setPopupContent(buildPopupHtml(key, p)); }); }catch(e){}
-    try{ ebirdEEMarkers.forEach(function(m, key){ var ep = ebirdEEPoints[key]; if (ep && m && m.getPopup && m.getPopup()) m.setPopupContent(ebirdEEPopupHtml(key, ep)); }); }catch(e){}
-  }
-  if (hist) refreshCards();
-  if (typeof fetch === 'function') {
-    fetch(MW_URL, { cache: 'force-cache' })
-      .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(function(payload){
-        var sp = payload && payload.species;
-        if (!sp || typeof sp !== 'object' || Array.isArray(sp)) throw new Error('bad shape');
-        var idx = {};
-        Object.keys(sp).forEach(function(k){ var sl = slug(k); if (!(sl in idx)) idx[sl] = k; });
-        mw = sp; mwSlugToKey = idx; memo = {};
-      })
-      /* Two-arg then: a refresh error is not reported as a load failure. */
-      .then(function(){ refreshCards(); }, function(e){ console.warn('[rl-randel] windows load failed', e); mw = null; mwSlugToKey = {}; });
-  }
-})();
 function rowHTML(obj) {
   const key = obj.est;
   if(!isWhitelistedSpecies(key)) return '';
@@ -8667,15 +8630,23 @@ function rowHTML(obj) {
   var rarityCorner = (rStyle && rStyle.badgeText) ? '<span class="sb-rarity" title="Haruldus">' + rStyle.badgeText + '</span>' : '';
   var sep = '<i class="sb-sep"></i>';
   var metaParts = [];
-  var freshSrc = hasPoint ? p.t : (hasEb ? ep.t : '');
-  var fresh = freshSrc ? rlFresh(freshSrc) : '';
-  if (fresh) metaParts.push('<span class="sb-fresh">' + escapeHtml(fresh) + '</span>');
+  /* P84e: 7-day switch off -> Varasemad rows lead with the absolute last-sighting date and no row shows the ELU chip.
+     Viimased 7 paeva rows (and every row with the switch on) keep the relative freshness text. */
+  var rl7Off = !is7daysOnly();
+  var rlEarlier = rl7Off && !rlIsRecent(p, key);
+  /* Recent only via eBird (no recent Elurikkus point): freshness from the eBird date. */
+  var freshSrc = (hasEb && !rlIsEluRecent(p) && rlEbIsRecent(ep)) ? ep.t : (hasPoint ? p.t : (hasEb ? ep.t : ''));
+  var lastTs = rlEarlier ? rlLastSeenTs(key) : null;
+  var fresh = rlEarlier ? (lastTs !== null ? formatDateEE(lastTs) : '') : (freshSrc ? rlFresh(freshSrc) : '');
+  if (fresh === '-') fresh = '';
+  if (fresh) metaParts.push('<span class="' + (rlEarlier ? 'sb-date' : 'sb-fresh') + '">' + escapeHtml(fresh) + '</span>');
   else if (!hasPoint && !hasEb) metaParts.push('<span>' + escapeHtml(rlStr('noloc') || 'Asukoht puudub') + '</span>');
   var n7 = Math.max(occ7 !== null ? occ7 : 0, epOcc7 !== null ? epOcc7 : 0);
   if (n7 > 0) metaParts.push('<span class="sb-occ">7p ' + n7 + '</span>');
-  if (hasPoint || hasEb){
+  var eluChip = hasPoint && !rl7Off;
+  if (eluChip || hasEb){
     metaParts.push('<span class="sb-src">'
-      + (hasPoint ? '<b class="elu">ELU' + (occ7 !== null && occ7 > 0 ? ' ' + occ7 : '') + '</b>' : '')
+      + (eluChip ? '<b class="elu">ELU' + (occ7 !== null && occ7 > 0 ? ' ' + occ7 : '') + '</b>' : '')
       + (hasEb ? '<b class="eb">eBird' + (epOcc7 !== null && epOcc7 > 0 ? ' ' + epOcc7 : '') + '</b>' : '')
       + '</span>');
   }
@@ -8723,7 +8694,7 @@ function rowHTML(obj) {
     + '</div>';
   return '<div class="row' + (isOpen ? ' sb-open' : '') + '" data-key="' + keyAttr + '">' +
     '<div class="sb-row-main" data-sb-toggle="' + keyAttr + '">' +
-      '<div class="avatar" style="background-image:url(\'' + getDisplayAvatar(key) + '\');border-color:' + bcol + '">' + rarityCorner + '</div>' +
+      '<div class="avatar" style="background-image:url(\'' + getDisplayAvatar(key) + '\');border-color:' + _borderColorByDate(freshSrc) + '">' + rarityCorner + '</div>' +
       '<div class="sb-row-text">' +
         '<div class="name-label clickable ' + muted + '" onclick="event.stopPropagation();toggleVisibility(\'' + keyJs + '\')">' + escapeHtml(key) + '</div>' +
         '<div class="sb-meta">' + metaParts.join(sep) + '</div>' +
@@ -8788,6 +8759,25 @@ function compareRariliinSidebarSpecies(a, b) {
   const bIndex = __rariliinSidebarSpeciesOrder[bName];
   return (Number.isFinite(aIndex) ? aIndex : Number.MAX_SAFE_INTEGER) - (Number.isFinite(bIndex) ? bIndex : Number.MAX_SAFE_INTEGER);
 }
+/* P84e: last sighting of a species = the newer of the Elurikkus point date (getEffectiveRecentDate) and the eBird EE record date. */
+function rlLastSeenTs(key){
+  var p = points[key];
+  var a = (p && rlHasElu(p)) ? _parseObservedTs(getEffectiveRecentDate(p)) : null;
+  var ep = (typeof ebirdEEPoints !== 'undefined' && ebirdEEPoints) ? ebirdEEPoints[key] : null;
+  var b = (ep && ep.t) ? _parseObservedTs(ep.t) : null;
+  var best = Number.isFinite(a) ? a : null;
+  if (Number.isFinite(b) && (best === null || b > best)) best = b;
+  return best;
+}
+/* P84e new-UI order: 'az' = compareRariliinSidebarSpecies (et collator); 'date' = last sighting descending, no-date rows last, ties A-Z. */
+function rlCompareSidebar(a, b){
+  if (window.__rlSort === 'az') return compareRariliinSidebarSpecies(a, b);
+  var ta = rlLastSeenTs(a && a.est), tb = rlLastSeenTs(b && b.est);
+  var ha = ta !== null, hb = tb !== null;
+  if (ha !== hb) return ha ? -1 : 1;
+  if (ha && ta !== tb) return tb - ta;
+  return compareRariliinSidebarSpecies(a, b);
+}
 
 function render() {
   const q = (document.getElementById('filterBox').value||'').toLowerCase().trim();
@@ -8816,11 +8806,11 @@ function render() {
     }
     return true;
   });
-  arr.sort(compareRariliinSidebarSpecies);
+  arr.sort(rlClassic ? compareRariliinSidebarSpecies : rlCompareSidebar);   // P84e: Jarjestus segment in the new UI; classic keeps A-Z
   if(!rlClassic && !recent7){
-    /* P84b: split into last-7-days (same predicate as the 7p filter) and the rest, each keeping compareRariliinSidebarSpecies order */
+    /* P84b: split into last-7-days (same predicate as the 7p filter) and the rest, each keeping the sorted (rlCompareSidebar) order */
     const rlRecent = [], rlRest = [];
-    for (const o of arr) (rlIsRecent(points[o.est]) ? rlRecent : rlRest).push(o);
+    for (const o of arr) (rlIsRecent(points[o.est], o.est) ? rlRecent : rlRest).push(o);
     if(rlRecent.length){
       list.insertAdjacentHTML('beforeend', '<div class="sb-sec">' + escapeHtml(rlStr('recent') || 'Viimased 7 paeva') + ' <span class="n">' + rlRecent.length + '</span></div>');
       for (const o of rlRecent) list.insertAdjacentHTML('beforeend', rowHTML(o));

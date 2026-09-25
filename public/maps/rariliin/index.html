@@ -8439,7 +8439,7 @@ function render() {
       for (const o of rlRecent) list.insertAdjacentHTML('beforeend', rowHTML(o));
     }
     if(rlRest.length){
-      list.insertAdjacentHTML('beforeend', '<div class="sb-sec">' + escapeHtml(rlStr('earlier') || 'Varasemad') + ' ' + rlYear() + '</div>');
+      list.insertAdjacentHTML('beforeend', '<div class="sb-sec">' + escapeHtml(rlStr('earlier') || 'Varasemad') + '</div>');
       for (const o of rlRest) list.insertAdjacentHTML('beforeend', rowHTML(o));
     }
   } else {

@@ -642,6 +642,8 @@ function rlSrcEff(){
   var s = window.__rlSrc;
   return (s === 'elu' || s === 'ebird') ? s : 'all';
 }
+/* P84f: one field accessor for the card and the sb-info rows. eluExtra wins when non-empty, point-level (snapshot) field otherwise. */
+function rlField(p, name){ var x = p && p.eluExtra; var v = (x && x[name] != null && String(x[name]).trim()) ? x[name] : (p ? p[name] : undefined); return v; }
 /* Help modal (new UI only): Esc / backdrop / x close. */
 (function(){
   var root = document.getElementById('sbHelp');
@@ -4167,7 +4169,7 @@ function rlNoticeRowHTML(item){
   const metaCfg = window.resolveSpeciesMetaShared ? window.resolveSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const rStyle = window.getRarityStyle ? window.getRarityStyle(metaCfg.rarityLevel || 'none') : null;
   const corner = (rStyle && rStyle.badgeText) ? '<span class="sb-rarity" title="Haruldus">' + escapeHtml(rStyle.badgeText) + '</span>' : '';
-  const place = (item.src === 'ebird') ? String((ep && ep.loc) || '').trim() : String(x.locality || x.municipality || '').trim();
+  const place = (item.src === 'ebird') ? String((ep && ep.loc) || '').trim() : String(rlField(p, 'locality') || rlField(p, 'municipality') || '').trim();
   const fresh = rlFresh(item.iso) || item.formattedDate || '';
   const wh = escapeHtml(fresh) + (place ? ((fresh ? ' &middot; ' : '') + escapeHtml(place)) : '');
   const chips = (item.src === 'elu' ? '<b class="elu">ELU</b>' : '') + ((item.src === 'ebird' || rlEbIsRecent(ep)) ? '<b class="eb">eBird</b>' : '');
@@ -7064,6 +7066,9 @@ async function _applySnapshot(snap){
     if(typeof s.locality === 'string' && s.locality.trim()) snapPoint.locality = s.locality;
     if(typeof s.municipality === 'string' && s.municipality.trim()) snapPoint.municipality = s.municipality;
     if(typeof s.county === 'string' && s.county.trim()) snapPoint.county = s.county;
+    if(typeof s.collectors === 'string' && s.collectors.trim()) snapPoint.collectors = s.collectors;
+    if(typeof s.behavior === 'string' && s.behavior.trim()) snapPoint.behavior = s.behavior;
+    if(Number.isFinite(s.individualCount)) snapPoint.individualCount = s.individualCount;
     if(s.elurikkus && typeof s.elurikkus === 'object') snapPoint.elurikkus = Object.assign({}, s.elurikkus);
     __snapshotPointBySpecies[_speciesKey(key)] = Object.assign({}, snapPoint);
     const keepLive = false;
@@ -8392,8 +8397,8 @@ function buildPopupHtml(key, p, opts){
   const x = (!isEb && p.eluExtra) ? p.eluExtra : {};
   const DASH = '&mdash;';
   const str = (v)=> (v === undefined || v === null) ? '' : String(v).trim();
-  const ind = str(x.individualCount ?? p.individualCount);
-  const col = str(x.collectors ?? p.collectors);
+  const ind = str(rlField(p, 'individualCount'));
+  const col = str(rlField(p, 'collectors'));
   let occ7 = Number.isFinite(p.occ7) ? p.occ7 : 0;
   if(isWithin7dAny(p.t) && occ7 < 1) occ7 = 1;
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
@@ -8414,7 +8419,7 @@ function buildPopupHtml(key, p, opts){
   const indNum = parseFloat(ind.replace(',', '.'));
   const indLabel = (Number.isFinite(indNum) && Math.abs(indNum) === 1) ? rlStr('ind1') : rlStr('ind');
   const place = isEb ? str(p.placeText)
-    : [str(x.locality), str(x.county)].filter(function(v){ return v && v !== '-'; }).join(', ');
+    : [str(rlField(p, 'locality')), str(rlField(p, 'county'))].filter(function(v){ return v && v !== '-'; }).join(', ');
   const remark = isEb ? str(p.comment) : str(x.remark || x.remarks);
   const media = isEb ? p.media
     : ((Array.isArray(x.media) && x.media.length) ? { p: Number(x.mediaN) || x.media.length } : (Number(x.mediaN) > 0 ? { p: Number(x.mediaN) } : null));
@@ -8436,7 +8441,7 @@ function buildPopupHtml(key, p, opts){
   };
   const rows = cardRow(rlStr('place'), SVG_PIN, place)
     + cardRow(rlStr('obs'), SVG_USER, col)
-    + (isEb ? '' : cardRow(rlStr('beh'), SVG_EYE, str(x.behavior ?? p.behavior), true));
+    + (isEb ? '' : cardRow(rlStr('beh'), SVG_EYE, str(rlField(p, 'behavior')), true));
   const remBox = remark
     ? (isEb
       ? '<div class="bm-card-cmt">' + SVG_REM + '<div><b>' + escapeHtml(rlStr('ebremark')) + '</b><span class="bm-card-cmt-t">' + escapeHtml(remark) + '</span></div></div>'
@@ -8650,7 +8655,7 @@ function rowHTML(obj) {
       + (hasEb ? '<b class="eb">eBird' + (epOcc7 !== null && epOcc7 > 0 ? ' ' + epOcc7 : '') + '</b>' : '')
       + '</span>');
   }
-  var place = String(x.locality || x.municipality || '').trim();
+  var place = String(rlField(p, 'locality') || rlField(p, 'municipality') || '').trim();
   if (place) metaParts.push('<span class="sb-place">' + escapeHtml(place) + '</span>');
   var ebUrl = '';
   if (hasEb){
@@ -8671,15 +8676,15 @@ function rowHTML(obj) {
   var sbInfo = '<div class="sb-info">'
     + '<div class="sb-info-h">' + escapeHtml(rlStr('loc') || 'Asukoht') + (locLat !== null && locLon !== null ? '<span>' + locLat.toFixed(4) + ' &middot; ' + locLon.toFixed(4) + '</span>' : '') + '</div>'
     + '<dl class="sb-kv">'
-      + kv(rlStr('place') || 'Koht', x.locality)
-      + kv(rlStr('muni') || 'Vald', x.municipality || x.eestiOmavalitsused)
-      + kv(rlStr('county') || 'Maakond', x.county)
+      + kv(rlStr('place') || 'Koht', rlField(p, 'locality'))
+      + kv(rlStr('muni') || 'Vald', rlField(p, 'municipality') || rlField(p, 'eestiOmavalitsused'))
+      + kv(rlStr('county') || 'Maakond', rlField(p, 'county'))
     + '</dl>'
     + '<div class="sb-info-h">' + escapeHtml(rlStr('obsh') || 'Vaatlus') + (hasPoint ? '<span>Elurikkus' + (p.t ? ' &middot; ' + escapeHtml(formatDateEE(p.t)) : '') + '</span>' : '') + '</div>'
     + '<dl class="sb-kv">'
-      + kv(rlStr('count') || 'Isendeid', (x.individualCount !== undefined && x.individualCount !== null) ? x.individualCount : p.individualCount)
-      + kv(rlStr('beh') || 'Kaitumine', x.behavior)
-      + kv(rlStr('obs') || 'Vaatleja', x.collectors)
+      + kv(rlStr('count') || 'Isendeid', rlField(p, 'individualCount'))
+      + kv(rlStr('beh') || 'Kaitumine', rlField(p, 'behavior'))
+      + kv(rlStr('obs') || 'Vaatleja', rlField(p, 'collectors'))
       + kv(rlStr('code') || 'Kood', metaCfg.rariliinCode)
       + kv(rlStr('sci') || 'Teaduslik nimi', metaCfg.scientificName)
       + kv(rlStr('note') || 'Teate markus', metaCfg.notificationNote)

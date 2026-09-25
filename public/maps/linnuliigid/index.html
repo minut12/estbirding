@@ -2241,26 +2241,33 @@ async function fetchCurrentYearSpringCandidateDates(speciesName, signal){
     if(signal && signal.aborted) throw new Error('aborted');
     const offset = page * limit;
     const url = buildEluSearchUrl(species, offset, limit, false);
-    const html = await tryFetch(url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now(), { signal: signal });
+    let html = await tryFetch(url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now(), { signal: signal });
+    // P81: paging stops use the raw page; candidate dates come only from the species' own rows.
+    const rawRows = parseSearchRows(html, url);
+    var __p81 = _p81KeepOwnRows(html, species);
+    html = __p81.html;
     const rows = parseSearchRows(html, url);
-    if(!rows.length) break;
+    if(!rawRows.length) break;
 
     let pageHasCurrentYear = false;
     let pageHasOlderThanCurrentYear = false;
-    for(const row of rows){
+    for(const row of rawRows){
       const iso = String((row && row.iso) || '').slice(0, 10);
       if(!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
       if(iso.startsWith(yearPrefix)){
-        collected.push(iso);
         pageHasCurrentYear = true;
       } else if(iso < yearPrefix + '01-01'){
         pageHasOlderThanCurrentYear = true;
       }
     }
+    for(const row of rows){
+      const iso = String((row && row.iso) || '').slice(0, 10);
+      if(/^\d{4}-\d{2}-\d{2}$/.test(iso) && iso.startsWith(yearPrefix)) collected.push(iso);
+    }
 
     if(pageHasOlderThanCurrentYear && !pageHasCurrentYear) break;
-    if(pageHasOlderThanCurrentYear && rows[rows.length - 1] && String(rows[rows.length - 1].iso || '') < yearPrefix + '01-01') break;
-    if(rows.length < limit) break;
+    if(pageHasOlderThanCurrentYear && rawRows[rawRows.length - 1] && String(rawRows[rawRows.length - 1].iso || '') < yearPrefix + '01-01') break;
+    if(rawRows.length < limit) break;
     await new Promise(function(r){ setTimeout(r, 250); });
   }
 
@@ -2891,18 +2898,27 @@ async function computeOcc7Offset(text, tryFetchHtml, signal){
   let oldestIso = '';
   let pages = 0;
   let rowsParsedTotal = 0;
+  let p81Page0 = null;
   for(let page = 0; page < maxPages; page++){
     if(signal && signal.aborted) break;
     const offset = page * limit;
     const url = buildEluSearchUrl(text, offset, limit);
-    const html = await tryFetchHtml(url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now(), signal);
+    let html = await tryFetchHtml(url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now(), signal);
+    // P81: stop conditions use the raw page; occ7/newest use only the species' own rows.
+    const rawRows = parseSearchRows(html, url);
+    var __p81 = _p81KeepOwnRows(html, text);
+    html = __p81.html;
+    if(page === 0) p81Page0 = { total: __p81.total, kept: __p81.kept, mode: __p81.mode };
     const rows = parseSearchRows(html, url);
-    rowsParsedTotal += rows.length;
+    rowsParsedTotal += rawRows.length;
     pages++;
-    if(rows.length === 0) break;
-    if(page === 0){ newestIso = rows[0].iso; newestRawDate = String(rows[0].rawDate || ''); }
-    oldestIso = rows[rows.length - 1].iso;
+    if(rawRows.length === 0) break;
+    if(page === 0 && rows.length){ newestIso = rows[0].iso; newestRawDate = String(rows[0].rawDate || ''); }
+    oldestIso = rawRows[rawRows.length - 1].iso;
     let anyWithin = false;
+    for(const rr of rawRows){
+      if(rr && rr.iso >= cutoffIso){ anyWithin = true; break; }
+    }
     for(const r of rows){
       const uniqueKey = getEluRowUniqueKey(r);
       if(seen.has(uniqueKey)) continue;
@@ -2913,14 +2929,13 @@ async function computeOcc7Offset(text, tryFetchHtml, signal){
       }
       if(r.iso >= cutoffIso){
         occ7++;
-        anyWithin = true;
       }
     }
     if(!anyWithin) break;
     if(oldestIso && oldestIso < cutoffIso) break;
     await new Promise(function(r){ setTimeout(r, 250); });
   }
-  return { occ7: occ7, newestIso: newestIso, newestRawDate: newestRawDate, oldestIso: oldestIso, cutoffIso: cutoffIso, pagesScanned: pages, rowsParsedTotal: rowsParsedTotal, unique: seen.size, pagingMode: 'offset', datesIso: datesIso };
+  return { occ7: occ7, newestIso: newestIso, newestRawDate: newestRawDate, oldestIso: oldestIso, cutoffIso: cutoffIso, pagesScanned: pages, rowsParsedTotal: rowsParsedTotal, unique: seen.size, pagingMode: 'offset', datesIso: datesIso, p81: p81Page0 };
 }
 async function computeOcc7MultiPage(species, signal, maxPages){
   const fetcher = function(u, sig){ return tryFetch(u, { signal: sig, cache:'no-store' }); };
@@ -4392,7 +4407,9 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     if(!detailUrls.length){
       try{
         const searchUrl = _withCacheBuster('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species));
-        const shtml = await tryFetch(searchUrl);
+        let shtml = await tryFetch(searchUrl);
+        var __p81 = _p81KeepOwnRows(shtml, species);
+        shtml = __p81.html;
         detailUrls = _extractDetailUrlsFromSearchHtml(shtml, 3);
       }catch(e){}
     }
@@ -4634,7 +4651,9 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
   const name = String(species || '').trim();
   if(!name) throw new Error('species missing');
   const searchUrl = _withCacheBuster('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name));
-  const shtml = await tryFetch(searchUrl, { signal: signal, requireOccLink: true });
+  let shtml = await tryFetch(searchUrl, { signal: signal, requireOccLink: true });
+  var __p81 = _p81KeepOwnRows(shtml, name);
+  shtml = __p81.html;
   const rowExtra = parseEluSearchNewestRowExtras(shtml);
   const newestOccUrl = extractNewestOccurrenceUrlFromSearch(shtml, searchUrl);
   const rows = extractOccurrenceCandidates(shtml);
@@ -4934,6 +4953,49 @@ function _parseEluSearchJson(html){
     return null;
   }
 }
+// P81: drop rows of other species from an Elurikkus search page (free-text search pollution).
+function _p81Norm(s){ try { return String(s || '').normalize('NFC').toLowerCase().trim(); } catch(e){ return String(s || '').toLowerCase().trim(); } }
+function _p81Binom(s){ var w = _p81Norm(s).split(/\s+/); return w.length >= 2 ? w[0] + ' ' + w[1] : (w[0] || ''); }
+function _p81KeepOwnRows(html, species){
+  var out = { html: html, total: 0, kept: 0, mode: 'none' };
+  if (!html || !species) return out;
+  var wantA = _p81Norm(species);
+  var wantB = wantA;
+  try { if (window.normalizeUiText) wantB = _p81Norm(window.normalizeUiText(species)); } catch(e){}
+  var sci = '';
+  try { sci = _p81Binom((typeof SPECIES_SCINAMES !== 'undefined' && (SPECIES_SCINAMES[species] || SPECIES_SCINAMES[window.normalizeUiText ? window.normalizeUiText(species) : species])) || ''); } catch(e){}
+  var results = null;
+  try { results = _parseEluSearchJson(html); } catch(e){ results = null; }
+  if (!Array.isArray(results)) { console.warn('[P81] no JSON for ' + species); return out; }
+  var own = {}, seenInJson = {};
+  for (var i = 0; i < results.length; i++) {
+    var r = results[i] || {};
+    var id = r.id != null ? String(r.id) : '';
+    if (!id) continue;
+    seenInJson[id] = true;
+    var cn = _p81Norm(r.common_name_est);
+    var ok = (cn && (cn === wantA || cn === wantB)) || (sci && _p81Binom(r.taxon_name) === sci);
+    if (ok) own[id] = true;
+  }
+  out.mode = sci ? 'name+sci' : 'name';
+  var filtered = html.replace(/<tr\b[\s\S]*?<\/tr>/gi, function(tr){
+    var m = tr.match(/occurrences\/occurrence\/(\d+)/);
+    if (!m) return tr;                       // header / rows without an id: untouched
+    out.total++;
+    var id = m[1];
+    var keep;
+    if (seenInJson[id]) keep = !!own[id];
+    else if (sci) {                          // not in JSON: fall back to the taxon column
+      var tds = tr.match(/<td\b[^>]*>([\s\S]*?)<\/td>/gi) || [];
+      var t1 = tds[1] ? tds[1].replace(/<[^>]+>/g, '') : '';
+      keep = _p81Binom(t1) === sci;
+    } else keep = true;
+    if (keep) out.kept++;
+    return keep ? tr : '';
+  });
+  out.html = filtered;
+  return out;
+}
 // P80b: remark/photo fields for the row whose id matches detailUrl (id only, no
 // results[0] fallback). No match -> cleared fields so a stale remark cannot linger.
 function _eluRemarkMediaFields(searchHtml, detailUrl){
@@ -4972,7 +5034,9 @@ async function autoFetchCoords(key, searchUrl, signal){
   }
   const url = String(searchUrl || ('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species))).trim();
   const p = points[species] = (points[species] || {});
-  const searchHtml = await tryFetch(url, { signal: signal });
+  let searchHtml = await tryFetch(url, { signal: signal });
+  var __p81 = _p81KeepOwnRows(searchHtml, species);
+  searchHtml = __p81.html;
   if(ctx) _logEeRefreshStage({ view: ctx.view, jobId: ctx.jobId, index: ctx.index, species: species, stage: 'normalize' });
   const rowExtra = parseEluSearchNewestRowExtras(searchHtml);
   const newestIso = extractNewestIsoFromSearch(searchHtml, url) || normDateISO(rowExtra.dateText || '');
@@ -5007,9 +5071,12 @@ async function autoFetchCoords(key, searchUrl, signal){
   p.openUrl = String(detailUrl || '').trim() || p.openUrl || '';
   p.eluExtra = p.eluExtra || {};
   p.eluExtra.__occ7debug = occ7Multi || { occ7_page1: occ7Page1 };
+  p.eluExtra.__p81 = { total: __p81.total, kept: __p81.kept, mode: __p81.mode, page0Own: __p81.kept };
   if(!detailUrl){
-    if(latestIso) p.t = latestIso;
-    Object.assign(p.eluExtra, _eluRemarkMediaFields('', ''));
+    // P81/R1: no own row on page 0 -> keep the existing date (and link/coords) untouched.
+    if(latestIso && (__p81.kept > 0 || __p81.mode === 'none')) p.t = latestIso;
+    // P81/R1: no own row on page 0 -> keep remark/media with the kept record
+    if(!(__p81.kept === 0 && __p81.mode !== 'none')) Object.assign(p.eluExtra, _eluRemarkMediaFields('', ''));
     if(_shouldDeferEeRefreshUi()){
       if(ctx) _logEeRefreshStage({ view: ctx.view, jobId: ctx.jobId, index: ctx.index, species: species, stage: 'applyDataNoDetailDeferredUi' });
     } else {

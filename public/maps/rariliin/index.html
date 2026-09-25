@@ -217,6 +217,40 @@
       .recent-rarities-title{font-size:17px}
       .recent-rarities-actions .btn{flex:1 1 120px;justify-content:center}
     }
+    /* P84d: "Uued leiud" notice on the sidebar tokens (mock 4 A). html.sb-classic keeps the rules above unchanged. */
+    html:not(.sb-classic) .recent-rarities-card{border-radius:14px;padding:12px 14px;color:var(--sb-ink);background:var(--sb-bg);border:1px solid var(--sb-line);box-shadow:0 8px 30px rgba(20,40,30,.14);backdrop-filter:none;box-sizing:border-box}
+    html:not(.sb-classic) .recent-rarities-top{gap:8px}
+    html:not(.sb-classic) .recent-rarities-top>div{min-width:0}
+    html:not(.sb-classic) .recent-rarities-kicker{display:block;padding:0;border-radius:0;background:none;color:var(--sb-warn);font:700 10.5px/1.2 system-ui;letter-spacing:.06em;text-transform:uppercase}
+    html:not(.sb-classic) .recent-rarities-title{margin:3px 0 2px;font-size:15px;line-height:1.25;font-weight:700;color:var(--sb-ink)}
+    html:not(.sb-classic) .recent-rarities-subtitle{margin:0;font-size:12px;line-height:1.4;color:var(--sb-muted)}
+    html:not(.sb-classic) .recent-rarities-close{flex:0 0 auto;width:26px;height:26px;padding:0;border:0;border-radius:999px;background:var(--sb-bg2);color:var(--sb-muted);box-shadow:none;font-size:16px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+    html:not(.sb-classic) .recent-rarities-close:hover{color:var(--sb-ink)}
+    html:not(.sb-classic) .recent-rarities-list{display:flex;flex-direction:column;flex-wrap:nowrap;gap:4px;margin-top:8px;max-height:min(320px,50vh);overflow-y:auto;overscroll-behavior:contain}
+    html:not(.sb-classic) .rl-ntc-it{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:8px;align-items:center;width:100%;box-sizing:border-box;padding:4px 6px;border:0;border-radius:9px;background:var(--sb-bg2);color:var(--sb-ink);text-align:left;font:inherit;cursor:pointer}
+    html:not(.sb-classic) .rl-ntc-it:hover{background:var(--sb-primary-soft)}
+    html:not(.sb-classic) .rl-ntc-it:focus-visible{outline:2px solid var(--sb-primary);outline-offset:1px}
+    html:not(.sb-classic) .rl-ntc-av{position:relative;display:block;width:32px;height:32px;box-sizing:border-box;border-radius:50%;border:2px solid var(--sb-line);background-color:var(--sb-bg);background-size:cover;background-position:center}
+    html:not(.sb-classic) .rl-ntc-av .sb-rarity{right:-5px;top:-5px;box-sizing:border-box;min-width:15px;height:15px;padding:0 3px;font-size:8.5px;line-height:11px}
+    html:not(.sb-classic) .rl-ntc-tx{display:block;min-width:0}
+    html:not(.sb-classic) .rl-ntc-nm{display:block;font-weight:600;font-size:13px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    html:not(.sb-classic) .rl-ntc-wh{display:block;font-size:11px;line-height:1.35;color:var(--sb-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    html:not(.sb-classic) .rl-ntc-it .sb-src b{font-size:9.5px;line-height:14px}
+    html:not(.sb-classic) .recent-rarities-actions{gap:6px;margin-top:10px}
+    html:not(.sb-classic) .recent-rarities-actions .btn{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink);font:500 12px system-ui;box-shadow:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+    html:not(.sb-classic) .recent-rarities-actions .btn.primary{background:var(--sb-primary);border-color:var(--sb-primary);color:#fff;font-weight:600}
+    html:not(.sb-classic) .recent-rarities-actions .btn.secondary{background:var(--sb-bg);color:var(--sb-ink)}
+    @media (max-width: 900px){
+      /* Phone: docked at the bottom above the app dock (dock = 12px offset + 62px tall -> 84px leaves a 10px gap), not at the top. */
+      html:not(.sb-classic) .recent-rarities-wrap{top:auto;left:12px;right:12px;width:auto;bottom:calc(env(safe-area-inset-bottom,0px) + 84px)}
+      html:not(.sb-classic) .recent-rarities-card{border-radius:14px;padding:12px 14px;max-height:55vh}
+      html:not(.sb-classic) .recent-rarities-card.show{display:flex;flex-direction:column}
+      html:not(.sb-classic) .recent-rarities-top{flex:0 0 auto}
+      html:not(.sb-classic) .recent-rarities-list{flex:0 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
+      html:not(.sb-classic) .recent-rarities-title{font-size:15px}
+      html:not(.sb-classic) .recent-rarities-actions{flex:0 0 auto}
+      html:not(.sb-classic) .recent-rarities-actions .btn{flex:1 1 120px}
+    }
 
   /* Debug panel */
   .debug-panel{font-size:11px;color:#64748b;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;margin:6px 0}
@@ -480,17 +514,16 @@ html:not(.sb-classic) .sbh-body p{margin:0;color:var(--sb-ink2);font-size:13.5px
       <div id="recentRaritiesCard" class="recent-rarities-card" hidden>
         <div class="recent-rarities-top">
           <div>
-            <div class="recent-rarities-kicker">Rariliin • 7 päeva</div>
-            <h3 id="recentRaritiesTitle" class="recent-rarities-title">Uued leiud viimase 7 päeva jooksul</h3>
+            <div class="recent-rarities-kicker">Rariliin &middot; 7 p&auml;eva</div>
+            <h4 id="recentRaritiesTitle" class="recent-rarities-title">Uued leiud</h4>
             <p id="recentRaritiesSubtitle" class="recent-rarities-subtitle"></p>
           </div>
           <button id="recentRaritiesClose" class="recent-rarities-close" type="button" aria-label="Sulge">×</button>
         </div>
         <div id="recentRaritiesList" class="recent-rarities-list"></div>
         <div id="recentRaritiesActions" class="recent-rarities-actions">
-          <button id="recentRaritiesShowMap" class="btn" type="button">Näita kaardil</button>
-          <button id="recentRaritiesHideToday" class="btn secondary" type="button">Ära näita uuesti täna</button>
-          <button id="recentRaritiesDismiss" class="btn secondary" type="button">Sulge</button>
+          <button id="recentRaritiesShowMap" class="btn primary" type="button">N&auml;ita kaardil</button>
+          <button id="recentRaritiesHideToday" class="btn secondary" type="button">T&auml;na enam mitte</button>
         </div>
       </div>
     </div>
@@ -500,7 +533,7 @@ html:not(.sb-classic) .sbh-body p{margin:0;color:var(--sb-ink2);font-size:13.5px
 
 <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
-<template id="rlStr" data-today="T&auml;na" data-yesterday="Eile" data-daysago="p&auml;eva tagasi" data-recent="Viimased 7 p&auml;eva" data-earlier="Varasemad" data-noloc="Asukoht puudub" data-seen="n&auml;htud" data-species="liiki" data-last7="viimase 7 p" data-place="Koht" data-muni="Vald" data-county="Maakond" data-count="Isendeid" data-beh="K&auml;itumine" data-obs="Vaatleja" data-code="Kood" data-sci="Teaduslik nimi" data-note="Teate m&auml;rkus" data-loc="Asukoht" data-obsh="Vaatlus" data-remark="M&auml;rkus" data-openelu="Ava Elurikkuses" data-openeb="Ava eBirdis" data-more="Rohkem" data-fotoga="Fotoga vaatlus" data-heliga="Heliga vaatlus" data-videoga="Videoga vaatlus" data-randel="r&auml;ndel" data-kevad="kevad" data-sygis="s&uuml;gis" data-eluremark="Elurikkuse m&auml;rkus" data-ebremark="eBirdi m&auml;rkus" data-approx="ligikaudne" data-vkoht="vaatluskoht" data-obs7="vaatlust 7 p" data-ind="isendit" data-ind1="isend" data-waze="Ava Waze&#39;is" data-copy="Kopeeri koordinaadid" data-srcelu="Elurikkus" data-srceb="eBird &middot; EE"></template>
+<template id="rlStr" data-today="T&auml;na" data-yesterday="Eile" data-daysago="p&auml;eva tagasi" data-recent="Viimased 7 p&auml;eva" data-earlier="Varasemad" data-noloc="Asukoht puudub" data-seen="n&auml;htud" data-species="liiki" data-last7="viimase 7 p" data-place="Koht" data-muni="Vald" data-county="Maakond" data-count="Isendeid" data-beh="K&auml;itumine" data-obs="Vaatleja" data-code="Kood" data-sci="Teaduslik nimi" data-note="Teate m&auml;rkus" data-loc="Asukoht" data-obsh="Vaatlus" data-remark="M&auml;rkus" data-openelu="Ava Elurikkuses" data-openeb="Ava eBirdis" data-more="Rohkem" data-fotoga="Fotoga vaatlus" data-heliga="Heliga vaatlus" data-videoga="Videoga vaatlus" data-randel="r&auml;ndel" data-kevad="kevad" data-sygis="s&uuml;gis" data-eluremark="Elurikkuse m&auml;rkus" data-ebremark="eBirdi m&auml;rkus" data-approx="ligikaudne" data-vkoht="vaatluskoht" data-obs7="vaatlust 7 p" data-ind="isendit" data-ind1="isend" data-waze="Ava Waze&#39;is" data-copy="Kopeeri koordinaadid" data-srcelu="Elurikkus" data-srceb="eBird &middot; EE" data-ntcsub="viimase 7 p&auml;eva jooksul" data-ntcnew="uusim" data-species1="liik"></template>
 
 <div id="sbHelp" class="hidden-in-export"><div class="sbh" role="dialog" aria-modal="true" aria-labelledby="sbHelpTitle">
   <div class="sbh-head"><h2 id="sbHelpTitle">Rariliin</h2><button type="button" class="sbh-x" aria-label="Sulge">&times;</button></div>
@@ -3944,25 +3977,51 @@ function hasRecentObservation(p){
 function getEffectiveRecentDate(p){
   return String((p && (p.latestSeenDate || p.t)) || '').trim();
 }
+/* P84d: eBird EE record within the last 7 days - same date test as the 7p filter in refreshEbirdEEMarkers (ep.t, _toDay, 0..7 d). */
+function rlEbIsRecent(ep){
+  if(!ep || !ep.t || !Number.isFinite(ep.lat) || !Number.isFinite(ep.lon)) return false;
+  const ms = (typeof _toDay === 'function') ? _toDay(ep.t) : Date.parse(ep.t);
+  const age = Date.now() - ms;
+  return !!ms && age >= 0 && age <= 7 * 24 * 60 * 60 * 1000;
+}
 function getRecentRaritiesItems(){
+  const eb = (typeof ebirdEEPoints !== 'undefined' && ebirdEEPoints) ? ebirdEEPoints : {};
   return SPECIES.map(function(name){
     const point = points[name];
-    if(!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return null;
-    if(!hasRecentObservation(point)) return null;
-    const iso = getEffectiveRecentDate(point);
-    const ts = _parseObservedTs(iso);
+    if(point && Number.isFinite(point.lat) && Number.isFinite(point.lon) && hasRecentObservation(point)){
+      const iso = getEffectiveRecentDate(point);
+      const ts = _parseObservedTs(iso);
+      return {
+        name: name,
+        iso: iso,
+        ts: Number.isFinite(ts) ? ts : 0,
+        formattedDate: iso ? formatDateEE(iso) : '',
+        src: 'elu',
+        lat: Number(point.lat),
+        lon: Number(point.lon)
+      };
+    }
+    /* P84d: eBird-only item = no recent Elurikkus item for the species, but an eBird EE record within 7 days. */
+    const ep = eb[name];
+    if(!rlEbIsRecent(ep)) return null;
+    const ebIso = String(ep.t);
+    const ebTs = _parseObservedTs(ebIso);
     return {
       name: name,
-      iso: iso,
-      ts: Number.isFinite(ts) ? ts : 0,
-      formattedDate: iso ? formatDateEE(iso) : ''
+      iso: ebIso,
+      ts: Number.isFinite(ebTs) ? ebTs : 0,
+      formattedDate: formatDateEE(ebIso),
+      src: 'ebird',
+      lat: Number(ep.lat),
+      lon: Number(ep.lon)
     };
   }).filter(Boolean).sort(function(a, b){
     return (b.ts || 0) - (a.ts || 0) || a.name.localeCompare(b.name, 'et');
   });
 }
+/* P84d: session-dismissal key = the sorted species-name set (no dates): a date shift keeps it, a new species changes it. */
 function getRecentRaritiesSignature(items){
-  return items.map(function(item){ return item.name + '@' + String(item.iso || ''); }).join('|');
+  return items.map(function(item){ return String(item.name || ''); }).filter(Boolean).sort().join('|');
 }
 function getRariliinPopupToday(){
   const now = new Date();
@@ -4009,16 +4068,53 @@ function hideRecentRaritiesNotice(){
   card.hidden = true;
   console.log('[rariliin-popup] popupShown=false');
 }
+/* P84d: notice row -> pan to the item, open that species' marker card (Elurikkus or eBird EE by item.src), open + scroll its
+   sidebar row. The search box (#filterBox) is left untouched. */
 function focusRecentSpecies(species){
   if(!species) return;
-  const input = document.getElementById('filterBox');
-  if(input) input.value = species;
-  window.__selectedSpecies = species;
+  const key = String(species);
+  const item = getRecentRaritiesItems().filter(function(it){ return it.name === key; })[0] || null;
+  const src = item ? item.src : 'elu';
+  const m = (src === 'ebird')
+    ? (ebirdEEMarkers.get(key) || markers.get(key))
+    : (markers.get(key) || ebirdEEMarkers.get(key));
+  let ll = null;
+  if(item && Number.isFinite(item.lat) && Number.isFinite(item.lon)) ll = [item.lat, item.lon];
+  else if(m && m.getLatLng){ const g = m.getLatLng(); ll = [g.lat, g.lng]; }
+  window.__sbOpenKey = key;
+  window.__selectedSpecies = key;
   try{ render(); }catch(e){}
+  try{
+    const list = document.getElementById('list');
+    const sel = '.row[data-key="' + key.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
+    const row = list ? list.querySelector(sel) : null;
+    if(row && row.scrollIntoView) row.scrollIntoView({ block: 'center' });
+  }catch(e){}
+  if(!map || !ll) return;
+  let opened = false;
+  const openCard = function(){
+    if(opened || !m) return;
+    opened = true;
+    const cluster = rlLayerHost();
+    try{
+      if(cluster && typeof cluster.hasLayer === 'function' && cluster.hasLayer(m) && typeof cluster.zoomToShowLayer === 'function'){
+        cluster.zoomToShowLayer(m, function(){ m.openPopup(); });
+      } else if(m.openPopup){
+        m.openPopup();
+      }
+    }catch(e){ console.warn('[rariliin-popup] open card failed', e && e.message); }
+  };
+  try{
+    const z = Number(map.getZoom ? map.getZoom() : 10) || 10;
+    map.once('moveend', openCard);
+    map.setView(ll, Math.max(z, 10), { animate: true });
+    setTimeout(openCard, 900);   /* moveend safety net (e.g. an animation interrupted by the user) */
+  }catch(e){ openCard(); }
 }
 function focusRecentMarkers(items){
   if(!map || !items || !items.length || !window.L || !L.latLngBounds) return;
   const coords = items.map(function(item){
+    if(Number.isFinite(item.lat) && Number.isFinite(item.lon)) return [Number(item.lat), Number(item.lon)];   /* P84d: eBird-only items */
     const point = points[item.name];
     if(!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return null;
     return [Number(point.lat), Number(point.lon)];
@@ -4032,6 +4128,26 @@ function focusRecentMarkers(items){
     }
   }catch(e){}
 }
+/* P84d: one notice row (new UI) - avatar + rarity corner, name, "<fresh> . <place>", source chips. data-recent-species kept. */
+function rlNoticeRowHTML(item){
+  const key = String(item.name || '');
+  const p = points[key] || {};
+  const x = p.eluExtra || {};
+  const ep = (typeof ebirdEEPoints !== 'undefined' && ebirdEEPoints) ? ebirdEEPoints[key] : null;
+  const metaCfg = window.resolveSpeciesMetaShared ? window.resolveSpeciesMetaShared(key) : { rarityLevel: 'none' };
+  const rStyle = window.getRarityStyle ? window.getRarityStyle(metaCfg.rarityLevel || 'none') : null;
+  const corner = (rStyle && rStyle.badgeText) ? '<span class="sb-rarity" title="Haruldus">' + escapeHtml(rStyle.badgeText) + '</span>' : '';
+  const place = (item.src === 'ebird') ? String((ep && ep.loc) || '').trim() : String(x.locality || x.municipality || '').trim();
+  const fresh = rlFresh(item.iso) || item.formattedDate || '';
+  const wh = escapeHtml(fresh) + (place ? ((fresh ? ' &middot; ' : '') + escapeHtml(place)) : '');
+  const chips = (item.src === 'elu' ? '<b class="elu">ELU</b>' : '') + ((item.src === 'ebird' || rlEbIsRecent(ep)) ? '<b class="eb">eBird</b>' : '');
+  const av = String(getDisplayAvatar(key) || '').replace(/'/g, '%27').replace(/"/g, '%22');
+  return '<button type="button" class="rl-ntc-it" data-recent-species="' + escapeHtml(key) + '" data-src="' + escapeHtml(item.src || '') + '">' +
+    '<span class="rl-ntc-av" style="background-image:url(\'' + av + '\');border-color:' + _borderColorByDate(item.iso) + '">' + corner + '</span>' +
+    '<span class="rl-ntc-tx"><span class="rl-ntc-nm">' + escapeHtml(key) + '</span>' + (wh ? '<span class="rl-ntc-wh">' + wh + '</span>' : '') + '</span>' +
+    '<span class="sb-src">' + chips + '</span>' +
+  '</button>';
+}
 function renderRecentRaritiesNotice(items, signature){
   const card = document.getElementById('recentRaritiesCard');
   const title = document.getElementById('recentRaritiesTitle');
@@ -4039,7 +4155,16 @@ function renderRecentRaritiesNotice(items, signature){
   const list = document.getElementById('recentRaritiesList');
   const actions = document.getElementById('recentRaritiesActions');
   if(!card || !title || !subtitle || !list || !actions) return;
-  const preview = items.slice(0, 5);
+  const preview = items;   // P84d-fix: no row cap; the list scrolls
+  if(!(window.__sbIsClassic && window.__sbIsClassic())){
+    /* P84d new UI: "Uued leiud" + "N liiki viimase 7 paeva jooksul . uusim <fresh>" + rows. Classic keeps the chips below. */
+    const n = items.length;
+    const newest = items[0] ? rlFresh(items[0].iso) : '';
+    title.textContent = 'Uued leiud';
+    subtitle.textContent = n + ' ' + (n === 1 ? (rlStr('species1') || 'liik') : (rlStr('species') || 'liiki')) + ' ' + (rlStr('ntcsub') || 'viimase 7 paeva jooksul') +
+      (newest ? (' ' + String.fromCharCode(183) + ' ' + (rlStr('ntcnew') || 'uusim') + ' ' + newest.toLowerCase()) : '');
+    list.innerHTML = preview.map(rlNoticeRowHTML).join('');
+  } else {
   title.textContent = 'Uued leiud viimase 7 päeva jooksul';
   subtitle.textContent = items.length === 1
     ? 'Rariliinis on 1 liik, mida tasub kaardilt vaadata.'
@@ -4050,6 +4175,7 @@ function renderRecentRaritiesNotice(items, signature){
       '<span>' + escapeHtml(item.formattedDate || 'Viimane vaatlus hiljuti') + '</span>' +
     '</button>';
   }).join('');
+  }
   card.dataset.signature = signature;
   actions.hidden = false;
   card.hidden = false;
@@ -4101,7 +4227,7 @@ function evaluateRecentRaritiesNotice(options){
   let hiddenReason = 'none';
   if(!items.length || !signature){
     hiddenReason = 'no_recent_species';
-  } else if(sessionDismissed && sessionDismissed === signature){
+  } else if(sessionDismissed && signature.split('|').every(function(n){ return sessionDismissed.split('|').indexOf(n) >= 0; })){   // P84d-fix: hidden while every current name was in the dismissed set
     hiddenReason = 'dismissed';
   } else {
     shownCard = true;
@@ -4127,16 +4253,7 @@ function evaluateRecentRaritiesNotice(options){
     return;
   }
   if(shownCard) renderRecentRaritiesNotice(items, signature);
-  else if(opts.force){
-    const fallbackItems = items.slice(0, 3);
-    renderRecentRaritiesNotice(fallbackItems, signature || '__popup_fallback__');
-    const title = document.getElementById('recentRaritiesTitle');
-    const subtitle = document.getElementById('recentRaritiesSubtitle');
-    const list = document.getElementById('recentRaritiesList');
-    if(title) title.textContent = 'Rariliini teavitus töötab';
-    if(subtitle) subtitle.textContent = 'Popup render test. Recent liigid: ' + String(items.length);
-    if(list && !items.length) list.innerHTML = '';
-  } else hideRecentRaritiesNotice();
+  else hideRecentRaritiesNotice();
 }
 
 function _borderColorByDate(isoDate){
@@ -8869,7 +8986,6 @@ _wireSidebarSettingsRow();
 
 (function wireRecentRaritiesNotice(){
   const closeBtn = document.getElementById('recentRaritiesClose');
-  const dismissBtn = document.getElementById('recentRaritiesDismiss');
   const showMapBtn = document.getElementById('recentRaritiesShowMap');
   const hideTodayBtn = document.getElementById('recentRaritiesHideToday');
   const list = document.getElementById('recentRaritiesList');
@@ -8891,21 +9007,14 @@ _wireSidebarSettingsRow();
     });
     closeBtn.__wired = true;
   }
-  if(dismissBtn && !dismissBtn.__wired){
-    dismissBtn.addEventListener('click', function(){
-      console.log('[rariliin-popup] close clicked');
-      markSeenAndHide();
-    });
-    dismissBtn.__wired = true;
-  }
+  /* P84d: the separate "Sulge" button is gone (merged into the x = #recentRaritiesClose); every other button stays null-guarded. */
   if(showMapBtn && !showMapBtn.__wired){
     showMapBtn.addEventListener('click', function(){
       console.log('[rariliin-popup] close clicked');
       const items = getRecentRaritiesItems();
-      if(items.length){
-        focusRecentMarkers(items);
-        focusRecentSpecies(items[0].name);
-      }
+      /* P84d: one item -> pan + open its card; several -> fitBounds over all (no card). Search box untouched. */
+      if(items.length === 1) focusRecentSpecies(items[0].name);
+      else if(items.length) focusRecentMarkers(items);
       markSeenAndHide();
     });
     showMapBtn.__wired = true;

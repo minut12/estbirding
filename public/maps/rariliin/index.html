@@ -336,6 +336,18 @@
 .bm-card-cmt-t{white-space:pre-wrap;word-break:break-word}
 .bm-card-rem{display:flex;gap:8px;margin-top:10px;padding:8px 10px;border-radius:10px;background:#eef6f0;border:1px solid #cfe3d5;color:#1f5a36;font-size:12px;line-height:1.4}
 .bm-card-rem b{display:block;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#2d7a4b;margin-bottom:2px}
+/* P84g: card history lists (port of linnuliigid .bm-card-recent* L173-182; "when" column grows for "Eile 14:18"-style text, count in the source colour). */
+.bm-card-recent{margin-top:11px;padding-top:9px;border-top:1px solid #e7eeea}
+.bm-card-recent-h{font:700 10px/1.2 system-ui,Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#6c7f74}
+.bm-card-recent-list{margin-top:7px;display:flex;flex-direction:column;gap:5px}
+.bm-card-recent-row{display:flex;align-items:baseline;gap:8px;font-size:12px;color:#4a5852;text-decoration:none}
+.leaflet-container a.bm-card-recent-row{color:#4a5852}
+.leaflet-container a.bm-card-recent-row:hover{color:var(--sc-ink)}
+a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
+.bm-card-recent-when{flex:0 0 auto;min-width:80px;font:600 11.5px/1.4 system-ui,Arial,sans-serif;color:#222a26}
+.bm-card-recent-place{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit}
+.bm-card-recent-n{flex:0 0 auto;font:700 11.5px/1.4 system-ui,Arial,sans-serif;color:var(--sc)}
+.bm-card-recent-img{width:12px;height:12px;margin-right:4px;vertical-align:-2px;color:#8a4b06}
 .bm-card-acts{display:flex;gap:8px;margin-top:12px}
 .bm-card-btn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 14px;
   border:0;border-radius:10px;background:var(--sc);color:#fff;cursor:pointer;text-decoration:none;
@@ -7971,11 +7983,13 @@ function ebirdEEPopupHtml(key, ep){
   }, { source: 'ebird', dateTxt: e.t, extUrl: rlEbUrl(key, e) });
 }
 
+/* P84g: one token expression for the bulk feed and the per-species card feed. */
+function rlEbirdToken(){ return localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq'; }
 var __ebirdEEBulkInFlight = null;
 async function refreshEbirdEEBulk(){
   if(__ebirdEEBulkInFlight) return __ebirdEEBulkInFlight;
   var started = Date.now();
-  var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
+  var token = rlEbirdToken();
   var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent?back=30&maxResults=10000&detail=full&_ts=' + Date.now();
   __ebirdEEBulkInFlight = (async function(){
     var arr = null;
@@ -8055,6 +8069,7 @@ function refreshEbirdEEMarkers(){
       m = L.marker([ep.lat, ep.lon], { icon: icon });
       m.bindPopup(html, { closeButton:true, autoPan:true, autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) });   // P84c/P83
       rlWireSel(m);
+      rlWireHist(m, 'eb', key);   // P84g
       if(cluster && typeof cluster.addLayer === 'function') cluster.addLayer(m); else m.addTo(map);
       ebirdEEMarkers.set(key, m);
     }
@@ -8349,6 +8364,7 @@ function updateMarker(key) {
     m.on('touchend', () => m.openPopup());
   }
   rlWireSel(m);
+  rlWireHist(m, 'elu', key);   // P84g
   p.lastMarkerMove = {
     oldLat: old ? Number(old.lat) : Number(p.lat),
     oldLon: old ? Number(old.lng) : Number(p.lon),
@@ -8389,6 +8405,187 @@ function rlMediaChip(m){
     : (au > 0 ? '<path d="M12 3v18M7 8v8M17 8v8M3 11v2M21 11v2"/>' : '<path d="M6 4l14 8-14 8z"/>');
   return '<div class="bm-card-media"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ico + '</svg><b>' + escapeHtml(lbl) + '</b></div>';
 }
+/* P84g: card history lists, fetched lazily when a card opens and cached (memory + localStorage with TTL).
+   Elurikkus: the species search page (one request via _fetchHtmlWithFallback) -> embedded SvelteKit JSON rows
+   (port of linnuliigid _parseEluSearchJson + the P80b row reader + the P81 own-species rule), newest 5 of any date;
+   HTML table fallback (parseSearchRows, hasImg false) when the JSON is missing.
+   State per key: { state:'loading'|'ok'|'fail', val }. buildPopupHtml reads it; loading -> ellipsis row, fail -> no block. */
+var RL_HIST_MAX = 5;
+var RL_HIST_TTL_MS = { elu: 60 * 60 * 1000, eb: 30 * 60 * 1000 };
+var RL_HIST_LS = { elu: 'bm_rariliin_eluhist_v1:', eb: 'bm_rariliin_ebhist_v1:' };
+var __rlHist = { elu: Object.create(null), eb: Object.create(null) };
+function rlHistGet(src, key){
+  var mem = __rlHist[src] ? __rlHist[src][key] : null;
+  if (mem && mem.state !== 'ok') return mem;
+  var val = mem ? mem.val : null;
+  if (!val){ try{ val = JSON.parse(localStorage.getItem(RL_HIST_LS[src] + key) || 'null'); }catch(e){ val = null; } }
+  if (!val || !Array.isArray(val.rows) || !Number.isFinite(val.fetchedAt)) return null;
+  if ((Date.now() - val.fetchedAt) >= RL_HIST_TTL_MS[src]) return null;
+  if (!mem) __rlHist[src][key] = { state: 'ok', val: val };
+  return { state: 'ok', val: val };
+}
+function rlEluSearchJson(html){
+  try{
+    var s = String(html || '');
+    var re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+    var m;
+    while ((m = re.exec(s))){
+      var attrs = m[1] || '';
+      if (attrs.indexOf('data-sveltekit-fetched') === -1 || attrs.indexOf('api/occurrences/search') === -1) continue;
+      var env = JSON.parse(m[2]);
+      var body = (env && typeof env.body === 'string') ? JSON.parse(env.body) : (env && env.body);
+      return (body && Array.isArray(body.results)) ? body.results : null;
+    }
+  }catch(e){}
+  return null;
+}
+function rlNormLc(s){ try{ return String(s || '').normalize('NFC').toLowerCase().trim(); }catch(e){ return String(s || '').toLowerCase().trim(); } }
+function rlBinom(s){ var w = rlNormLc(s).split(/\s+/); return w.length >= 2 ? w[0] + ' ' + w[1] : (w[0] || ''); }
+/* P81 rule: a search page for a free-text name can carry other species; keep rows whose Estonian name or binomial matches. */
+function rlEluOwnRow(commonName, taxonName, key){
+  var cn = rlNormLc(commonName);
+  if (cn && (cn === rlNormLc(key) || cn === rlNormLc(_normText(key)))) return true;
+  var meta = window.resolveSpeciesMetaShared ? window.resolveSpeciesMetaShared(key) : null;
+  var sci = rlBinom(meta && meta.scientificName);
+  return !!(sci && sci !== '-' && rlBinom(taxonName) === sci);
+}
+function rlEluOccUrl(id){ return 'https://elurikkus.ee/app/occurrences/occurrence/' + encodeURIComponent(String(id)); }
+function rlCountOrNull(v){
+  if (v === null || v === undefined || String(v).trim() === '') return null;
+  var n = Number(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+async function rlFetchEluHist(key){
+  var url = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(_normText(key));
+  var html = await _fetchHtmlWithFallback(url);
+  var res = rlEluSearchJson(html);
+  var rows, remark = '';
+  if (Array.isArray(res)){
+    var own = res
+      .map(function(r, i){ return { r: r || {}, i: i }; })
+      .filter(function(o){ return rlEluOwnRow(o.r.common_name_est, o.r.taxon_name, key); })
+      .sort(function(a, b){ return String(b.r.event_date || '').localeCompare(String(a.r.event_date || '')) || (a.i - b.i); })
+      .map(function(o){ return o.r; });
+    if (own.length) remark = String(own[0].remarks || own[0].identification_remarks || '').trim().slice(0, 300);
+    rows = own.slice(0, RL_HIST_MAX).map(function(r){
+      var files = Array.isArray(r.files) ? r.files : [];
+      return {
+        iso: String(r.event_date || '').slice(0, 10),
+        locality: String(r.locality || ''),
+        collectors: Array.isArray(r.recorded_by) ? r.recorded_by.join(', ') : String(r.recorded_by || ''),
+        individualCount: rlCountOrNull(r.individual_count),
+        hasImg: files.some(function(f){ return f && f.media_type === 'Image'; }),
+        href: (r.id != null && r.id !== '') ? rlEluOccUrl(r.id) : ''
+      };
+    });
+  } else {
+    rows = (parseSearchRows(html, url) || [])
+      .filter(function(r){ return rlEluOwnRow(r.commonName, r.taxon, key); })
+      .sort(function(a, b){ return String(b.iso || '').localeCompare(String(a.iso || '')); })
+      .slice(0, RL_HIST_MAX)
+      .map(function(r){
+        return { iso: r.iso, locality: String(r.locality || ''), collectors: String(r.collectors || ''), individualCount: rlCountOrNull(r.individualCount), hasImg: false, href: r.occId ? rlEluOccUrl(r.occId) : String(r.href || '') };
+      });
+  }
+  return { rows: rows, remark: remark, fetchedAt: Date.now() };
+}
+var RL_SVG_CAM = '<path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/>';
+function rlEluHistRowsHtml(rows){
+  var out = '';
+  var cam = '<svg class="bm-card-recent-img" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="' + escapeHtml(rlStr('fotoga')) + '">' + RL_SVG_CAM + '</svg>';
+  for (var i = 0; i < rows.length && i < RL_HIST_MAX; i++){
+    var r = rows[i] || {};
+    var when = r.iso ? formatDateEE(r.iso) : '';
+    var place = String(r.locality || '').trim();
+    var inner = '<span class="bm-card-recent-when">' + (when && when !== '-' ? escapeHtml(when) : '&mdash;') + '</span>'
+      + '<span class="bm-card-recent-place" title="' + escapeHtml(place) + '">' + (r.hasImg ? cam : '') + (place ? escapeHtml(place) : '&mdash;') + '</span>'
+      + '<span class="bm-card-recent-n">' + (Number.isFinite(r.individualCount) ? escapeHtml(String(r.individualCount)) : '&ndash;') + '</span>';
+    out += r.href
+      ? '<a class="bm-card-recent-row" href="' + escapeHtml(r.href) + '" target="_blank" rel="noopener">' + inner + '</a>'
+      : '<div class="bm-card-recent-row">' + inner + '</div>';
+  }
+  return out;
+}
+/* P84g eBird: per-species 7-day feed (port of linnuliigid P77c _fillSpeciesFeed), same direct call + token as refreshEbirdEEBulk. */
+function rlEbCode(key){ return (typeof RARILIIN_EBIRD_CODES !== 'undefined' && RARILIIN_EBIRD_CODES) ? String(RARILIIN_EBIRD_CODES[key] || '') : ''; }
+async function rlFetchEbHist(key){
+  var code = rlEbCode(key);
+  if (!code) throw new Error('no eBird code');
+  var url = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=7&detail=full';
+  var res = await fetch(url, { headers: { 'X-eBirdApiToken': rlEbirdToken() } });
+  if (!res.ok) throw new Error('eBird HTTP ' + res.status);
+  var arr = await res.json();
+  if (!Array.isArray(arr)) throw new Error('eBird invalid payload');
+  var rows = arr
+    .filter(function(o){ return o && o.obsDt; })
+    .map(function(o){ return { obsDt: String(o.obsDt), locName: String(o.locName || ''), howMany: Number.isFinite(o.howMany) ? o.howMany : null, subId: String(o.subId || '') }; })
+    .sort(function(a, b){ return b.obsDt.localeCompare(a.obsDt); })
+    .slice(0, RL_HIST_MAX);
+  return { rows: rows, fetchedAt: Date.now() };
+}
+function rlEbHistRowsHtml(rows){
+  var out = '';
+  for (var i = 0; i < rows.length && i < RL_HIST_MAX; i++){
+    var o = rows[i] || {};
+    var raw = String(o.obsDt || '');
+    var day = raw.slice(0, 10);
+    var hm = /^\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2})/.exec(raw);
+    var when = rlFresh(day) || day;
+    if (hm) when += ' ' + hm[1];
+    // eBird locNames carry a trailing ', EE (lat, lon)' or, for personal locations, ' EE-<County> <lat>, <lon>'; it adds nothing here.
+    var place = String(o.locName || '').replace(/(?:,\s*EE\s*\([^)]*\)|\s+EE-[^,]*?\s+-?\d+(?:\.\d+)?,\s*-?\d+(?:\.\d+)?)\s*$/, '').trim();
+    var inner = '<span class="bm-card-recent-when">' + escapeHtml(when) + '</span>'
+      + '<span class="bm-card-recent-place" title="' + escapeHtml(place) + '">' + (place ? escapeHtml(place) : '&mdash;') + '</span>'
+      + '<span class="bm-card-recent-n">' + (Number.isFinite(o.howMany) ? escapeHtml(String(o.howMany)) : '&ndash;') + '</span>';
+    var sub = String(o.subId || '').trim();
+    out += sub
+      ? '<a class="bm-card-recent-row" href="https://ebird.org/checklist/' + escapeHtml(encodeURIComponent(sub)) + '" target="_blank" rel="noopener">' + inner + '</a>'
+      : '<div class="bm-card-recent-row">' + inner + '</div>';
+  }
+  return out;
+}
+function rlHistBlockHtml(src, key){
+  var h = rlHistGet(src, key);
+  if (!h || h.state === 'fail') return '';
+  var head = src === 'eb' ? 'Viimased eBirdi vaatlused &middot; 7 p' : 'Viimased Elurikkuse vaatlused';
+  var body;
+  if (h.state === 'loading') body = '<div class="bm-card-recent-row"><span class="bm-card-recent-place">&hellip;</span></div>';
+  else {
+    body = src === 'eb' ? rlEbHistRowsHtml(h.val.rows || []) : rlEluHistRowsHtml(h.val.rows || []);
+    if (!body) return '';
+  }
+  return '<div class="bm-card-recent"><div class="bm-card-recent-h">' + head + '</div><div class="bm-card-recent-list">' + body + '</div></div>';
+}
+/* Re-render an open (or closed) card in place; setPopupContent keeps an open popup open (P84e guarantee). */
+function rlHistRepaint(src, key){
+  try{
+    var isEb = src === 'eb';
+    var m = isEb ? ebirdEEMarkers.get(key) : markers.get(key);
+    var p = isEb ? ebirdEEPoints[key] : points[key];
+    if (!m || !p || !m.getPopup || !m.getPopup()) return;
+    var html = isEb ? ebirdEEPopupHtml(key, p) : buildPopupHtml(key, p);
+    if (m.getPopup().getContent() !== html) m.setPopupContent(html);
+  }catch(e){}
+}
+function rlHistEnsure(src, key){
+  var h = rlHistGet(src, key);
+  if (h && (h.state === 'ok' || h.state === 'loading')) return;
+  if (src === 'eb' && !rlEbCode(key)) return;
+  __rlHist[src][key] = { state: 'loading', val: null };
+  rlHistRepaint(src, key);
+  (src === 'eb' ? rlFetchEbHist(key) : rlFetchEluHist(key)).then(function(val){
+    __rlHist[src][key] = { state: 'ok', val: val };
+    try{ localStorage.setItem(RL_HIST_LS[src] + key, JSON.stringify(val)); }catch(e){}
+  }, function(err){
+    __rlHist[src][key] = { state: 'fail', val: null };
+    console.warn('[rariliin P84g] ' + src + ' history fetch failed for', key, err && err.message);
+  }).then(function(){ rlHistRepaint(src, key); });
+}
+function rlWireHist(m, src, key){
+  if (!m || m.__rlHistWired) return;
+  m.__rlHistWired = true;
+  m.on('popupopen', function(){ rlHistEnsure(src, key); });
+}
 function buildPopupHtml(key, p, opts){
   if(!isWhitelistedSpecies(key)) return '';
   const o = opts || {};
@@ -8420,9 +8617,13 @@ function buildPopupHtml(key, p, opts){
   const indLabel = (Number.isFinite(indNum) && Math.abs(indNum) === 1) ? rlStr('ind1') : rlStr('ind');
   const place = isEb ? str(p.placeText)
     : [str(rlField(p, 'locality')), str(rlField(p, 'county'))].filter(function(v){ return v && v !== '-'; }).join(', ');
-  const remark = isEb ? str(p.comment) : str(x.remark || x.remarks);
+  /* P84g: lazy history (newest record's remark + photo flag feed the remark box and the media chip when the point has none). */
+  const hist = isEb ? null : rlHistGet('elu', key);
+  const hv = (hist && hist.state === 'ok' && hist.val) ? hist.val : null;
+  const hNew = (hv && Array.isArray(hv.rows) && hv.rows.length) ? hv.rows[0] : null;
+  const remark = isEb ? str(p.comment) : (str(x.remark || x.remarks) || str(hv && hv.remark));
   const media = isEb ? p.media
-    : ((Array.isArray(x.media) && x.media.length) ? { p: Number(x.mediaN) || x.media.length } : (Number(x.mediaN) > 0 ? { p: Number(x.mediaN) } : null));
+    : ((Array.isArray(x.media) && x.media.length) ? { p: Number(x.mediaN) || x.media.length } : (Number(x.mediaN) > 0 ? { p: Number(x.mediaN) } : ((hNew && hNew.hasImg) ? { p: 1 } : null)));
   let extUrl = str(o.extUrl);
   if (!isEb && !extUrl) extUrl = str(p.openUrl || x.detailUrl || p.searchUrl) || ('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(key));
   const SVG_PIN = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3.3 4.5 8.5 4.5 8.5s4.5-5.2 4.5-8.5A4.5 4.5 0 0 0 8 1.5Zm0 6.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4Z"/></svg>';
@@ -8471,6 +8672,7 @@ function buildPopupHtml(key, p, opts){
       + '</div>'
       + (rows ? '<div class="bm-card-rows">' + rows + '</div>' : '')
       + remBox
+      + rlHistBlockHtml(isEb ? 'eb' : 'elu', key)
       + '<div class="bm-card-acts">' + extBtn + wazeBtn + copyBtn + '</div>'
       + foot
     + '</div>'

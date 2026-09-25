@@ -157,6 +157,8 @@
 .bm-card-media{display:flex;align-items:center;gap:8px;margin-top:10px;padding:7px 10px;border-radius:10px;background:#eef6f8;border:1px solid #d5e7ec;color:#155e75;font-size:12px}
 .bm-card-media svg{width:15px;height:15px;flex:0 0 auto}
 .bm-card-media .mc{display:inline-flex;align-items:center;gap:4px;font-weight:600;white-space:nowrap}
+.bm-card-media{margin-top:8px;background:#fff4e0;border-color:#f2c78a;color:#8a4b06}
+.bm-card-media b{font-weight:800;color:#8a4b06;margin-right:2px}
 .bm-card-media a{margin-left:auto;color:#155e75;font-weight:600;text-decoration:none;white-space:nowrap}
 .bm-card-media.is-off{display:none}
 .bm-card-rem{display:flex;gap:8px;margin-top:10px;padding:8px 10px;border-radius:10px;background:#eef6f0;border:1px solid #cfe3d5;color:#1f5a36;font-size:12px;line-height:1.4}
@@ -10843,13 +10845,13 @@ function buildPopupHtml(key, p, opts){
             <div class="bm-card-name">${escapeHtml(key)}</div>${sciLine}
             <div class="bm-card-date">${dateLine}</div>
           </div>
-        </div>
+        </div>${mediaBox}
         <div class="bm-card-stats">
           <div class="bm-card-stat"><b${isEb ? ' class="bm-card-occ"' : ''}>${isEb ? '&ndash;' : escapeHtml(dash(occ7))}</b><span>vaatlust 7 p</span></div>
           <div class="bm-card-stat"><b>${escapeHtml(dash(ind))}</b><span>${indLabel}</span></div>
           <div class="bm-card-stat${isEb ? ' bm-card-stat--ebird' : ''}"><b>${escapeHtml(isEb ? 'eBird' : dash(src))}</b><span>allikas</span></div>
         </div>
-        ${rows ? '<div class="bm-card-rows">' + rows + '</div>' : ''}${cmtBox}${mediaBox}${remBox}${thumbs}${recentBox}
+        ${rows ? '<div class="bm-card-rows">' + rows + '</div>' : ''}${cmtBox}${remBox}${thumbs}${recentBox}
         ${approxNote}
         <div class="bm-card-acts">${isEb ? (wazeBtn + copyBtn + extBtn) : (coordsApprox ? eluBtn + copyBtn : wazeBtn + copyBtn + eluBtn)}</div>
         ${foot}
@@ -14522,12 +14524,13 @@ var __sharedDefaults = {};
   function _bmMediaHtml(m, subId){
     var out = '';
     var lead = true;
+    var lbl = (Number(m && m.p) || 0) > 0 ? 'Fotoga vaatlus' : ((Number(m && m.a) || 0) > 0 ? 'Heliga vaatlus' : 'Videoga vaatlus');
     BM_MEDIA_TYPES.forEach(function(t){
       var n = Number(m && m[t.k]) || 0;
       if(n <= 0) return;
       var svg = BM_MEDIA_SVG_OPEN + t.ico + '</svg>';
       var label = n === 1 ? t.one : n + ' ' + t.many;
-      if(lead){ out += svg; lead = false; svg = ''; }
+      if(lead){ out += svg + '<b>' + lbl + '</b>'; lead = false; svg = ''; }
       out += '<span class="mc">' + svg + escapeHtml(label) + '</span>';
     });
     out += '<a href="https://ebird.org/checklist/' + encodeURIComponent(String(subId || '')) + '" target="_blank" rel="noopener">Vaata eBirdis &#8599;</a>';

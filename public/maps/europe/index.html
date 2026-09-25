@@ -456,6 +456,8 @@ html:not(.sb-classic) .bm-sc-media svg{width:15px;height:15px;flex:0 0 auto}
 html:not(.sb-classic) .bm-sc-media .mc{display:inline-flex;align-items:center;gap:4px;font-weight:600;white-space:nowrap}
 html:not(.sb-classic) .bm-sc-media a{margin-left:auto;color:#155e75;font-weight:600;text-decoration:none;white-space:nowrap}
 html:not(.sb-classic) .bm-sc-media.is-off{display:none}
+html:not(.sb-classic) .bm-sc-media{margin-top:8px;background:#fff4e0;border-color:#f2c78a;color:#8a4b06}
+html:not(.sb-classic) .bm-sc-media b{font-weight:800;color:#8a4b06;margin-right:2px}
 html:not(.sb-classic) .bm-sc-acts{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:12px}
 html:not(.sb-classic) .bm-sc .bm-sc-btn,html:not(.sb-classic) .bm-sc a.bm-sc-btn,html:not(.sb-classic) .bm-sc a.bm-sc-btn:visited,html:not(.sb-classic) .bm-sc a.bm-sc-btn:hover{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 13px;border-radius:10px;border:1px solid var(--sc);background:var(--sc);color:#fff!important;font:600 12.5px/1 system-ui,Arial,sans-serif;cursor:pointer;text-decoration:none}
 html:not(.sb-classic) .bm-sc-ico{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;border-radius:10px;border:1px solid #dde4df;background:#fff;color:#4a5852;cursor:pointer}
@@ -484,7 +486,7 @@ html:not(.sb-classic) .bm-sc-ft .is-ok{color:#2d7a4b;font-weight:700}
     <aside id="sidebar" aria-label="Sidebar">
       <div class="panel-header">
       <div id="stickyPanel">
-      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa" data-title-checklist="Kontrollnimekiri" data-title-species="Liigi leht" data-spring="kevad" data-autumn="s&uuml;gis" data-unknown="teadmata" data-unknown-title="R&auml;ndeaja andmed puuduvad (v&auml;he Eesti vaatlusi)" data-unknown-title-2="R&auml;ndeaja andmed puuduvad" data-comment="eBirdi m&auml;rkus" data-recent="Viimased eBirdi vaatlused" data-priv-title="Privaatne asukoht" data-days7="7 p" data-photos1="1 foto" data-photos-n="fotot" data-audio1="1 heli" data-audio-n="heli" data-video1="1 video" data-video-n="videot" data-view-ebird="Vaata eBirdis"></template>
+      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa" data-title-checklist="Kontrollnimekiri" data-title-species="Liigi leht" data-spring="kevad" data-autumn="s&uuml;gis" data-unknown="teadmata" data-unknown-title="R&auml;ndeaja andmed puuduvad (v&auml;he Eesti vaatlusi)" data-unknown-title-2="R&auml;ndeaja andmed puuduvad" data-comment="eBirdi m&auml;rkus" data-recent="Viimased eBirdi vaatlused" data-priv-title="Privaatne asukoht" data-days7="7 p" data-photos1="1 foto" data-photos-n="fotot" data-audio1="1 heli" data-audio-n="heli" data-video1="1 video" data-video-n="videot" data-view-ebird="Vaata eBirdis" data-media-photo="Fotoga vaatlus" data-media-audio="Heliga vaatlus" data-media-video="Videoga vaatlus"></template>
       <div class="sb-titlebar" hidden>
         <div class="sb-brand"><img class="sb-brand-ico" src="/icons/estbirds-96.png" alt="" width="44" height="44"><div class="sb-brand-txt"><h2>EstBirds</h2><div class="sb-counts" id="euCounts"></div></div></div>
         <div class="sb-title-r"><span class="sb-src">eBird &middot; 7 p</span></div>
@@ -3047,8 +3049,6 @@ if (!DEV_DEBUG) {
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
         '<div><b>' + esc(STR.comment) + '</b><span class="bm-sc-cmt-t">&hellip;</span></div></div>';
     }
-    // P78a: hidden media-counts placeholder (all species with a subId); filled on popupopen
-    if (d.subId) out += '<div class="bm-sc-media is-off" data-sub="' + esc(d.subId) + '" data-code="' + esc(code) + '"></div>';
     if (code && cc) out += '<div class="bm-sc-recent is-off" data-cc="' + esc(cc) + '" data-code="' + esc(code) + '"></div>';
     return out;
   }
@@ -3062,12 +3062,13 @@ if (!DEV_DEBUG) {
   function euMediaHtml(m, subId){
     var out = "";
     var lead = true;
+    var lbl = (Number(m.p)||0) > 0 ? STR.mediaPhoto : ((Number(m.a)||0) > 0 ? STR.mediaAudio : STR.mediaVideo);
     EU_MEDIA_TYPES.forEach(function(t){
       var n = Number(m[t.k]) || 0;
       if (n <= 0) return;
       var svg = EU_MEDIA_SVG_OPEN + t.ico + '</svg>';
       var label = n === 1 ? (STR[t.one] || "") : n + " " + (STR[t.many] || "");
-      if (lead) { out += svg; lead = false; svg = ""; }
+      if (lead) { out += svg + '<b>' + esc(lbl || "") + '</b>'; lead = false; svg = ""; }
       out += '<span class="mc">' + svg + esc(label) + '</span>';
     });
     out += '<a href="https://ebird.org/checklist/' + esc(subId) + '" target="_blank" rel="noopener">' + esc(STR.viewEbird) + ' &#8599;</a>';
@@ -3131,6 +3132,7 @@ if (!DEV_DEBUG) {
           '<div class="bm-sc-id"><div class="bm-sc-name">' + esc(displayName) + '</div>' +
           (sci ? '<div class="bm-sc-sci">' + esc(sci) + '</div>' : '') + '</div></div>' +
         when +
+        (d.subId ? '<div class="bm-sc-media is-off" data-sub="' + esc(d.subId) + '" data-code="' + esc(resolveEbirdCode(species) || "") + '"></div>' : '') +
         euCardStats(isAgg, p, d, total7, regs.length, euMigState(species)) +
         euCardRows(isAgg, d, regs) +
         euCardExtras(isAgg, species, d) +

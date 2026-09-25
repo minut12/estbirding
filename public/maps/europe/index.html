@@ -3034,18 +3034,16 @@ if (!DEV_DEBUG) {
       (d.loc ? '<div class="bm-sc-row bm-sc-row-place"><span class="bm-sc-m">' + esc(STR.place) + ':</span><span>' + esc(d.loc) + '</span></div>' : '') +
     '</div>';
   }
-  // P77c: per-country card extras (after the Riik/Koht rows): eBird comment box (rarity + subId) and the
+  // P77c: per-country card extras (after the Riik/Koht rows): eBird comment box (subId) and the
   // hidden recent-obs placeholder; both are filled on popupopen. Aggregated card: nothing.
   var EU_RECENT_MAX = 5;
-  var EU_CMT_LEVELS = ["rare", "super", "mega"];
   function euCardExtras(isAgg, species, d){
     if (isAgg) return "";
     var code = resolveEbirdCode(species) || "";
     var cc = d.rg || "";
-    var level = (getSpeciesMeta(species) || {}).rarityLevel || "none";
     var out = "";
-    if (EU_CMT_LEVELS.indexOf(level) !== -1 && d.subId) {
-      out += '<div class="bm-sc-cmt" data-sub="' + esc(d.subId) + '" data-code="' + esc(code) + '">' +
+    if (d.subId) {
+      out += '<div class="bm-sc-cmt is-off" data-sub="' + esc(d.subId) + '" data-code="' + esc(code) + '">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
         '<div><b>' + esc(STR.comment) + '</b><span class="bm-sc-cmt-t">&hellip;</span></div></div>';
     }
@@ -3216,7 +3214,7 @@ if (!DEV_DEBUG) {
     if (cmt) euChecklistComment(cmt.getAttribute("data-sub"), cmt.getAttribute("data-code"), function(text){
       if (!el.isConnected) return;
       var t = cmt.querySelector(".bm-sc-cmt-t");
-      if (text && t) { t.textContent = String(text); } else { cmt.classList.add("is-off"); }
+      if (text && t) { t.textContent = String(text); cmt.classList.remove("is-off"); } else { cmt.classList.add("is-off"); }
       euPopupUpdate();
     });
     // P78a: media counts strip (same cached checklist call as the comment box)

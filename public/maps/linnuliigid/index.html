@@ -10791,11 +10791,11 @@ function buildPopupHtml(key, p, opts){
       + '<div class="bm-card-recent-list"></div>'
       + '</div>';
   }
-  // P80a (eBird only): comment box for R/SR/MR species and a media-counts strip for
-  // all species, both hidden placeholders filled on popupopen from the cached
-  // checklist call. Both are '' for non-eBird, so the Elurikkus card is unchanged.
-  const cmtBox = (isEb && ['rare', 'super', 'mega'].indexOf(_rarLevel) !== -1)
-    ? '\n        <div class="bm-card-cmt"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M2.5 2h11A1.5 1.5 0 0 1 15 3.5v7a1.5 1.5 0 0 1-1.5 1.5H6l-3.5 3v-3A1.5 1.5 0 0 1 1 10.5v-7A1.5 1.5 0 0 1 2.5 2Z"/></svg>'
+  // P80a/P80c (eBird only): comment box and a media-counts strip for all species,
+  // both hidden placeholders (hidden until paintExtras finds a comment / media) filled
+  // on popupopen from the cached checklist call. Both are '' for non-eBird, so the Elurikkus card is unchanged.
+  const cmtBox = isEb
+    ? '\n        <div class="bm-card-cmt is-off"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M2.5 2h11A1.5 1.5 0 0 1 15 3.5v7a1.5 1.5 0 0 1-1.5 1.5H6l-3.5 3v-3A1.5 1.5 0 0 1 1 10.5v-7A1.5 1.5 0 0 1 2.5 2Z"/></svg>'
       + '<div><b>eBirdi m&auml;rkus</b><span class="bm-card-cmt-t">&hellip;</span></div></div>'
     : '';
   const mediaBox = isEb ? '\n        <div class="bm-card-media is-off"></div>' : '';

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>Rariliin 2026</title>
+  <title>Rariliin 2026 &ndash; EstBirds</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     :root{--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--appHeader:0px;--appBottomNav:0px}
@@ -21,8 +21,6 @@
     .small {color:#666;font-size:12px;margin-top:2px}
     .btn {padding:4px 8px;border:none;border-radius:6px;background:#0a7;color:white;cursor:pointer}
     .btn.secondary {background:#666}
-    .ennusta-btn { background: #8b5cf6 !important; }
-    .ennusta-btn:hover { background: #7c3aed !important; }
     input[type="text"] {width:100%;padding:6px;box-sizing:border-box;margin:6px 0}
     .pill {display:inline-block;padding:2px 6px;border-radius:10px;background:#eef;font-size:11px}
     .pill.muted {opacity:.6;}
@@ -244,22 +242,155 @@
 
 .marker-ebird-badge{position:absolute;left:-4px;top:26px;height:15px;padding:0 4px;border-radius:7px;background:#1565c0;color:#fff;border:1.5px solid #fff;font-size:9px;line-height:12px;font-weight:800;text-align:center;z-index:4;box-shadow:0 1px 2px rgba(0,0,0,.3)}
 </style>
+<style id="sbNewUi">
+/* P84b new sidebar (port of linnuliigid P37/P38 sbNewUi). Scoped to html:not(.sb-classic); html.sb-classic rules only neutralise the new markup. */
+html:not(.sb-classic){--sb-bg:#fff;--sb-bg2:#f2f8f4;--sb-ink:#222a26;--sb-ink2:#4a5852;--sb-muted:#6c7f74;--sb-line:#dde4df;--sb-line2:#eef2ef;--sb-primary:#2d7a4b;--sb-primary-soft:#e4f1e8;--sb-warn:#b45309;--sb-warn-soft:#fbeedd;--sb-crit:#b91c1c;--sb-r:10px;--sb-elu:#1d5fa8;--sb-elu-soft:#e3edf9;--sb-elu-ink:#174a83;--sb-ebird:#0e7490;--sb-ebird-soft:#e0f2f5;--sb-ebird-ink:#155e75}
+html.sb-classic .sb-titlebar{display:none}
+html.sb-classic .sb-filters{display:contents}
+html.sb-classic .sb-filters>summary{display:none}
+html.sb-classic .sb-rl-new{display:none}
+html.sb-classic .sb-sec{display:none}
+html:not(.sb-classic) #sidebar .panel-header{padding:12px 14px 10px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--sb-line)}
+html:not(.sb-classic) #sidebar .sidebar-header{display:none}
+html:not(.sb-classic) .sb-titlebar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+html:not(.sb-classic) .sb-titlebar h2{margin:0;font-size:16px;font-weight:650;color:var(--sb-ink);flex:1 1 auto;min-width:0}
+html:not(.sb-classic) .sb-brand{display:flex;align-items:center;gap:10px;flex:1 1 auto;min-width:0}
+html:not(.sb-classic) .sb-brand-ico{width:44px;height:44px;border-radius:12px;flex:0 0 auto;display:block}
+html:not(.sb-classic) .sb-brand-txt{min-width:0}
+html:not(.sb-classic) .sb-titlebar h2{font-size:17px;font-weight:700;letter-spacing:-.01em;line-height:1.1;display:flex;align-items:center;gap:6px}
+html:not(.sb-classic) .sb-help{width:28px;height:28px;border-radius:999px;border:0;padding:0;background:var(--sb-primary-soft);color:var(--sb-primary);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
+html:not(.sb-classic) .sb-help:hover{background:#d3e8da}
+html:not(.sb-classic) .sb-help:focus-visible{outline:2px solid var(--sb-primary);outline-offset:2px}
+html:not(.sb-classic) .sb-counts{display:block;margin-top:2px;color:var(--sb-muted);font-size:12.5px;font-weight:500;line-height:1.35;font-variant-numeric:tabular-nums}
+html:not(.sb-classic) .sb-counts::before{content:"";display:inline-block;width:7px;height:7px;border-radius:999px;background:var(--sb-primary);margin-right:6px;vertical-align:1px}
+html:not(.sb-classic) .sb-counts:empty::before{display:none}
+html.sb-classic .sb-help{display:none}
+html:not(.sb-classic) .sb-titlebar #closeSidebarBtn{flex:0 0 auto;width:36px;height:36px;border-radius:9px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink);box-shadow:none}
+@media (min-width:901px){
+  html:not(.sb-classic) .sb-titlebar #closeSidebarBtn{display:none}
+}
+html:not(.sb-classic) .panel-content-scroll{padding-left:0;padding-right:0}
+html:not(.sb-classic) .panel-content-scroll>#filterBox{display:block;width:calc(100% - 28px);height:40px;border:1px solid var(--sb-line);border-radius:var(--sb-r);padding:0 12px;font-size:14px;margin:0 14px 8px}
+html:not(.sb-classic) .sb-filters{border:1px solid var(--sb-line);border-radius:10px;overflow:hidden;background:var(--sb-bg);margin:0 14px 10px}
+html:not(.sb-classic) .sb-filters>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;padding:8px 10px;font:600 12.5px system-ui;color:var(--sb-ink2);cursor:pointer;background:var(--sb-bg2)}
+html:not(.sb-classic) .sb-filters>summary::-webkit-details-marker{display:none}
+html:not(.sb-classic) .sb-filters>summary::after{content:"";width:8px;height:8px;border-right:2px solid var(--sb-muted);border-bottom:2px solid var(--sb-muted);transform:rotate(45deg);margin-right:4px;transition:transform .2s}
+html:not(.sb-classic) .sb-filters[open]>summary::after{transform:rotate(-135deg);margin-top:4px}
+html:not(.sb-classic) .sb-filters-body{padding:10px;display:flex;flex-direction:column;gap:10px}
+html:not(.sb-classic) .sb-filters-body .fetch-controls{margin:0;gap:10px;z-index:auto;display:grid;grid-template-columns:1fr auto;align-items:center}
+html:not(.sb-classic) .sb-filters-body .fetch-controls::before{content:"Ainult viimased 7 p\E4 eva";font:500 13px system-ui;color:var(--sb-ink);grid-column:1}
+/* 7p button becomes a switch: text hidden, state via .on */
+html:not(.sb-classic) #recentToggle{grid-column:2;grid-row:1;width:42px;height:24px;padding:0;border-radius:12px;border:0;background:var(--sb-line);position:relative;font-size:0;color:transparent;cursor:pointer;box-shadow:none}
+html:not(.sb-classic) #recentToggle::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--sb-bg);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .18s}
+html:not(.sb-classic) #recentToggle.on{background:var(--sb-primary)}
+html:not(.sb-classic) #recentToggle.on::after{transform:translateX(18px)}
+/* "Peida nahtud liigid" + "Allikas" rows, same grid as the 7p row */
+html:not(.sb-classic) .sb-seen-row,html:not(.sb-classic) .sb-src-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;font:500 13px system-ui;color:var(--sb-ink)}
+html:not(.sb-classic) #hideSeenToggle{width:42px;height:24px;padding:0;border-radius:12px;border:0;background:var(--sb-line);position:relative;font-size:0;color:transparent;cursor:pointer;box-shadow:none}
+html:not(.sb-classic) #hideSeenToggle::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--sb-bg);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .18s}
+html:not(.sb-classic) #hideSeenToggle.on{background:var(--sb-primary)}
+html:not(.sb-classic) #hideSeenToggle.on::after{transform:translateX(18px)}
+/* Allikas segment */
+html:not(.sb-classic) .sb-seg{display:inline-flex;height:28px;border:1px solid var(--sb-line);border-radius:9px;overflow:hidden;background:var(--sb-bg)}
+html:not(.sb-classic) .sb-seg button{height:100%;border:0;border-left:1px solid var(--sb-line);background:transparent;color:var(--sb-ink2);font:500 12px system-ui;padding:0 9px;cursor:pointer}
+html:not(.sb-classic) .sb-seg button:first-child{border-left:0}
+html:not(.sb-classic) .sb-seg button.on{background:var(--sb-primary);color:#fff}
+html:not(.sb-classic) .sb-seg button:focus-visible{outline:2px solid var(--sb-primary);outline-offset:-2px}
+html:not(.sb-classic) .sb-filters-body .fetch-controls #btnRefreshData,html:not(.sb-classic) .sb-filters-body .fetch-controls #btnResumeFetch,html:not(.sb-classic) .sb-filters-body .fetch-controls #btnStopFetch{grid-column:1 / -1;justify-self:start;height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--sb-line);background:var(--sb-bg);color:var(--sb-ink);font:500 12.5px system-ui}
+html:not(.sb-classic) .sb-filters-body .fetch-controls #btnStopFetch{background:var(--sb-crit);border-color:var(--sb-crit);color:#fff}
+/* Resume / Stop only while an Elurikkus bulk run is active (body.rl-bulk) */
+html:not(.sb-classic) body:not(.rl-bulk) .fetch-controls .btn.secondary,html:not(.sb-classic) body:not(.rl-bulk) #btnStopFetch{display:none!important}
+html:not(.sb-classic) .sb-filters-body .sb-updated{margin:0;font-size:11.5px;color:var(--sb-muted);display:flex;align-items:center;gap:6px}
+html:not(.sb-classic) .sb-filters-body .sb-updated::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--sb-primary);flex-shrink:0}
+html:not(.sb-classic) .sb-filters-body .sb-updated:empty{display:none}
+@media (prefers-reduced-motion:reduce){ html:not(.sb-classic) #recentToggle::after,html:not(.sb-classic) #hideSeenToggle::after,html:not(.sb-classic) .sb-filters>summary::after{transition:none} }
+/* Section headers (Viimased 7 paeva / Varasemad) */
+html:not(.sb-classic) .sb-sec{display:flex;align-items:center;gap:6px;padding:8px 12px 4px;font:600 10.5px system-ui;letter-spacing:.05em;text-transform:uppercase;color:var(--sb-muted);border-bottom:1px solid var(--sb-line2)}
+html:not(.sb-classic) .sb-sec .n{display:inline-block;min-width:18px;height:16px;padding:0 6px;border-radius:999px;background:var(--sb-warn-soft);color:var(--sb-warn);font:700 10.5px/16px system-ui;letter-spacing:0;text-align:center}
+/* compact rows + action-only expand */
+html:not(.sb-classic) .row{display:block;grid-template-columns:none;gap:0;padding:0;border-bottom:1px solid var(--sb-line2)}
+html:not(.sb-classic) .sb-row-main{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 6px 9px 12px;min-height:60px;cursor:pointer}
+html:not(.sb-classic) .sb-row-main:hover,html:not(.sb-classic) .row.sb-open .sb-row-main{background:var(--sb-bg2)}
+html:not(.sb-classic) .avatar{width:44px;height:44px;border-width:3px;border-style:solid;position:relative;background-color:var(--sb-bg2)}
+html:not(.sb-classic) .sb-rarity{position:absolute;right:-6px;top:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--sb-ink);color:#fff;font:800 10px/17px system-ui;text-align:center;border:2px solid var(--sb-bg)}
+html:not(.sb-classic) .sb-row-text{min-width:0}
+html:not(.sb-classic) .name-label{font-weight:600;font-size:14px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:normal;overflow-wrap:break-word}
+html:not(.sb-classic) .name-label.muted{text-decoration:line-through;color:var(--sb-muted);opacity:1}
+html:not(.sb-classic) .sb-meta{font-size:12px;color:var(--sb-muted);display:flex;flex-wrap:wrap;row-gap:0;gap:8px;align-items:center;margin-top:2px;min-width:0;font-variant-numeric:tabular-nums}
+html:not(.sb-classic) .sb-meta span{white-space:nowrap;flex-shrink:0}
+html:not(.sb-classic) .sb-meta span:only-child{white-space:normal;flex-shrink:1;min-width:0}
+html:not(.sb-classic) .sb-meta .sb-fresh{color:var(--sb-primary);font-weight:600;flex-shrink:0}
+html:not(.sb-classic) .sb-meta .sb-occ{color:var(--sb-ink);font-weight:600}
+html:not(.sb-classic) .sb-meta .sb-place{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0;max-width:100%}
+html:not(.sb-classic) .sb-sep{width:3px;height:3px;border-radius:50%;background:var(--sb-line);flex-shrink:0}
+html:not(.sb-classic) .sb-src{display:inline-flex;gap:4px;align-items:center;flex-shrink:0}
+html:not(.sb-classic) .sb-src b{font:700 10.5px/16px system-ui;padding:0 5px;border-radius:5px;white-space:nowrap}
+html:not(.sb-classic) .sb-src b.elu{background:var(--sb-elu-soft);color:var(--sb-elu-ink)}
+html:not(.sb-classic) .sb-src b.eb{background:var(--sb-ebird-soft);color:var(--sb-ebird-ink)}
+html:not(.sb-classic) .sb-acts{display:flex;gap:0;align-items:center}
+html:not(.sb-classic) .sb-ib{width:32px;height:32px;min-width:0;padding:0;border-radius:9px;border:0;background:transparent;color:var(--sb-ink2);display:inline-flex;align-items:center;justify-content:center;font-size:16px;box-shadow:none;cursor:pointer}
+html:not(.sb-classic) .sb-ib:hover{background:var(--sb-bg2);color:var(--sb-ink)}
+html:not(.sb-classic) .sb-ib.sb-ib-elu{color:var(--sb-elu)}
+html:not(.sb-classic) .sb-ib.sb-ib-eb{color:var(--sb-ebird)}
+html:not(.sb-classic) .sb-ib.sb-ib-eb:hover{background:var(--sb-ebird-soft);color:var(--sb-ebird-ink)}
+html:not(.sb-classic) .sb-chev svg{transition:transform .2s}
+html:not(.sb-classic) .row.sb-open .sb-chev svg{transform:rotate(180deg)}
+html:not(.sb-classic) .sb-row-detail{display:none;padding:0 14px 12px 14px;flex-direction:column;align-items:stretch;gap:10px;background:var(--sb-bg2);border-top:1px dashed var(--sb-line)}
+html:not(.sb-classic) .row.sb-open .sb-row-detail{display:flex;padding-top:8px}
+@media (prefers-reduced-motion:reduce){ html:not(.sb-classic) .sb-chev svg{transition:none} }
+/* expanded row: Linnuliigid .sb-info card */
+html:not(.sb-classic) .sb-info{border:1px solid var(--sb-line);border-radius:10px;background:var(--sb-bg);overflow:hidden;width:100%}
+html:not(.sb-classic) .sb-info-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:6px 10px;background:var(--sb-bg2);font:600 11px/1.3 system-ui;letter-spacing:.05em;text-transform:uppercase;color:var(--sb-ink2);border-top:1px solid var(--sb-line)}
+html:not(.sb-classic) .sb-info-h:first-child{border-top:0}
+html:not(.sb-classic) .sb-info-h span{font:500 11px system-ui;letter-spacing:0;text-transform:none;color:var(--sb-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+html:not(.sb-classic) .sb-kv{margin:0;padding:2px 0}
+html:not(.sb-classic) .sb-kvr{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;padding:4px 10px;font-size:12.5px;line-height:1.35}
+html:not(.sb-classic) .sb-kvr+.sb-kvr{border-top:1px solid var(--sb-line2)}
+html:not(.sb-classic) .sb-kvr dt{color:var(--sb-muted);margin:0}
+html:not(.sb-classic) .sb-kvr dd{margin:0;font-weight:500;color:var(--sb-ink);overflow-wrap:anywhere}
+html:not(.sb-classic) .sb-kvr.e dd{color:var(--sb-muted);font-weight:400}
+@media (max-width:900px){ html:not(.sb-classic) .sb-kvr{grid-template-columns:104px minmax(0,1fr)} }
+/* help modal (#sbHelp) skeleton. z 10000: above .panel-content-scroll (9999) and the drawer (4000). */
+#sbHelp{display:none}
+html:not(.sb-classic) #sbHelp.open{display:flex;position:fixed;inset:0;z-index:10000;background:rgba(20,30,25,.42);align-items:center;justify-content:center;padding:20px;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--sb-ink)}
+html:not(.sb-classic) .sbh{background:var(--sb-bg);border-radius:16px;width:720px;max-width:100%;max-height:100%;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden}
+html:not(.sb-classic) .sbh-head{padding:24px 26px 0;position:relative}
+html:not(.sb-classic) .sbh-head h2{margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em}
+html:not(.sb-classic) .sbh-x{position:absolute;right:16px;top:16px;width:36px;height:36px;border-radius:9px;border:0;background:transparent;color:var(--sb-ink2);font-size:22px;line-height:1;cursor:pointer;display:grid;place-items:center}
+html:not(.sb-classic) .sbh-x:hover{background:var(--sb-bg2)}
+html:not(.sb-classic) .sbh-x:focus-visible{outline:2px solid var(--sb-primary);outline-offset:2px}
+html:not(.sb-classic) .sbh-body{padding:18px 26px 26px;overflow:auto;display:flex;flex-direction:column;gap:14px;-webkit-overflow-scrolling:touch}
+html:not(.sb-classic) .sbh-body p{margin:0;color:var(--sb-ink2);font-size:13.5px;line-height:1.5}
+@media (max-width:900px){
+  html:not(.sb-classic) #sbHelp.open{padding:0;top:var(--appHeader,0px);bottom:var(--appBottomNav,0px);align-items:stretch;background:var(--sb-bg)}
+  html:not(.sb-classic) .sbh{width:100%;border-radius:0;max-height:none;box-shadow:none}
+  html:not(.sb-classic) .sbh-head{padding:18px 16px 0}
+  html:not(.sb-classic) .sbh-head h2{font-size:19px}
+  html:not(.sb-classic) .sbh-body{padding:14px 16px calc(20px + env(safe-area-inset-bottom,0px))}
+}
+</style>
 </head>
 <body>
 <div id="root">
 <div id="app">
   <aside id="sidebar">
     <div class="panel-header">
+    <div class="sb-titlebar"><div class="sb-brand"><img class="sb-brand-ico" src="/icons/estbirds-96.png" alt="" width="44" height="44"><div class="sb-brand-txt"><h2>EstBirds <button id="sbHelpBtn" class="sb-help hidden-in-export" type="button" aria-label="Juhend" title="Juhend" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M9.6 9.3a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1 .9-1 1.7"/><circle cx="12" cy="16.6" r=".6" fill="currentColor"/></svg></button></h2><div class="sb-counts"></div></div></div></div>
     <div class="sidebar-header"><div><h2 style="margin:0">Rariliin 2026</h2></div><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
     </div>
     <div class="panel-content-scroll" style="position:relative;z-index:9999;pointer-events:auto">
 <div id="snapshotBanner" class="snapshot-banner" style="display:none !important"></div>
+<details class="sb-filters"><summary>Filtrid</summary><div class="sb-filters-body">
 <div class="fetch-controls">
   <button id="recentToggle" class="btn on" title="7 päeva filter">7p: ON</button>
-  <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus" style="display:none" hidden>Refresh from Elurikkus</button>
+  <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus" style="display:none" hidden>Uuenda Elurikkusest</button>
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index" style="display:none">Resume</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
+<div class="sb-seen-row sb-rl-new"><span>Peida n&auml;htud liigid</span><button id="hideSeenToggle" type="button" role="switch" aria-checked="false" aria-label="Peida n&auml;htud liigid" title="Peida l&auml;bikriipsutatud liigid nimekirjast"></button></div>
+<div class="sb-src-row sb-rl-new"><span>Allikas</span><div class="sb-seg" id="srcSeg" role="group" aria-label="Allikas"><button type="button" data-src="all" class="on" aria-pressed="true">K&otilde;ik</button><button type="button" data-src="elu" aria-pressed="false">Elurikkus</button><button type="button" data-src="ebird" aria-pressed="false">eBird</button></div></div>
+<div id="sbUpdated" class="sb-updated sb-rl-new"></div>
+</div></details>
 <div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
 <div id="eluLastCoord" class="fetch-progress" style="display:none !important"></div>
 <div id="fetchProgress" class="fetch-progress" style="display:none !important"></div>
@@ -267,7 +398,7 @@
 <div id="fetchError" class="fetch-error" style="display:none !important"></div>
 <div id="debugContent" style="display:none"></div>
 <div id="debugProContent" style="display:none"></div>
-    <input id="filterBox" type="text" placeholder="Filter..." />
+    <input id="filterBox" type="text" placeholder="Otsi liiki v&otilde;i koodi&hellip;" />
     <div id="list"></div>
     </div>
   </aside>
@@ -296,6 +427,17 @@
 </div>
 
 <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+
+<template id="rlStr" data-today="T&auml;na" data-yesterday="Eile" data-daysago="p&auml;eva tagasi" data-recent="Viimased 7 p&auml;eva" data-earlier="Varasemad" data-noloc="Asukoht puudub" data-seen="n&auml;htud" data-species="liiki" data-last7="viimase 7 p" data-place="Koht" data-muni="Vald" data-county="Maakond" data-count="Isendeid" data-beh="K&auml;itumine" data-obs="Vaatleja" data-code="Kood" data-sci="Teaduslik nimi" data-note="Teate m&auml;rkus" data-loc="Asukoht" data-obsh="Vaatlus" data-remark="M&auml;rkus" data-openelu="Ava Elurikkuses" data-openeb="Ava eBirdis" data-more="Rohkem"></template>
+
+<div id="sbHelp" class="hidden-in-export"><div class="sbh" role="dialog" aria-modal="true" aria-labelledby="sbHelpTitle">
+  <div class="sbh-head"><h2 id="sbHelpTitle">Rariliin</h2><button type="button" class="sbh-x" aria-label="Sulge">&times;</button></div>
+  <div class="sbh-body">
+    <!-- P84e text --><p>Juhendi tekst lisandub hiljem (1/3).</p>
+    <!-- P84e text --><p>Juhendi tekst lisandub hiljem (2/3).</p>
+    <!-- P84e text --><p>Juhendi tekst lisandub hiljem (3/3).</p>
+  </div>
+</div></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="/maps/shared/map-hamburger-control.js"></script>
@@ -354,9 +496,133 @@ function clearOccurrence(key){
     if (typeof render === 'function') render();
   }catch(e){ console.warn('clearOccurrence error', e); }
 }
+
+/* P84b sidebar UI flag (port of linnuliigid P37): 'classic' restores the pre-P84 sidebar. Same-origin localStorage, live via storage event. */
+(function(){
+  var KEY = 'estbirding.sidebarUi';
+  function apply(){
+    var v = null; try { v = localStorage.getItem(KEY); } catch(e){}
+    document.documentElement.classList.toggle('sb-classic', v === 'classic');
+  }
+  apply();
+  window.addEventListener('storage', function(ev){ if (!ev || ev.key === KEY || ev.key === null) { apply(); try{ if (typeof render === 'function') render(); }catch(e){} } });
+  window.__sbIsClassic = function(){ return document.documentElement.classList.contains('sb-classic'); };
+})();
 </script>
 
 <script>
+/* P84b: new-sidebar helpers. Estonian strings with diacritics live in <template id="rlStr"> (ASCII source). */
+function rlStr(key){
+  try{
+    var t = document.getElementById('rlStr');
+    var v = (t && t.dataset) ? t.dataset[key] : null;
+    return (v === undefined || v === null) ? '' : String(v);
+  }catch(e){ return ''; }
+}
+var SB_ICON = {
+  open: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>',
+  ebird: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 12l2 2 4-4"/></svg>',
+  chev: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'
+};
+window.__sbOpenKey = null;
+/* Source segment state: 'all' | 'elu' | 'ebird'. Not persisted; classic always behaves as 'all'. */
+window.__rlSrc = 'all';
+function rlSrcEff(){
+  if (window.__sbIsClassic && window.__sbIsClassic()) return 'all';
+  var s = window.__rlSrc;
+  return (s === 'elu' || s === 'ebird') ? s : 'all';
+}
+/* Help modal (new UI only): Esc / backdrop / x close. */
+(function(){
+  var root = document.getElementById('sbHelp');
+  var btn = document.getElementById('sbHelpBtn');
+  if (!root || !btn) return;
+  var lastFocus = null;
+  function onKey(e){ if (e.key === 'Escape' || e.key === 'Esc'){ e.preventDefault(); close(); } }
+  function open(){
+    if (window.__sbIsClassic && window.__sbIsClassic()) return;
+    lastFocus = document.activeElement;
+    root.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+    document.addEventListener('keydown', onKey);
+    var x = root.querySelector('.sbh-x'); if (x) x.focus();
+  }
+  function close(){
+    root.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('keydown', onKey);
+    try{ if (lastFocus && lastFocus.focus) lastFocus.focus(); }catch(e){}
+  }
+  btn.addEventListener('click', function(e){ e.preventDefault(); open(); });
+  root.addEventListener('click', function(e){ if (e.target === root || (e.target.closest && e.target.closest('.sbh-x'))) close(); });
+  window.addEventListener('storage', function(ev){ if ((!ev || ev.key === 'estbirding.sidebarUi' || ev.key === null) && window.__sbIsClassic && window.__sbIsClassic()) close(); });
+})();
+/* Layout sync (port of linnuliigid P37a): new branch moves the close X into .sb-titlebar, classic puts it back.
+   Classic also forces the Filtrid <details> open, since display:contents does not reveal a closed <details>' content. */
+(function(){
+  var filtersOpenInNew = false;
+  function sync(){
+    var classic = !!(window.__sbIsClassic && window.__sbIsClassic());
+    var sb = document.getElementById('sidebar');
+    if (!sb) return;
+    var titlebar = sb.querySelector('.sb-titlebar');
+    var closeHome = sb.querySelector('.sidebar-header');
+    var closeBtn = document.getElementById('closeSidebarBtn');
+    var filters = sb.querySelector('.sb-filters');
+    var closeTarget = classic ? closeHome : titlebar;
+    if (closeBtn && closeTarget && closeBtn.parentElement !== closeTarget) closeTarget.appendChild(closeBtn);
+    if (filters){
+      if (!filters.__sbWired){
+        filters.addEventListener('toggle', function(){ if (!window.__sbIsClassic()) filtersOpenInNew = filters.open; });
+        filters.__sbWired = true;
+      }
+      filters.open = classic ? true : filtersOpenInNew;
+    }
+  }
+  sync();
+  window.addEventListener('storage', function(ev){ if (!ev || ev.key === 'estbirding.sidebarUi' || ev.key === null) sync(); });
+})();
+/* "Peida nahtud liigid" (port of linnuliigid P71): hides crossed-out species from the new-UI list only. */
+(function(){
+  var LS_HIDE_SEEN = 'bm_rariliin_hide_seen';
+  try { window.__hideSeen = (localStorage.getItem(LS_HIDE_SEEN) === '1'); } catch(e) { window.__hideSeen = false; }
+  function syncBtn(){
+    var b = document.getElementById('hideSeenToggle');
+    if (!b) return;
+    if (window.__hideSeen) b.classList.add('on'); else b.classList.remove('on');
+    b.setAttribute('aria-checked', window.__hideSeen ? 'true' : 'false');
+  }
+  window.__setHideSeen = function(on){
+    window.__hideSeen = !!on;
+    try { localStorage.setItem(LS_HIDE_SEEN, on ? '1' : '0'); } catch(e) {}
+    syncBtn();
+    if (typeof render === 'function') render();
+  };
+  var b = document.getElementById('hideSeenToggle');
+  if (!b) return;
+  syncBtn();
+  b.addEventListener('click', function(){ window.__setHideSeen(!window.__hideSeen); });
+})();
+/* Allikas segment: list filter (render) + marker layers (rlApplySrcToMarkers). */
+(function(){
+  var seg = document.getElementById('srcSeg');
+  if (!seg) return;
+  seg.addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('button[data-src]') : null;
+    if (!b) return;
+    var v = b.getAttribute('data-src');
+    window.__rlSrc = (v === 'elu' || v === 'ebird') ? v : 'all';
+    var btns = seg.querySelectorAll('button[data-src]');
+    for (var i = 0; i < btns.length; i++){
+      var on = btns[i] === b;
+      btns[i].classList.toggle('on', on);
+      btns[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    if (typeof rlApplySrcToMarkers === 'function') rlApplySrcToMarkers();
+    if (typeof render === 'function') render();
+  });
+})();
+
 // === Species ===
 const SPECIES = ["Väike-lumehani", "Väike-laukhani", "Tulipart", "Kuninghahk", "Ida-mustvaeras", "Prillvaeras", "Siberi tõmmuvaeras", "Punanokk-vart", "Valgesilm-vart", "Lannuvart", "Sini-rägapart", "Ameerika viupart", "Mustkael-pütt", "Suurtrapp", "Väiketrapp", "Stepivuril", "Suur-turteltuvi", "Kanada kurg", "Neitsikurg", "Väikehuik", "Värbhuik", "Jämejalg", "Karkjalg", "Tundrarüüt", "Roosterind-tüll", "Stepikiivitaja", "Valgesaba-kiivitaja", "Kõrbetüll", "Mustjalg-tüll", "Tundra-neppvigle", "Hallkibu", "Ameerika vihitaja", "Suur-veetallaja", "Puna-veetallaja", "Älverüdi", "Pikkjalg-rüdi", "Ruugerüdi", "Kiripugu-rüdi", "Hallrüdi", "Stepi-pääsujooksur", "Kõnnu-pääsujooksur", "Pikksaba-änn", "Laisaba-änn", "Suuränn", "Väikealk", "Naerutiir", "Habeviires", "Valgetiib-viires", "Roosakajakas", "Kaljukajakas", "Harksaba-kajakas", "Vandelkajakas", "Karbuskajakas", "Lõuna-hõbekajakas", "Jääkajakas", "Ohhoota hõbekajakas", "Polaarkajakas", "Jääkaur", "Tundrakaur", "Põhja-tormipääsu", "Peegel-tormilind", "Põhja-tormilind", "Vahemere tormilind", "Suula", "Tõmmuiibis", "Luitsnokk-iibis", "Pelikan", "Väikehüüp", "Siidhaigur", "Ööhaigur", "Veisehaigur", "Purpurhaigur", "Suurpiiritaja", "Randpiiritaja", "Loorkakk", "Kivikakk", "Vöötkakk", "Lumekakk", "Hõbehaugas", "Raipekotkas", "Raisakotkas", "Kumai-kaeluskotkas", "Kaeluskotkas", "Madukotkas", "Kääbuskotkas", "Stepikotkas", "Kääpakotkas", "Stepi-loorkull", "Stepiviu", "Siniraag", "Mesilasenäpp", "Roherähn", "Stepi-tuuletallaja", "Jahipistrik", "Stepipistrik", "Mustlauk-õgija", "Punapea-õgija", "Mongoolia kõnnuõgija", "Punasaba-kõnnuõgija", "Laanenäär", "Lasuurtihane", "Taigatihane", "Tuttlõoke", "Sarviklõoke", "Välja-väikelõoke", "Stepilõoke", "Leet-käosulane", "Tarna-roolind", "Padu-roolind", "Kivipääsuke", "Roostepääsuke", "Vööt-lehelind", "Tuhk-lehelind", "Kuld-lehelind", "Siberi lehelind", "Tõmmu-lehelind", "Põhja-lehelind", "Kõrbe-põõsalind", "Punakurk-põõsalind", "Roosa-kuldnokk", "Kaelusrästas", "Mustpugu-rästas", "Ruskerästas", "Rubiinööbik", "Kaelus-kärbsenäpp", "Sinisaba", "Kivisiirak", "Niidu-kaelustäks", "Euroopa kaelustäks", "Kõrbe-kivitäks", "Nunn-kivitäks", "Liiv-kivitäks", "Mägiraat", "Mustkurk-raat", "Siberi raat", "Idahänilane", "Mongoolia kiur", "Nõmmekiur", "Niidukiur", "Taigakiur", "Mägikiur", "Männileevike", "Kõrbeleevike", "Vööt-käbilind", "Kuldtsiitsitaja", "Väiketsiitsitaja", "Põhjatsiitsitaja", "Mustpea-tsiitsitaja", "Punapea-tsiitsitaja", "Halltsiitsitaja", "Rebassidrik", "Mustluik", "Eskimo lagle", "Vööthani", "Lumehani", "Mõrsjapart", "Vaaraohani", "Sõnnpea-sõtkas", "Läänesõtkas", "Kübarkoskel", "Kuupart", "Puna-rägapart", "Heleflamingo", "Hiid-merikotkas", "Tutt-karakaara", "Ameerika tuuletallaja"];
 
@@ -3321,7 +3587,7 @@ async function refreshAllElurikkusOnce(){
   const jobId = ++__elurikkusBulkJobSeq;
   __elurikkusBulkCurrentJobId = jobId;
   __eluBulkActive = true;
-  __elurikkusBulkActive = true;
+  __elurikkusBulkActive = true; try{ document.body.classList.toggle("rl-bulk", !!__elurikkusBulkActive); }catch(_rlE){}
   __eluBulkAbort = new AbortController();
   __elurikkusBulkAbort = __eluBulkAbort;
   __elurikkusBulkAbortController = __eluBulkAbort;
@@ -3469,7 +3735,7 @@ async function refreshAllElurikkusOnce(){
     } finally {
       __eeRefreshContext = null;
       __eluBulkActive = false;
-      __elurikkusBulkActive = false;
+      __elurikkusBulkActive = false; try{ document.body.classList.toggle("rl-bulk", !!__elurikkusBulkActive); }catch(_rlE){}
       if(stopBtn) stopBtn.style.display = 'none';
       __eluBulkAbort = null;
       __elurikkusBulkAbort = null;
@@ -7175,7 +7441,7 @@ function _wireSnapshotButtons(){
           else if(__elurikkusBulkAbort) __elurikkusBulkAbort.abort('user');
         }catch(e){}
         __eluBulkActive = false;
-        __elurikkusBulkActive = false;
+        __elurikkusBulkActive = false; try{ document.body.classList.toggle("rl-bulk", !!__elurikkusBulkActive); }catch(_rlE){}
         if(btnStop) btnStop.style.display = 'none';
         const eluProg = document.getElementById('eluProgress');
         if(eluProg){
@@ -7313,7 +7579,7 @@ function _wireSidebarSettingsRow(){
 function refreshVisible(){ rebuildAllMarkers(); render(); }
 function refreshSelected(){ rebuildAllMarkers(); render(); }
 
-// Track species-prediction feature flag for the Ennusta button in row controls
+// Track species-prediction feature flag (P84b: the row prediction button is removed; flag kept for other listeners)
 window.__predictionFeatureOn = false;
 window.addEventListener('message', function(event) {
   var data = event && event.data;
@@ -7544,9 +7810,34 @@ function refreshEbirdEEMarkers(){
     m.bindPopup(ebirdEEPopupHtml(key, ep));
     if(cluster && typeof cluster.addLayer === 'function') cluster.addLayer(m); else m.addTo(map);
     ebirdEEMarkers.set(key, m);
+    if(rlSrcEff() === 'elu') rlLayerOff(m);   // P84b Allikas segment
   }
 }
 window.refreshEbirdEEMarkers = refreshEbirdEEMarkers;
+
+/* P84b Allikas segment on the map: show/hide the existing Elurikkus (markers) and eBird EE (ebirdEEMarkers) layers
+   without rebuilding them. Both Maps hold only markers that already passed their own filters. */
+function rlLayerHost(){ return window.__markerClusterGroup || window.markerClusterGroup || null; }
+function rlLayerOn(m){
+  var c = rlLayerHost();
+  try{
+    if(c && typeof c.addLayer === 'function'){ if(!(typeof c.hasLayer === 'function' && c.hasLayer(m))) c.addLayer(m); }
+    else if(!map.hasLayer(m)) map.addLayer(m);
+  }catch(e){}
+}
+function rlLayerOff(m){
+  var c = rlLayerHost();
+  try{
+    if(c && typeof c.removeLayer === 'function') c.removeLayer(m);
+    else if(map.hasLayer(m)) map.removeLayer(m);
+  }catch(e){}
+}
+function rlApplySrcToMarkers(){
+  var s = rlSrcEff();
+  try{ markers.forEach(function(m){ if(s === 'ebird') rlLayerOff(m); else rlLayerOn(m); }); }catch(e){}
+  try{ ebirdEEMarkers.forEach(function(m){ if(s === 'elu') rlLayerOff(m); else rlLayerOn(m); }); }catch(e){}
+}
+window.addEventListener('storage', function(ev){ if(!ev || ev.key === 'estbirding.sidebarUi' || ev.key === null) rlApplySrcToMarkers(); });
 
 // Re-render eBird markers shortly after any main-marker update (keeps filters in sync)
 try {
@@ -7787,6 +8078,7 @@ function updateMarker(key) {
     try{ clusterGroup.removeLayer(m); clusterGroup.addLayer(m); }catch(e){}
   }
   markers.set(key, m);
+  if(rlSrcEff() === 'ebird') rlLayerOff(m);   // P84b Allikas segment
 }
 
 
@@ -7858,6 +8150,59 @@ function openWaze(lat, lon){
   try{ window.open(url, '_blank'); } catch(e){}
   setTimeout(()=>{ try{ location.href = url; } catch(e){} }, 50);
 }
+/* P84b: list predicates. Elurikkus record = points[key] with coords; eBird record = ebirdEEPoints[key]; recent = the 7p filter predicate. */
+function rlHasElu(p){ return !!(p && Number.isFinite(p.lat) && Number.isFinite(p.lon)); }
+function rlHasEb(key){ return !!(typeof ebirdEEPoints !== 'undefined' && ebirdEEPoints && ebirdEEPoints[key]); }
+function rlIsRecent(p){ return rlHasElu(p) && hasRecentObservation(p); }
+function rlYear(){
+  try{ return new Intl.DateTimeFormat('en', { timeZone: 'Europe/Tallinn', year: 'numeric' }).format(new Date()); }
+  catch(e){ return String(new Date().getFullYear()); }
+}
+/* P84b: titlebar counts, <title>, and Filtrid "last updated" line; runs after each render(). */
+function rlPaintCounts(){
+  var y = rlYear();
+  var dot = ' ' + String.fromCharCode(183) + ' ';
+  try{ document.title = 'Rariliin ' + y + ' ' + String.fromCharCode(8211) + ' EstBirds'; }catch(e){}
+  var el = document.querySelector('#sidebar .sb-counts');
+  if (el){
+    var total = 0, recent = 0, seen = 0;
+    for (var i = 0; i < DATA.length; i++){
+      var k = DATA[i] && DATA[i].est;
+      if (!k) continue;
+      if (typeof isWhitelistedSpecies === 'function' && !isWhitelistedSpecies(k)) continue;
+      total++;
+      var p = points[k];
+      if (rlIsRecent(p)) recent++;
+      if (p && p.visible === false) seen++;
+    }
+    el.textContent = 'Rariliin ' + y + dot + total + ' ' + rlStr('species') + dot + recent + ' ' + rlStr('last7') + dot + seen + ' ' + rlStr('seen');
+  }
+  var u = document.getElementById('sbUpdated');
+  if (u){
+    var g = null;
+    try{ g = (__snapshotMeta && __snapshotMeta.generated_at) ? __snapshotMeta.generated_at : null; }catch(e){ g = null; }
+    var txt = g ? formatDateTimeEE(g) : '';
+    u.textContent = (txt && txt !== '-') ? ('Andmed viimati uuendatud: ' + txt) : '';
+  }
+}
+/* P84b: .sb-fresh text. Relative word from the Europe/Tallinn calendar day (as the linnuliigid species card), else the EE date. */
+function rlFresh(t){
+  var ts = (typeof _parseObservedTs === 'function') ? _parseObservedTs(t) : Date.parse(String(t || ''));
+  if (!Number.isFinite(ts)) return '';
+  try{
+    var fmt = new Intl.DateTimeFormat('en-CA', { timeZone: EE_TZ });
+    var a = Date.parse(fmt.format(new Date(ts)) + 'T00:00:00Z');
+    var b = Date.parse(fmt.format(new Date()) + 'T00:00:00Z');
+    if (Number.isFinite(a) && Number.isFinite(b)){
+      var d = Math.round((b - a) / 86400000);
+      if (d === 0) return rlStr('today');
+      if (d === 1) return rlStr('yesterday');
+      if (d >= 2 && d <= 6) return d + ' ' + rlStr('daysago');
+    }
+  }catch(e){}
+  var s = formatDateEE(ts);
+  return s === '-' ? '' : s;
+}
 function rowHTML(obj) {
   const key = obj.est;
   if(!isWhitelistedSpecies(key)) return '';
@@ -7867,8 +8212,6 @@ function rowHTML(obj) {
   const muted = (p.visible===false) ? 'muted' : '';
   const occ7 = Number.isFinite(p.occ7) ? p.occ7 : null;
   const metaCfg = window.resolveSpeciesMetaShared ? window.resolveSpeciesMetaShared(key) : { rarityLevel: 'none', resolvedKey: key, found: false };
-  console.log('[rariliin-meta] sidebarSpecies="' + String(key) + '" key="' + String(metaCfg.resolvedKey || key) + '" found=' + String(!!metaCfg.found));
-  console.log('[rariliin-meta] scientificName="' + String(metaCfg.scientificName || '') + '" code="' + String(metaCfg.rariliinCode || '') + '" note="' + String(metaCfg.notificationNote || '') + '"');
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
   const renderMetaRow = function(label, value){
     const clean = (value && String(value).trim()) ? String(value).trim() : '-';
@@ -7908,6 +8251,7 @@ function rowHTML(obj) {
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
   const openUrl = String((p.openUrl || (x.detailUrl || defaultSearchUrl)) || defaultSearchUrl);
 
+  if (window.__sbIsClassic && window.__sbIsClassic()) {
   return '<div class="row" data-key="'+key+'">' +
     '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +
     '<div class="row-main">' +
@@ -7920,13 +8264,111 @@ function rowHTML(obj) {
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +
       '<button class="btn open-occ-btn" data-open-url="'+openUrl.replace(/"/g,'&quot;')+'">Open</button>' +
-      (window.__predictionFeatureOn
-        ? '<button type="button" class="btn ennusta-btn" title="Vali ennustuse liik" onclick="event.preventDefault();event.stopPropagation();window.__selectAsPredictionSpecies && window.__selectAsPredictionSpecies(\'rariliin\',\'' + String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\');return false;">Ennusta</button>'
-        : '') +
       '</div>' +
     '</div>' +
   '</div>';
+  }
+
+  /* P84b new branch: compact row + expandable .sb-info card. No prediction button (Rariliin ruling). */
+  var isOpen = (window.__sbOpenKey === key);
+  var keyAttr = String(key).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+  var keyJs = String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  var ep = (typeof ebirdEEPoints !== 'undefined' && ebirdEEPoints) ? ebirdEEPoints[key] : null;
+  var hasEb = !!ep;
+  var epOcc7 = (hasEb && Number.isFinite(ep.occ7)) ? ep.occ7 : null;
+  var rStyle = window.getRarityStyle ? window.getRarityStyle(metaCfg.rarityLevel || 'none') : null;
+  var rarityCorner = (rStyle && rStyle.badgeText) ? '<span class="sb-rarity" title="Haruldus">' + rStyle.badgeText + '</span>' : '';
+  var sep = '<i class="sb-sep"></i>';
+  var metaParts = [];
+  var freshSrc = hasPoint ? p.t : (hasEb ? ep.t : '');
+  var fresh = freshSrc ? rlFresh(freshSrc) : '';
+  if (fresh) metaParts.push('<span class="sb-fresh">' + escapeHtml(fresh) + '</span>');
+  else if (!hasPoint && !hasEb) metaParts.push('<span>' + escapeHtml(rlStr('noloc') || 'Asukoht puudub') + '</span>');
+  var n7 = Math.max(occ7 !== null ? occ7 : 0, epOcc7 !== null ? epOcc7 : 0);
+  if (n7 > 0) metaParts.push('<span class="sb-occ">7p ' + n7 + '</span>');
+  if (hasPoint || hasEb){
+    metaParts.push('<span class="sb-src">'
+      + (hasPoint ? '<b class="elu">ELU' + (occ7 !== null && occ7 > 0 ? ' ' + occ7 : '') + '</b>' : '')
+      + (hasEb ? '<b class="eb">eBird' + (epOcc7 !== null && epOcc7 > 0 ? ' ' + epOcc7 : '') + '</b>' : '')
+      + '</span>');
+  }
+  var place = String(x.locality || x.municipality || '').trim();
+  if (place) metaParts.push('<span class="sb-place">' + escapeHtml(place) + '</span>');
+  var ebUrl = '';
+  if (hasEb){
+    var ebCode = (typeof RARILIIN_EBIRD_CODES !== 'undefined' && RARILIIN_EBIRD_CODES) ? RARILIIN_EBIRD_CODES[key] : '';
+    ebUrl = ep.subId ? ('https://ebird.org/checklist/' + encodeURIComponent(String(ep.subId)))
+      : (ebCode ? ('https://ebird.org/species/' + encodeURIComponent(String(ebCode)) + '/EE') : 'https://ebird.org/region/EE');
+  }
+  var tOpenElu = escapeHtml(rlStr('openelu') || 'Ava Elurikkuses');
+  var tOpenEb = escapeHtml(rlStr('openeb') || 'Ava eBirdis');
+  var tMore = escapeHtml(rlStr('more') || 'Rohkem');
+  var kv = function(label, v){
+    var s = (v === undefined || v === null) ? '' : String(v).trim();
+    var e = (!s || s === '-');
+    return '<div class="sb-kvr' + (e ? ' e' : '') + '"><dt>' + escapeHtml(label) + '</dt><dd>' + (e ? '&mdash;' : escapeHtml(s)) + '</dd></div>';
+  };
+  var locLat = hasPoint ? p.lat : (hasEb && Number.isFinite(ep.lat) ? ep.lat : null);
+  var locLon = hasPoint ? p.lon : (hasEb && Number.isFinite(ep.lon) ? ep.lon : null);
+  var sbInfo = '<div class="sb-info">'
+    + '<div class="sb-info-h">' + escapeHtml(rlStr('loc') || 'Asukoht') + (locLat !== null && locLon !== null ? '<span>' + locLat.toFixed(4) + ' &middot; ' + locLon.toFixed(4) + '</span>' : '') + '</div>'
+    + '<dl class="sb-kv">'
+      + kv(rlStr('place') || 'Koht', x.locality)
+      + kv(rlStr('muni') || 'Vald', x.municipality || x.eestiOmavalitsused)
+      + kv(rlStr('county') || 'Maakond', x.county)
+    + '</dl>'
+    + '<div class="sb-info-h">' + escapeHtml(rlStr('obsh') || 'Vaatlus') + (hasPoint ? '<span>Elurikkus' + (p.t ? ' &middot; ' + escapeHtml(formatDateEE(p.t)) : '') + '</span>' : '') + '</div>'
+    + '<dl class="sb-kv">'
+      + kv(rlStr('count') || 'Isendeid', (x.individualCount !== undefined && x.individualCount !== null) ? x.individualCount : p.individualCount)
+      + kv(rlStr('beh') || 'Kaitumine', x.behavior)
+      + kv(rlStr('obs') || 'Vaatleja', x.collectors)
+      + kv(rlStr('code') || 'Kood', metaCfg.rariliinCode)
+      + kv(rlStr('sci') || 'Teaduslik nimi', metaCfg.scientificName)
+      + kv(rlStr('note') || 'Teate markus', metaCfg.notificationNote)
+    + '</dl>'
+    + (hasEb
+      ? '<div class="sb-info-h">eBird<span>EE' + (ep.t ? ' &middot; ' + escapeHtml(formatDateEE(ep.t)) : '') + '</span></div>'
+        + '<dl class="sb-kv">'
+          + kv(rlStr('place') || 'Koht', ep.loc)
+          + kv(rlStr('count') || 'Isendeid', ep.howMany)
+        + '</dl>'
+      : '')
+    + '</div>';
+  return '<div class="row' + (isOpen ? ' sb-open' : '') + '" data-key="' + keyAttr + '">' +
+    '<div class="sb-row-main" data-sb-toggle="' + keyAttr + '">' +
+      '<div class="avatar" style="background-image:url(\'' + getDisplayAvatar(key) + '\');border-color:' + bcol + '">' + rarityCorner + '</div>' +
+      '<div class="sb-row-text">' +
+        '<div class="name-label clickable ' + muted + '" onclick="event.stopPropagation();toggleVisibility(\'' + keyJs + '\')">' + escapeHtml(key) + '</div>' +
+        '<div class="sb-meta">' + metaParts.join(sep) + '</div>' +
+      '</div>' +
+      '<div class="sb-acts">' +
+        '<button type="button" class="btn open-occ-btn sb-ib sb-ib-elu" data-open-url="' + openUrl.replace(/"/g,'&quot;') + '" title="' + tOpenElu + '" aria-label="' + tOpenElu + '">' + SB_ICON.open + '</button>' +
+        (hasEb ? '<button type="button" class="btn open-occ-btn sb-ib sb-ib-eb" data-open-url="' + ebUrl.replace(/"/g,'&quot;') + '" title="' + tOpenEb + '" aria-label="' + tOpenEb + '">' + SB_ICON.ebird + '</button>' : '') +
+        '<button type="button" class="sb-ib sb-chev" data-sb-toggle="' + keyAttr + '" title="' + tMore + '" aria-label="' + tMore + '" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' + SB_ICON.chev + '</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="sb-row-detail">' + sbInfo + '</div>' +
+  '</div>';
 }
+
+/* P84b: row expand (new UI only), port of linnuliigid P37b */
+(function(){
+  var list = document.getElementById('list'); if(!list || list.__sbWired) return; list.__sbWired = true;
+  list.addEventListener('click', function(ev){
+    if (window.__sbIsClassic && window.__sbIsClassic()) return;
+    var t = ev.target;
+    if (t.closest('.sb-acts button:not(.sb-chev)') || t.closest('.name-label') || t.closest('.sb-row-detail')) return;
+    var host = t.closest('[data-sb-toggle]'); if(!host) return;
+    var key = host.getAttribute('data-sb-toggle');
+    window.__sbOpenKey = (window.__sbOpenKey === key) ? null : key;
+    var rows = list.querySelectorAll('.row');
+    for (var i=0;i<rows.length;i++){
+      var r = rows[i]; var on = r.getAttribute('data-key') === window.__sbOpenKey;
+      r.classList.toggle('sb-open', on);
+      var c = r.querySelector('.sb-chev'); if(c) c.setAttribute('aria-expanded', on ? 'true' : 'false');
+    }
+  });
+})();
 
 const __rariliinSidebarSpeciesOrder = (function(){
   const order = Object.create(null);
@@ -7964,12 +8406,20 @@ function render() {
   const q = (document.getElementById('filterBox').value||'').toLowerCase().trim();
   const list = document.getElementById('list'); list.innerHTML='';
   const recent7 = is7daysOnly();
+  const rlClassic = !!(window.__sbIsClassic && window.__sbIsClassic());
+  const rlSrc = rlSrcEff();
   const arr = DATA.filter(function(x){
     const meta = window.resolveSpeciesMetaShared ? window.resolveSpeciesMetaShared(x.est) : { rariliinCode: '' };
     const speciesName = String(x.est || '').toLowerCase().trim();
     const rariliinCode = String(meta.rariliinCode || '').toLowerCase().trim();
     const matchesFilter = !q || speciesName.includes(q) || (rariliinCode && rariliinCode.includes(q));
     if(!matchesFilter) return false;
+    if(!rlClassic){
+      const pS = points[x.est];
+      if(window.__hideSeen && pS && pS.visible === false) return false;
+      if(rlSrc === 'elu' && !rlHasElu(pS)) return false;
+      if(rlSrc === 'ebird' && !rlHasEb(x.est)) return false;
+    }
     if(recent7){
       const p = points[x.est];
       if(!p) return false;
@@ -7980,7 +8430,21 @@ function render() {
     return true;
   });
   arr.sort(compareRariliinSidebarSpecies);
-  for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
+  if(!rlClassic && !recent7){
+    /* P84b: split into last-7-days (same predicate as the 7p filter) and the rest, each keeping compareRariliinSidebarSpecies order */
+    const rlRecent = [], rlRest = [];
+    for (const o of arr) (rlIsRecent(points[o.est]) ? rlRecent : rlRest).push(o);
+    if(rlRecent.length){
+      list.insertAdjacentHTML('beforeend', '<div class="sb-sec">' + escapeHtml(rlStr('recent') || 'Viimased 7 paeva') + ' <span class="n">' + rlRecent.length + '</span></div>');
+      for (const o of rlRecent) list.insertAdjacentHTML('beforeend', rowHTML(o));
+    }
+    if(rlRest.length){
+      list.insertAdjacentHTML('beforeend', '<div class="sb-sec">' + escapeHtml(rlStr('earlier') || 'Varasemad') + ' ' + rlYear() + '</div>');
+      for (const o of rlRest) list.insertAdjacentHTML('beforeend', rowHTML(o));
+    }
+  } else {
+    for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
+  }
   const firstRow = list.querySelector('.row[data-key]');
   const syncedPredictionSpecies = getPredictionSpeciesPreference();
   if(syncedPredictionSpecies){
@@ -8024,6 +8488,7 @@ function render() {
       }
     }
   } catch(e){ /* ignore logging errors */ }
+  rlPaintCounts();
 }
 
 function getPredictionSpeciesPreference(){

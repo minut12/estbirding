@@ -119,6 +119,7 @@
 /* --- P58c Card v2 (species observation popup) --- */
 .leaflet-popup-content-wrapper:has(.bm-card){border-radius:16px;padding:0;overflow:hidden}
 .leaflet-popup-content:has(.bm-card){margin:0;width:320px!important}
+@media(max-width:900px){.leaflet-popup-content:has(.bm-card),.leaflet-popup-content:has(.bm-sc){zoom:.85}}
 .bm-card{width:320px;max-width:320px;box-sizing:border-box;background:#fff;border-radius:16px;overflow:hidden;
   font:400 13px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#222a26}
 .bm-card-band{position:relative;height:74px;overflow:hidden;background:#f2f8f4}
@@ -10391,7 +10392,7 @@ function _renderEluObsMarkers(){
         if(co.sid) __d.sid = co.sid;
         __gbifOccById[__sid] = { species: key, lat: Number(co.lat), lon: Number(co.lon), date: co.d ? String(co.d).slice(0,10) : null, details: (Object.keys(__d).length ? __d : null) };
         var m = L.marker([Number(co.lat), Number(co.lon)], { icon: _eluObsIcon(avatarUrl, (window.getSpeciesMetaShared ? ((getSpeciesMetaShared(key)||{}).rarityLevel || 'none') : 'none')) });
-        m.bindPopup(_eluObsPopupHtml(key, co, __sid));
+        m.bindPopup(_eluObsPopupHtml(key, co, __sid), { autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) });
         m.addTo(map); // base map pane, like GBIF markers — NOT the cluster group
         markerList.push(m);
       }catch(e){}
@@ -10680,7 +10681,7 @@ function updateMarker(key) {
   if(m.getPopup()){
     m.setPopupContent(popupHtml);
   } else {
-    m.bindPopup(popupHtml, { closeButton:true, autoPan:true, closeOnClick:false, autoClose:false });
+    m.bindPopup(popupHtml, { closeButton:true, autoPan:true, closeOnClick:false, autoClose:false, autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) });
   }
   m.on('click', () => m.openPopup());
   m.on('touchend', () => m.openPopup());
@@ -14795,7 +14796,7 @@ var __sharedDefaults = {};
       var icon = _markerIcon(avatar, _borderColorByDate(ep.t), null, metaCfg.rarityLevel || 'none', { srcTag: 'ebird' });
 
       var m = L.marker([finalLat, finalLon], { icon: icon });
-      m.bindPopup(ebirdEEPopupHtml(key, ep));
+      m.bindPopup(ebirdEEPopupHtml(key, ep), { autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) });
       var spCode = (typeof SPECIES_EBIRD_CODES !== 'undefined' && SPECIES_EBIRD_CODES[key]) || '';
       if(ep.subId || spCode) _bindEbirdCard(m, ep.subId ? String(ep.subId) : '', spCode);
       m.addTo(map);

@@ -410,6 +410,7 @@ html:not(.sb-classic) .bm-pin.is-old .bm-pin-shape{background:#eef1ef;border-col
 html:not(.sb-classic) .bm-pin.is-old .bm-pin-head{opacity:.8;background-color:#b9c4bd}
 /* P74c eBird source card (linnuliigid .bm-sc) */
 html:not(.sb-classic) .leaflet-popup-content-wrapper:has(.bm-sc){border-radius:16px;padding:0;overflow:hidden}
+@media(max-width:900px){html:not(.sb-classic) .leaflet-popup-content:has(.bm-sc){zoom:.85}}
 html:not(.sb-classic) .leaflet-popup-content:has(.bm-sc){margin:0;width:290px!important}
 html:not(.sb-classic) .leaflet-popup-content:has(.bm-sc--wide){width:320px!important}
 html:not(.sb-classic) .bm-sc{--sc:#0e7490;--sc-soft:#e0f2f5;--sc-ink:#155e75;width:290px;max-width:290px;box-sizing:border-box;background:#fff;border-radius:16px;padding:0;overflow:hidden;font:400 13px/1.45 system-ui,Arial,sans-serif;color:#222a26}
@@ -2962,7 +2963,7 @@ if (!DEV_DEBUG) {
   // new UI; euDecorateMarkers (installed on updateMarker below) then sets the real pin + card.
   var EU_PIN_OPTS = { className: "", iconSize: [44, 56], iconAnchor: [22, 56], popupAnchor: [0, -52] };
   var EU_STUB_ICON = L.divIcon(Object.assign({ html: "" }, EU_PIN_OPTS));
-  var EU_POPUP_OPTS = { maxWidth: 340, closeButton: true };
+  var EU_POPUP_OPTS = { maxWidth: 340, closeButton: true, autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) };
   var EU_OLD_DAYS = 3;
   var EU_POPUP_REPAN_MS = 1500;
   var EU_SWEEP_MS = 1500;

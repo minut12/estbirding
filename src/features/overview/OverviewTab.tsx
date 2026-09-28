@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CountryFlag, hasCountryFlag } from '@/components/icons/CountryFlag';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/auth/AuthContext';
 import {
@@ -302,12 +303,6 @@ function findSubId(entry: VaatlusEntry, lookup: Map<string, string>): string | u
   return lookup.get(`${entry.species_lat}|${entry.date}|${entry.location}`) ?? entry.sub_id ?? undefined;
 }
 
-const FLAG: Record<string, string> = {
-  EE: '🇪🇪', FI: '🇫🇮', LV: '🇱🇻', LT: '🇱🇹',
-  SE: '🇸🇪', NO: '🇳🇴', DK: '🇩🇰', PL: '🇵🇱',
-  DE: '🇩🇪', RU: '🇷🇺', 'RU-LEN': '🇷🇺',
-};
-
 const dayMonthFmt = new Intl.DateTimeFormat('et-EE', { day: 'numeric', month: 'long' });
 const dayMonthYearFmt = new Intl.DateTimeFormat('et-EE', { day: 'numeric', month: 'long', year: 'numeric' });
 const dateTimeFmt = new Intl.DateTimeFormat('et-EE', {
@@ -358,7 +353,7 @@ function formatObservers(observers: string[] | undefined): { text: string; unkno
 
 function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string; domId?: string }) {
   const tier = effectiveRarityTier(entry);
-  const flag = entry.country_code && entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
+  const flag = entry.country_code && entry.country_code !== 'EE' && hasCountryFlag(entry.country_code) ? entry.country_code : undefined;
   const obs = formatObservers(entry.observers);
   const isUnverified = entry.data_integrity === 'unverified';
   return (
@@ -420,7 +415,7 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId }: { entry: Vaatl
         {entry.country_code && entry.country_code !== 'EE' && (flag || entry.region) && (
           <>
             <span>·</span>
-            {flag && <span aria-hidden>{flag}</span>}
+            {flag && <CountryFlag code={flag} />}
             {entry.region && <span>{entry.region}</span>}
           </>
         )}
@@ -818,8 +813,11 @@ function entryDomId(scope: 'ee' | 'eu', entry: VaatlusEntry, idx: number): strin
 
 type MegaItem = { scope: 'ee' | 'eu'; idx: number; entry: VaatlusEntry; avatarUrl?: string };
 
-function MegaStrip({ items, onPick }: { items: MegaItem[]; onPick: (item: MegaItem) => void }) {
+function MegaStrip({ items, onPick, onMore }: { items: MegaItem[]; onPick: (item: MegaItem) => void; onMore: () => void }) {
   if (items.length === 0) return null;
+  const MAX = 8;
+  const shown = items.slice(0, MAX);
+  const rest = items.length - shown.length;
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -829,8 +827,8 @@ function MegaStrip({ items, onPick }: { items: MegaItem[]; onPick: (item: MegaIt
         <span className="text-xs text-muted-foreground">{items.length} liiki sel perioodil</span>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-        {items.map((it) => {
-          const flag = FLAG[it.entry.country_code || 'EE'];
+        {shown.map((it) => {
+          const flag = it.entry.country_code || 'EE';
           return (
             <button
               key={`${it.scope}-${it.idx}`}
@@ -845,12 +843,21 @@ function MegaStrip({ items, onPick }: { items: MegaItem[]; onPick: (item: MegaIt
               )}
               <div className="text-sm font-semibold leading-tight truncate">{it.entry.species_et}</div>
               <div className="text-xs text-muted-foreground flex items-center gap-1">
-                {flag && <span aria-hidden>{flag}</span>}
+                <CountryFlag code={flag} />
                 <span>{formatEntryDate(it.entry.date)}</span>
               </div>
             </button>
           );
         })}
+        {rest > 0 && (
+          <button
+            type="button"
+            onClick={() => onMore()}
+            className="shrink-0 w-[72px] rounded-lg border border-dashed border-red-800/50 text-red-800 text-sm font-semibold hover:bg-red-900/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-800"
+          >
+            +{rest}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1256,7 +1263,7 @@ export default function OverviewTab() {
                 </div>
               ))}
             </div>
-            <MegaStrip items={megaItems} onPick={jumpToEntry} />
+            <MegaStrip items={megaItems} onPick={jumpToEntry} onMore={() => setSection('eu')} />
             {introEt && (
               <p className="text-sm leading-relaxed">{introEt}</p>
             )}

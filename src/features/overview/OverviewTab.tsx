@@ -356,13 +356,14 @@ function formatObservers(observers: string[] | undefined): { text: string; unkno
   return { text: cleaned.join(', '), unknown: false };
 }
 
-function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string }) {
+function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string; domId?: string }) {
   const tier = effectiveRarityTier(entry);
   const flag = entry.country_code && entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
   const obs = formatObservers(entry.observers);
   const isUnverified = entry.data_integrity === 'unverified';
   return (
     <Card
+      id={domId}
       className={cn(
         'p-4 space-y-2',
         tier === 'rare' && 'border-l-4 border-l-amber-500 bg-amber-50/40',
@@ -811,6 +812,50 @@ function readEstbirdingState(state: unknown): EstbirdingNavState | null {
 // How long the violet ring stays on the card the user was sent to.
 const HIGHLIGHT_MS = 2000;
 
+function entryDomId(scope: 'ee' | 'eu', entry: VaatlusEntry, idx: number): string {
+  return `vaatlus-${scope}-${idx}-${entry.species_lat.replace(/[^a-z]/gi, '').toLowerCase()}`;
+}
+
+type MegaItem = { scope: 'ee' | 'eu'; idx: number; entry: VaatlusEntry; avatarUrl?: string };
+
+function MegaStrip({ items, onPick }: { items: MegaItem[]; onPick: (item: MegaItem) => void }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Badge className="bg-red-800 text-white hover:bg-red-800 border-transparent gap-1">
+          <AlertTriangle className="w-3 h-3" /> Mega rari
+        </Badge>
+        <span className="text-xs text-muted-foreground">{items.length} liiki sel perioodil</span>
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+        {items.map((it) => {
+          const flag = FLAG[it.entry.country_code || 'EE'];
+          return (
+            <button
+              key={`${it.scope}-${it.idx}`}
+              type="button"
+              onClick={() => onPick(it)}
+              className="shrink-0 w-[118px] text-left rounded-lg border border-red-800/50 bg-red-900/5 p-2 space-y-1 hover:bg-red-900/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-800"
+            >
+              {it.avatarUrl ? (
+                <img src={it.avatarUrl} alt="" className="w-full h-14 rounded-md object-cover" loading="lazy" />
+              ) : (
+                <div className="w-full h-14 rounded-md bg-muted flex items-center justify-center text-muted-foreground"><Bird className="w-6 h-6" /></div>
+              )}
+              <div className="text-sm font-semibold leading-tight truncate">{it.entry.species_et}</div>
+              <div className="text-xs text-muted-foreground flex items-center gap-1">
+                {flag && <span aria-hidden>{flag}</span>}
+                <span>{formatEntryDate(it.entry.date)}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function OverviewTab() {
   const { session } = useAuth();
   const location = useLocation();
@@ -1039,6 +1084,27 @@ export default function OverviewTab() {
     });
   }, [toenaosusEntries]);
   const toenaosusCount = sortedToenaosusEntries.length;
+  const speciesMetaMap = useMemo(() => loadSpeciesMeta(), [report]);
+  const ebirdCodeLookup = useMemo(() => buildSciNameToEbirdCode(speciesMetaMap), [speciesMetaMap]);
+  const avatarUrlLookup = useMemo(() => buildSciNameToAvatarUrl(speciesMetaMap), [speciesMetaMap]);
+
+  const megaItems = useMemo<MegaItem[]>(() => {
+    const pick = (scope: 'ee' | 'eu', list: VaatlusEntry[]): MegaItem[] =>
+      list.map((entry, idx) => ({ scope, idx, entry, avatarUrl: lookupAvatarUrl(entry.species_lat, avatarUrlLookup) }))
+          .filter((it) => effectiveRarityTier(it.entry) === 'mega');
+    return [...pick('ee', eeEntries), ...pick('eu', euEntries)];
+  }, [eeEntries, euEntries, avatarUrlLookup]);
+
+  const jumpToEntry = useCallback((item: MegaItem) => {
+    setSection(item.scope);
+    window.setTimeout(() => {
+      const el = document.getElementById(entryDomId(item.scope, item.entry, item.idx));
+      if (!el) return;
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.add('ring-2', 'ring-red-800');
+      window.setTimeout(() => el.classList.remove('ring-2', 'ring-red-800'), HIGHLIGHT_MS);
+    }, 50);
+  }, []);
 
   // ---- P7a: species-level prediction ratings on the Tõenäosus cards ----
   // One load per raport, not one per card. Keyed by ebird_code; site_index is
@@ -1112,9 +1178,6 @@ export default function OverviewTab() {
   };
   const activeEntries = section === 'eu' ? euEntries : eeEntries;
   const activeLookup = section === 'eu' ? euSubIdLookup : eeSubIdLookup;
-  const speciesMetaMap = useMemo(() => loadSpeciesMeta(), [report]);
-  const ebirdCodeLookup = useMemo(() => buildSciNameToEbirdCode(speciesMetaMap), [speciesMetaMap]);
-  const avatarUrlLookup = useMemo(() => buildSciNameToAvatarUrl(speciesMetaMap), [speciesMetaMap]);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -1125,13 +1188,9 @@ export default function OverviewTab() {
             {report && periodStart && periodEnd && (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Periood: {formatPeriod(periodStart, periodEnd)}
+                  {formatPeriod(periodStart, periodEnd)}
+                  {lastUpdated && <> &middot; v&auml;rskendatud {formatRelative(lastUpdated)}</>}
                 </p>
-                {lastUpdated && (
-                  <p className="text-xs text-muted-foreground">
-                    Värskendatud {formatRelative(lastUpdated)}
-                  </p>
-                )}
               </>
             )}
           </div>
@@ -1185,6 +1244,19 @@ export default function OverviewTab() {
 
         {!loading && !error && report && (
           <>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { v: eeRarities, k: 'haruldust Eestis' },
+                { v: euRarities, k: 'naabermaades' },
+                { v: toenaosusCount, k: 'tõenäolist saabujat' },
+              ].map((s) => (
+                <div key={s.k} className="rounded-lg border border-border bg-card px-3 py-2">
+                  <div className="text-xl font-semibold tabular-nums leading-tight">{s.v}</div>
+                  <div className="text-xs text-muted-foreground">{s.k}</div>
+                </div>
+              ))}
+            </div>
+            <MegaStrip items={megaItems} onPick={jumpToEntry} />
             {introEt && (
               <p className="text-sm leading-relaxed">{introEt}</p>
             )}
@@ -1487,6 +1559,7 @@ export default function OverviewTab() {
                       subId={findSubId(entry, activeLookup)}
                       ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
                       avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
+                      domId={entryDomId(section === 'eu' ? 'eu' : 'ee', entry, idx)}
                     />
                   ))
                 )}

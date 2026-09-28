@@ -103,6 +103,44 @@ export async function upsertPredictionRating(
   }
 }
 
+export interface DeletePredictionRatingInput {
+  raportId: string;
+  ebirdCode: string;
+  siteIndex: number;
+}
+
+/**
+ * Removes the caller's own rating row. `raportId` must be the raport the row
+ * was rated on (a carried row's `raportId`), not necessarily the one on screen.
+ */
+export async function deletePredictionRating(
+  input: DeletePredictionRatingInput,
+): Promise<UpsertPredictionRatingResult> {
+  if (!input.raportId || !input.ebirdCode || !Number.isFinite(input.siteIndex)) {
+    return { ok: false, reason: 'error' };
+  }
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const userId = sessionData?.session?.user?.id;
+    if (!userId) return { ok: false, reason: 'anon' };
+    const { error } = await (supabase as any)
+      .from('prediction_ratings')
+      .delete()
+      .eq('raport_id', input.raportId)
+      .eq('ebird_code', input.ebirdCode)
+      .eq('site_index', input.siteIndex)
+      .eq('user_id', userId);
+    if (error) {
+      console.warn('[pred_rate] delete failed', error);
+      return { ok: false, reason: 'error' };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.warn('[pred_rate] delete threw', e);
+    return { ok: false, reason: 'error' };
+  }
+}
+
 /**
  * Maps either shape onto PredictionRatingRow: the RPC names the originating
  * raport `from_raport_id` and flags `carried`, the per-raport table read has

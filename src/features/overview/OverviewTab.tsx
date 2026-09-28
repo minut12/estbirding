@@ -13,6 +13,7 @@ import {
   PREDICTION_RATING_VALUES,
   SITE_INDEX_SPECIES_LEVEL,
   loadMyPredictionRatings,
+  deletePredictionRating,
   upsertPredictionRating,
   type PredictionRating,
 } from '@/lib/predictionRatings';
@@ -703,41 +704,75 @@ async function fetchLatestVaatluste(): Promise<VaatlusteRaport | null> {
  * per entry. site_index is always -1 here: the card shows no per-site rows, so
  * a site-level value would record a rating against a site nobody was shown.
  */
-function PredictionRateChips({
-  current,
-  pending,
-  message,
-  isAnon,
-  onRate,
-}: {
+const RATING_STYLE: Record<PredictionRating, { dot: string; on: string }> = {
+  oige:      { dot: 'bg-emerald-600', on: 'bg-emerald-600 border-emerald-600 text-white' },
+  osaliselt: { dot: 'bg-amber-500',   on: 'bg-amber-500 border-amber-500 text-white' },
+  vale:      { dot: 'bg-red-600',     on: 'bg-red-600 border-red-600 text-white' },
+  voimatu:   { dot: 'bg-stone-500',   on: 'bg-stone-500 border-stone-500 text-white' },
+};
+
+function PredictionRateChips({ ebirdCode, current, note, pending, message, isAnon, onRate, onNote }: {
+  ebirdCode: string;
   current: PredictionRating | null;
+  note: string | null;
   pending: boolean;
   message: string | null;
   isAnon: boolean;
   onRate: (rating: PredictionRating) => void;
+  onNote: (note: string) => void;
 }) {
-  if (isAnon) {
-    return <p className="text-xs text-muted-foreground">Hindamiseks logi sisse</p>;
-  }
+  const [draft, setDraft] = useState(note ?? '');
+  useEffect(() => { setDraft(note ?? ''); }, [note]);
+  if (isAnon) return <p className="text-xs text-muted-foreground">Hindamiseks logi sisse</p>;
   return (
-    <div>
-      <p className="text-xs font-semibold text-muted-foreground">Kas ennustus oli õige?</p>
-      <div className="mt-1 flex flex-wrap gap-1">
-        {PREDICTION_RATING_VALUES.map((value) => (
-          <Button
-            key={value}
-            type="button"
-            size="sm"
-            variant={current === value ? 'default' : 'outline'}
-            className="h-6 rounded-full px-2 text-xs"
-            disabled={pending}
-            onClick={() => onRate(value)}
-          >
-            {PREDICTION_RATING_LABELS[value]}
-          </Button>
-        ))}
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold">Kas ennustus oli &otilde;ige?</p>
+        {message && <span className="text-xs text-muted-foreground">{message}</span>}
       </div>
-      {message && <p className="mt-1 text-xs text-muted-foreground">{message}</p>}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+        {PREDICTION_RATING_VALUES.map((value) => {
+          const on = current === value;
+          const st = RATING_STYLE[value];
+          return (
+            <button
+              key={value}
+              type="button"
+              disabled={pending}
+              aria-pressed={on}
+              onClick={() => onRate(value)}
+              className={cn(
+                'relative flex items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                on ? st.on : 'bg-card border-border text-foreground hover:border-muted-foreground',
+                pending && 'opacity-60',
+              )}
+            >
+              <span className={cn('h-2 w-2 rounded-full', on ? 'bg-white' : cn(st.dot, 'opacity-60'))} />
+              <span className="capitalize">{PREDICTION_RATING_LABELS[value]}</span>
+              {on && <X className="absolute right-1 top-1 h-2.5 w-2.5 opacity-70" />}
+            </button>
+          );
+        })}
+      </div>
+      {current && (
+        <div className="space-y-1">
+          <textarea
+            id={`rating-note-${ebirdCode}`}
+            value={draft}
+            maxLength={300}
+            rows={2}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => onNote(draft)}
+            placeholder="Miks? L&uuml;hike m&auml;rkus j&otilde;uab j&auml;rgmise ennustuse koostamisel Sonnetile."
+            className="w-full resize-y rounded-md border border-border bg-card px-2.5 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          />
+          <div className="flex justify-between text-[11px] text-muted-foreground">
+            <span>Vabatahtlik</span>
+            <span className="tabular-nums">{draft.length}/300</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -862,6 +897,8 @@ function MegaStrip({ items, onPick, onMore }: { items: MegaItem[]; onPick: (item
     </div>
   );
 }
+
+type MyRating = { rating: PredictionRating; note: string | null; raportId: string };
 
 export default function OverviewTab() {
   const { session } = useAuth();
@@ -1118,7 +1155,7 @@ export default function OverviewTab() {
   // always SITE_INDEX_SPECIES_LEVEL here, so the popup's site-level rows for
   // the same species are a different row and are never overwritten.
   const toenaosusRaportId = toenaosusReport?.id ?? null;
-  const [myRatings, setMyRatings] = useState<Record<string, PredictionRating>>({});
+  const [myRatings, setMyRatings] = useState<Record<string, MyRating>>({});
   const [ratingPending, setRatingPending] = useState<string | null>(null);
   const [ratingMessage, setRatingMessage] = useState<Record<string, string>>({});
 
@@ -1127,41 +1164,56 @@ export default function OverviewTab() {
     let alive = true;
     loadMyPredictionRatings(toenaosusRaportId).then((rows) => {
       if (!alive) return;
-      const next: Record<string, PredictionRating> = {};
+      const next: Record<string, MyRating> = {};
       for (const r of rows) {
-        if (r.siteIndex === SITE_INDEX_SPECIES_LEVEL) next[r.ebirdCode] = r.rating;
+        if (r.siteIndex === SITE_INDEX_SPECIES_LEVEL) next[r.ebirdCode] = { rating: r.rating, note: r.note, raportId: r.raportId };
       }
       setMyRatings(next);
     });
     return () => { alive = false; };
   }, [session, toenaosusRaportId]);
 
-  // Optimistic, then corrected — same contract the map popup follows.
+  const flashRatingMessage = useCallback((ebirdCode: string, text: string) => {
+    setRatingMessage((m) => ({ ...m, [ebirdCode]: text }));
+    window.setTimeout(() => setRatingMessage((m) => ({ ...m, [ebirdCode]: '' })), 3000);
+  }, []);
+
+  // Optimistic, then corrected. Same chip again = clear (delete the row).
   const rateSpecies = useCallback(async (ebirdCode: string, rating: PredictionRating) => {
     if (!toenaosusRaportId || !ebirdCode) return;
     const prev = myRatings[ebirdCode] ?? null;
-    setMyRatings((m) => ({ ...m, [ebirdCode]: rating }));
+    const clearing = prev?.rating === rating;
     setRatingMessage((m) => ({ ...m, [ebirdCode]: '' }));
     setRatingPending(ebirdCode);
-    const res = await upsertPredictionRating({
-      raportId: toenaosusRaportId,
-      ebirdCode,
-      siteIndex: SITE_INDEX_SPECIES_LEVEL,
-      rating,
-    });
-    setRatingPending(null);
-    if (res.ok) return;
-    setMyRatings((m) => {
-      const next = { ...m };
-      if (prev) next[ebirdCode] = prev; else delete next[ebirdCode];
-      return next;
-    });
-    const text = res.reason === 'anon' ? 'Hindamiseks logi sisse' : 'Salvestamine ebaõnnestus';
-    setRatingMessage((m) => ({ ...m, [ebirdCode]: text }));
-    window.setTimeout(() => {
-      setRatingMessage((m) => ({ ...m, [ebirdCode]: '' }));
-    }, 3000);
-  }, [myRatings, toenaosusRaportId]);
+    if (clearing) {
+      setMyRatings((m) => { const n = { ...m }; delete n[ebirdCode]; return n; });
+      const res = await deletePredictionRating({ raportId: prev.raportId, ebirdCode, siteIndex: SITE_INDEX_SPECIES_LEVEL });
+      setRatingPending(null);
+      if (res.ok) { flashRatingMessage(ebirdCode, 'Hinnang eemaldatud'); return; }
+      setMyRatings((m) => ({ ...m, [ebirdCode]: prev }));
+    } else {
+      setMyRatings((m) => ({ ...m, [ebirdCode]: { rating, note: prev?.note ?? null, raportId: toenaosusRaportId } }));
+      const res = await upsertPredictionRating({ raportId: toenaosusRaportId, ebirdCode, siteIndex: SITE_INDEX_SPECIES_LEVEL, rating, note: prev?.note ?? null });
+      setRatingPending(null);
+      if (res.ok) return;
+      setMyRatings((m) => { const n = { ...m }; if (prev) n[ebirdCode] = prev; else delete n[ebirdCode]; return n; });
+      if (res.reason === 'anon') { flashRatingMessage(ebirdCode, 'Hindamiseks logi sisse'); return; }
+    }
+    flashRatingMessage(ebirdCode, 'Salvestamine ebaõnnestus');
+  }, [myRatings, toenaosusRaportId, flashRatingMessage]);
+
+  const saveRatingNote = useCallback(async (ebirdCode: string, note: string) => {
+    const cur = myRatings[ebirdCode];
+    if (!toenaosusRaportId || !cur) return;
+    const trimmed = note.trim().slice(0, 300);
+    const nextNote = trimmed.length ? trimmed : null;
+    if (nextNote === cur.note) return;
+    setMyRatings((m) => ({ ...m, [ebirdCode]: { ...cur, note: nextNote, raportId: toenaosusRaportId } }));
+    const res = await upsertPredictionRating({ raportId: toenaosusRaportId, ebirdCode, siteIndex: SITE_INDEX_SPECIES_LEVEL, rating: cur.rating, note: nextNote });
+    if (res.ok) { flashRatingMessage(ebirdCode, 'Kommentaar salvestatud'); return; }
+    setMyRatings((m) => ({ ...m, [ebirdCode]: cur }));
+    flashRatingMessage(ebirdCode, 'Salvestamine ebaõnnestus');
+  }, [myRatings, toenaosusRaportId, flashRatingMessage]);
   const handleCopyToenaosusJson = async () => {
     const payload = {
       source: 'toenaosus_raport',
@@ -1534,11 +1586,14 @@ export default function OverviewTab() {
 
                           {toenaosusRaportId && entry.ebird_code && (
                             <PredictionRateChips
-                              current={myRatings[entry.ebird_code] ?? null}
+                              ebirdCode={entry.ebird_code}
+                              current={myRatings[entry.ebird_code]?.rating ?? null}
+                              note={myRatings[entry.ebird_code]?.note ?? null}
                               pending={ratingPending === entry.ebird_code}
                               message={ratingMessage[entry.ebird_code] || null}
                               isAnon={!session}
                               onRate={(rating) => rateSpecies(entry.ebird_code, rating)}
+                              onNote={(n) => saveRatingNote(entry.ebird_code, n)}
                             />
                           )}
                         </Card>

@@ -18,6 +18,7 @@ import {
 import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3, Clock, Copy, Check, Wind } from 'lucide-react';
 import { toast } from 'sonner';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
+import { isSpringWindow } from '@/lib/speciesVisibility';
 import CorridorBadge from './CorridorBadge';
 import WindyChart from './WindyChart';
 import RareObservationsFeed from './RareObservationsFeed';
@@ -1021,6 +1022,10 @@ export default function OverviewTab() {
     [elurikkusReport],
   );
   const arrivalsCount = arrivals.length;
+  const springWindow = isSpringWindow();
+  useEffect(() => {
+    if (!springWindow && section === 'arrivals') setSection('ee');
+  }, [springWindow, section]);
   const toenaosusEntries = useMemo(
     () => (Array.isArray(toenaosusReport?.entries) ? toenaosusReport!.entries : []),
     [toenaosusReport],
@@ -1183,7 +1188,7 @@ export default function OverviewTab() {
             {introEt && (
               <p className="text-sm leading-relaxed">{introEt}</p>
             )}
-            {kevadranneNarrative && (
+            {springWindow && kevadranneNarrative && (
               <p className="text-sm leading-relaxed text-foreground/90">{kevadranneNarrative}</p>
             )}
 
@@ -1191,9 +1196,9 @@ export default function OverviewTab() {
               {([
                 { id: 'ee' as const, label: 'Eesti', count: eeRarities, disabled: false },
                 { id: 'eu' as const, label: 'Euroopa', count: euRarities, disabled: false },
-                { id: 'arrivals' as const, label: 'Saabujad', count: arrivalsCount, disabled: arrivalsCount === 0 },
+                ...(springWindow ? [{ id: 'arrivals' as const, label: 'Saabujad', count: arrivalsCount, disabled: arrivalsCount === 0 }] : []),
                 { id: 'toenaosus' as const, label: 'Tõenäosus', count: toenaosusCount, disabled: false },
-                { id: 'arhiiv' as const, label: 'Arhiiv', count: 0, disabled: false },
+                { id: 'arhiiv' as const, label: 'Naabermaad', count: 0, disabled: false },
               ]).map((t) => (
                 <button
                   key={t.id}

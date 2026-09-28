@@ -22,6 +22,14 @@ export function tallinnYear(d: Date): number {
   return Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Tallinn', year: 'numeric' }).format(d));
 }
 
+/** Spring window for Kevadranne UI: 1 Jan - 1 Jul inclusive, Europe/Tallinn. */
+export function isSpringWindow(now: Date = new Date()): boolean {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Tallinn', month: 'numeric', day: 'numeric' }).formatToParts(now);
+  const month = Number(parts.find((p) => p.type === 'month')?.value ?? 0);
+  const day = Number(parts.find((p) => p.type === 'day')?.value ?? 0);
+  return month < 7 || (month === 7 && day === 1);
+}
+
 export function isCurrentTallinnYear(iso: string | null | undefined, now: Date = new Date()): boolean {
   if (!iso) return false;
   const d = new Date(iso);

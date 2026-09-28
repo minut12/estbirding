@@ -118,7 +118,7 @@ export default function RareObservationsFeed() {
   return (
     <section className="mt-8 pt-6 border-t border-border space-y-4 w-full max-w-full overflow-x-hidden">
       <header className="space-y-1">
-        <h3 className="text-base font-semibold">Hiljutised vaatlused naabermaades</h3>
+        <h3 className="text-base font-semibold">Hiljutised raride vaatlused naabermaades</h3>
         <p className="text-sm text-muted-foreground">
           Arhiveeritud haruldaste liikide vaatlused LV, LT, BY, PL ja Kaliningradi piirkonnast.
           Andmed kogutakse eBirdi kaudu kaks korda päevas.

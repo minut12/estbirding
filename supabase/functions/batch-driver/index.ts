@@ -171,15 +171,26 @@ const JOBS: Record<JobName, JobConfig> = {
     target: "elurikkus-bulk-refresh",
     secretHeader: "x-refresh-secret",
     secretEnv: "ELURIKKUS_REFRESH_SECRET",
-    // limit 25 (was 50) so one chunk lands around 30 s, well inside
-    // CALL_TIMEOUT_MS; maxCalls 30 (was 15) because 445 species / 25 = 18
-    // chunks, leaving headroom for a growing species list.
-    maxCalls: 30,
-    body: (s) => ({ offset: s.offset, limit: 25 }),
+    // P88b: limit 10 (x ~3.4 s = ~35 s < CALL_TIMEOUT_MS) at the 2.5 s elurikkus pace; stalest-first; 445/10 = 45 chunks -> maxCalls 50.
+    maxCalls: 50,
+    body: (s) => ({ offset: s.offset, limit: 10, stalest: true }),
     step: (s, resp) => {
       const attempted = Number(resp.done ?? 0);
       const updated = Number(resp.updated ?? 0);
       const total = Number(resp.total_species ?? 0);
+      // P88b: target stopped early because elurikkus.ee rate-limited it. End the run cleanly
+      // (next cron run resumes stalest-first) before the no_progress guard fires.
+      if (resp.rate_limited === true) {
+        return {
+          state: {
+            ...s,
+            offset: s.offset + attempted,
+            total_species: Number.isFinite(total) && total > 0 ? total : s.total_species,
+          },
+          stop: true,
+          reason: "rate_limited",
+        };
+      }
 
       // Fail loud: a chunk that attempted species but upserted nothing is a
       // broken chunk, not an empty one. Silently walking past it is how the

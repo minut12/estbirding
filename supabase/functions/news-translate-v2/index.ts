@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 // news-translate-v2
 // M7.3: port of the n8n workflow "estbirding-news-ingest-translate-v13"
@@ -618,7 +619,7 @@ Deno.serve(async (req) => {
   const maxTokens = dryRun && Number.isFinite(rawOverride) && rawOverride > 0
     ? Math.floor(rawOverride)
     : 4096;
-  const model = Deno.env.get("ANTHROPIC_MODEL_NEWS") || "claude-sonnet-5";
+  const model = Deno.env.get("ANTHROPIC_MODEL_NEWS") || "claude-sonnet-5-5";
 
   const started = Date.now();
   const runId = crypto.randomUUID();

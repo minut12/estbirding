@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-30 - P85g user_feedback.note (prediction_ratings.note) reaches Sonnet
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 // P6b.1 2026-09-05: effort-normalised site share ranking (ennustus P6b.1)
@@ -157,7 +158,7 @@ const EBIRD_RELAY_URL = Deno.env.get("EBIRD_RELAY_URL") ||
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
-const DEFAULT_MODEL = "claude-sonnet-5";
+const DEFAULT_MODEL = "claude-sonnet-5-5";
 const MAX_TOKENS = 16384;
 
 // M7.4a: beforeunload ~360 s, hard kill ~400 s.

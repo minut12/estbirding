@@ -1,4 +1,4 @@
-// redeploy-marker: P59 2026-09-22
+// redeploy-marker: P87c 2026-09-30
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
@@ -1077,7 +1077,7 @@ Deno.serve(async (req) => {
       // === GUARD: never downgrade an existing 'exact' cache row to a lower-precision source ===
       const { data: existing } = await supabase
         .from('elurikkus_cache')
-        .select('coords_source, coords_status, lat, lon')
+        .select('coords_source, coords_status, lat, lon, t, t_dt')
         .eq('species_name', name)
         .maybeSingle();
 
@@ -1091,7 +1091,21 @@ Deno.serve(async (req) => {
         Number.isFinite(existing?.lat) &&
         Number.isFinite(existing?.lon);
 
-      const preserveExactCoords = existingIsExact && (resolved?.coords_source ?? 'none') !== 'exact';
+      // P87c: only keep old exact GPS when it belongs to the same observation as the new metadata
+      // (or nothing resolved this run); otherwise a newer hidden-coords obs gets an older obs's pin.
+      const newT = String(metaSource?.observed_at ?? t ?? '').slice(0, 10);
+      const newTdt = metaSource?.precise_dt ?? null;
+      const exT = String(existing?.t ?? '').slice(0, 10);
+      const exTdt = existing?.t_dt ?? null;
+      const sameObs = (newTdt && exTdt)
+        ? Date.parse(String(newTdt)) === Date.parse(String(exTdt))
+        : (!!newT && newT === exT);
+      const preserveExactCoords = existingIsExact
+        && (resolved?.coords_source ?? 'none') !== 'exact'
+        && (resolved === null || sameObs);
+      if (existingIsExact && (resolved?.coords_source ?? 'none') !== 'exact' && !preserveExactCoords) {
+        console.log('[elu-cache] DROP-STALE-EXACT', name, { exT, exTdt, newT, newTdt, new_source: resolved?.coords_source ?? 'none' });
+      }
       if (preserveExactCoords) {
         console.log('[elu-cache] PRESERVE-EXACT', name,
           '(existing exact GPS retained; new resolution =', (resolved?.coords_source ?? 'none') + '); updating non-coord fields');

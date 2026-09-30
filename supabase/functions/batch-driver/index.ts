@@ -70,7 +70,7 @@ class FatalCallError extends Error {}
 // ---------------------------------------------------------------------------
 
 type ForeignGbifJob = "gbif_fi" | "gbif_se" | "gbif_lv" | "gbif_lt" | "gbif_ru";
-type JobName = "ennustus" | "elurikkus" | "gbif" | ForeignGbifJob;
+type JobName = "ennustus" | "elurikkus" | "elurikkus_recent" | "gbif" | ForeignGbifJob;
 type GbifCountry = "FI" | "SE" | "LV" | "LT" | "RU";
 
 // JobState + normalizeState now live in ./state.ts (imported above).
@@ -228,6 +228,28 @@ const JOBS: Record<JobName, JobConfig> = {
     },
   },
 
+  // P89b: recent-feed job. Each call re-reads the Elurikkus recent feed and refreshes up to 10 species
+  // whose newest record is newer than the cache; stops when none are left (up_to_date).
+  elurikkus_recent: {
+    target: "elurikkus-bulk-refresh",
+    secretHeader: "x-refresh-secret",
+    secretEnv: "ELURIKKUS_REFRESH_SECRET",
+    maxCalls: 6,
+    body: (_s) => ({ mode: "recent", limit: 10 }),
+    step: (s, resp) => {
+      const attempted = Number(resp.done ?? 0);
+      const updated = Number(resp.updated ?? 0);
+      const state: JobState = {
+        ...s,
+        offset: s.offset + attempted,
+        last: { attempted, updated, errors: Number(resp.errors ?? 0), recent: resp.recent ?? null },
+      };
+      if (resp.rate_limited === true) return { state, stop: true, reason: "rate_limited" };
+      if (attempted === 0) return { state, stop: true, reason: "up_to_date" };
+      if (updated === 0) return { state, stop: true, reason: "no_progress" };
+      return { state, stop: false, reason: null };
+    },
+  },
   // gbif-bulk-refresh returns boolean `done` (next_offset >= species.length)
   // and `total_species`, so the species count never needs hardcoding -- the
   // list comes from a remote species_meta_v1.json and changes over time.

@@ -1,4 +1,4 @@
-// redeploy-marker: P88d 2026-09-30
+// redeploy-marker: P89b 2026-09-30
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
@@ -519,6 +519,7 @@ Deno.serve(async (req) => {
 
   let species: string[];
   let bodyOffset = 0;
+  let recentInfo: { feed_species: number; changed_total: number; unmatched: string[] } | null = null;
   const body = await req.json().catch(() => ({}));
 
 
@@ -991,6 +992,58 @@ Deno.serve(async (req) => {
 
   if (body && Array.isArray(body.species) && body.species.length > 0) {
     species = body.species.map((s: unknown) => String(s).trim()).filter(Boolean);
+  } else if (body && body.mode === "recent") {
+    // P89b: recent-feed mode. One Elurikkus API query (DB pg_net, elu_pgnet_recent_feed: class:Aves since
+    // yesterday Europe/Tallinn, newest first, max 200) -> refresh only species whose newest feed record is
+    // newer than the cache (t_dt, else t). Names are matched case-insensitively; unmatched ones are reported.
+    const limit = typeof body.limit === "number" ? Math.min(25, Math.max(1, body.limit)) : 10;
+    const sbRecent = createClient(Deno.env.get("SUPABASE_URL") || "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "");
+    const { data: feedId, error: feedErr } = await sbRecent.rpc("elu_pgnet_recent_feed");
+    const reqId = Number(feedId);
+    let feedJson: { results?: unknown[] } | null = null;
+    let feedProblem = feedErr ? `rpc: ${feedErr.message}` : (Number.isFinite(reqId) ? "" : "rpc: no request id");
+    const feedDeadline = Date.now() + 15000;
+    while (!feedProblem && !feedJson && Date.now() < feedDeadline) {
+      await delay(700);
+      const { data: fr, error: fe } = await sbRecent.rpc("elu_pgnet_collect", { p_ids: [reqId] });
+      if (fe) { feedProblem = `collect: ${fe.message}`; break; }
+      const row = Array.isArray(fr) && fr.length > 0 ? fr[0] as { status_code: number | null; content: string | null } : null;
+      if (!row) continue;
+      if (Number(row.status_code) !== 200) { feedProblem = `feed HTTP ${String(row.status_code)}`; break; }
+      try { feedJson = JSON.parse(String(row.content ?? "")) as { results?: unknown[] }; } catch (_e) { feedProblem = "feed not JSON"; }
+    }
+    if (!feedJson) {
+      return new Response(JSON.stringify({ ok: false, mode: "recent", error: feedProblem || "feed timeout" }), { status: 502, headers: corsHeaders });
+    }
+    const canon = new Map<string, string>();
+    for (const n of DEFAULT_SPECIES) canon.set(n.normalize("NFC").toLowerCase(), n);
+    const newestBy = new Map<string, number>();
+    const unmatched = new Set<string>();
+    for (const r of (feedJson.results ?? []) as { common_name_est?: string | null; event_datetime_point?: string | null; event_date?: string | null }[]) {
+      const raw = String(r.common_name_est ?? "").trim().normalize("NFC").toLowerCase();
+      if (!raw) continue;
+      const nm = canon.get(raw);
+      if (!nm) { unmatched.add(raw); continue; }
+      const ms = Date.parse(String(r.event_datetime_point ?? r.event_date ?? ""));
+      if (Number.isFinite(ms) && ms > (newestBy.get(nm) ?? -Infinity)) newestBy.set(nm, ms);
+    }
+    const feedNames = [...newestBy.keys()];
+    let cRows: { species_name: string; t: string | null; t_dt: string | null }[] = [];
+    if (feedNames.length > 0) {
+      const { data: cData } = await sbRecent.from("elurikkus_cache").select("species_name, t, t_dt").in("species_name", feedNames);
+      cRows = (cData ?? []) as { species_name: string; t: string | null; t_dt: string | null }[];
+    }
+    const cacheMs = new Map<string, number>();
+    for (const c of cRows) {
+      const ms = c.t_dt ? Date.parse(c.t_dt) : (c.t ? Date.parse(String(c.t).slice(0, 10) + "T00:00:00Z") : NaN);
+      if (Number.isFinite(ms)) cacheMs.set(c.species_name, ms);
+    }
+    const changed = feedNames
+      .filter((n) => { const c = cacheMs.get(n); return c === undefined || (newestBy.get(n) ?? 0) > c; })
+      .sort((a, b) => (newestBy.get(b) ?? 0) - (newestBy.get(a) ?? 0));
+    recentInfo = { feed_species: feedNames.length, changed_total: changed.length, unmatched: [...unmatched].slice(0, 20) };
+    species = changed.slice(0, limit);
+    bodyOffset = 0;
   } else if (body && body.stalest === true) {
     // P88b: stalest-first. Species with no cache row first, then oldest fetched_at.
     // Rows refreshed in the last 60 min are skipped, so a multi-chunk run never repeats one
@@ -1325,6 +1378,7 @@ Deno.serve(async (req) => {
   const result = {
     done: attemptedCount,
     rate_limited: rateLimited,
+    recent: recentInfo,
     updated,
     errors: errors.length,
     error_details: errors.slice(0, 20),

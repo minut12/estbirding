@@ -10794,7 +10794,8 @@ function buildPopupHtml(key, p, opts){
     const _probItems = (window.__probEluCache || {})[_eluKey]?.items;
     if (Array.isArray(_probItems) && _probItems.length > 0) {
       const _stats = _computeLiveStats(_probItems);
-      occ7 = Number.isFinite(_stats && _stats.itemsWithin7d) ? _stats.itemsWithin7d : (Number.isFinite(p.occ7) ? p.occ7 : 0);
+      // P89a: a stale browser cache must never under-count the server's 7-day count.
+      occ7 = Math.max(Number.isFinite(_stats && _stats.itemsWithin7d) ? _stats.itemsWithin7d : 0, Number.isFinite(p.occ7) ? p.occ7 : 0);
     } else {
       occ7 = Number.isFinite(p.occ7) ? p.occ7 : 0;
     }

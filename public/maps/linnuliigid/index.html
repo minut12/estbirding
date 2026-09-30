@@ -5188,8 +5188,8 @@ async function refreshAllElurikkusOnce(){
     const total = list.length;
     _logElurikkusRefresh('[elurikkus] refresh start view=' + view, { jobId: jobId, total: total });
     __eeRefreshContext = { jobId: jobId, view: view, index: -1, species: '', deferUi: true, uiErrors: 0 };
-    const CONCURRENCY = 2;
-    const DELAY_BETWEEN_MS = 400;
+    const CONCURRENCY = 1; // P90b: one request at a time (elurikkus.ee blocks fast bursts)
+    const DELAY_BETWEEN_MS = 2500; // P90b: ~20 req/min
     var nextIndex = 0;
     var doneCount = 0;
     async function processOne(){
@@ -5237,6 +5237,12 @@ async function refreshAllElurikkusOnce(){
           if(!isAbort){
             errors++;
             const errMsg = String((e && e.message) ? e.message : e || 'Refresh failed');
+            // P90b: elurikkus.ee serves its error page once it rate-limits this browser. Stop the whole scan
+            // (the worker loop reads nextIndex) instead of hammering on, and tell the user once.
+            if(/HTTP (429|500|502|503)\b/.test(errMsg) && nextIndex < total){
+              nextIndex = total;
+              try{ _showCloudToast('Elurikkus blokeeris skannimise, proovi hiljem uuesti.'); }catch(_t){}
+            }
             window.__lastElurikkusBulkErrors.unshift({
               species: name,
               message: errMsg,

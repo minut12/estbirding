@@ -171,8 +171,8 @@ const JOBS: Record<JobName, JobConfig> = {
     target: "elurikkus-bulk-refresh",
     secretHeader: "x-refresh-secret",
     secretEnv: "ELURIKKUS_REFRESH_SECRET",
-    // P88b: limit 10 (x ~3.4 s = ~35 s < CALL_TIMEOUT_MS) at the 2.5 s elurikkus pace; stalest-first; 445/10 = 45 chunks -> maxCalls 50.
-    maxCalls: 50,
+    // P88b/P88e: limit 10 (x ~3.4 s = ~35 s < CALL_TIMEOUT_MS); stalest-first. P88e: 30 s chunk budget gives ~8.5 species/call, 445/8.5 = 53 calls -> maxCalls 70.
+    maxCalls: 70,
     body: (s) => ({ offset: s.offset, limit: 10, stalest: true }),
     step: (s, resp) => {
       const attempted = Number(resp.done ?? 0);

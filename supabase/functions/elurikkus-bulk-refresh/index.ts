@@ -1,4 +1,4 @@
-// redeploy-marker: P88b 2026-09-30
+// redeploy-marker: P88d 2026-09-30
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
@@ -13,7 +13,7 @@ const DEFAULT_SPECIES: string[] = [
   "Aed-põõsalind","Aed-roolind","Aedporr","Alk","Alverüdi","Ameerika piilpart","Atlantise tormilind","Aul","Baleaari tormilind","Euroopa kaelustäks","Habekakk","Habeviires","Hahk","Hakk","Hall-kärbsenäpp","Hallhaigur","Hallhani","Hallkibu","Hallpea-rähn","Hallpõsk-pütt","Hallrästas","Hallrüdi","Halltsiitsitaja","Hallvares","Hallõgija","Hangelind","Harakas","Haugaskotkas","Hele-urvalind","Heletilder","Herilaseviu","Hiireviu","Hoburästas","Händkakk","Hänilane","Hõbehaigur","Hõbehaugas","Hõbekajakas","Hüüp","Ida-mustvaeras","Jahipistrik","Jämejalg","Järvekaur","Jääkajakas","Jääkaur","Jääkoskel","Jõgi-ritsiklind","Jõgitiir","Jõgivästrik","Kadakatäks","Kaelus-kärbsenäpp","Kaelus-turteltuvi","Kaeluskotkas","Kaelusrästas","Kaelustuvi","Kalakajakas","Kalakotkas","Kalda-rädilind","Kaldapääsuke","Kaljukajakas","Kaljukotkas","Kanada lagle","Kanakull","Kanepilind","Karbuskajakas","Karkjalg","Karmiinleevike","Karvasjalg-kakk","Karvasjalg-viu","Kassikakk","Kiivitaja","Kiripugu-rüdi","Kirjuhahk","Kivikakk","Kivirullija","Kivitäks","Kodukakk","Kodutuvi","Koduvarblane","Koldhaigur","Koldjalg-hõbekajakas","Koldvint","Kormoran","Krüüsel","Kukkurtihane","Kuld-lehelind","Kuldhänilane","Kuldnokk","Kuldtsiitsitaja","Kuninghahk","Kuuse-käbilind","Käblik","Kägu","Käharpelikan","Käosulane","Kääbuskormoran","Kääbuskotkas","Kõnnuõgija","Kõrbe-kivitäks","Kõrbe-põõsalind","Kõrkja-roolind","Kõrvukräts","Kõvernokk-rüdi","Kühmnokk-luik","Künnivares","Laanenäär","Laanepüü","Laanerähn","Laisaba-änn","Lammitilder","Lapi tsiitsitaja","Lasuurtihane","Lauk","Laululuik","Laulurästas","Leeterüdi","Leevike","Liiv-kivitäks","Liivatüll","Linavästrik","Loorkakk","Luitsnokk-iibis","Luitsnokk-part","Lumehani","Lumekakk","Lääne-lehelind","Lääne-pöialpoiss","Lõopistrik","Lõuna-hõbekajakas","Lühinokk-hani","Madukotkas","Mandariinpart","Merikajakas","Merikotkas","Merirüdi","Merisk","Merivart","Mesilasenäpp","Mets-lehelind","Metsis","Metskiur","Metskurvits","Metstilder","Metsvint","Mudanepp","Mudatilder","Must-harksaba","Must-kärbsenäpp","Must-lepalind","Must-toonekurg","Mustjalg-tüll","Mustkael-pütt","Mustkurk-raat","Mustlagle","Mustlauk-õgija","Mustpea-põõsalind","Mustpea-tsiitsitaja","Mustpugu-rästas","Musträhn","Musträstas","Mustsaba-vigle","Musttihane","Mustvaeras","Mustvares","Mustviires","Mägi-kanepilind","Mägikiur","Männi-käbilind","Männileevike","Männitalvike","Mänsak","Naaskelnokk","Naerukajakas","Naerutiir","Niidu-kaelustäks","Niidu-ritsiklind","Niidukiur","Nunn-kivitäks","Nurmkana","Nõgipart","Nõlva-lehelind","Nõmmekiur","Nõmmelõoke","Ohakalind","Ohhoota hõbekajakas","Padu-roolind","Pasknäär","Peegel-tormilind","Pelikan","Peoleo","Piilpart","Piiritaja","Pikksaba-änn","Plütt","Plüü","Polaarkajakas","Porr","Prillvaeras","Pruunselg-põõsalind","Puna-harksaba","Puna-veetallaja","Punajalg-pistrik","Punajalg-tilder","Punakael-lagle","Punakurk-kaur","Punanokk-vart","Punapea-vart","Punapea-õgija","Punarind","Punasaba-õgija","Punaselg-õgija","Purpurhaigur","Puukoristaja","Põhja-kirjurästas","Põhja-lehelind","Põhja-tormipääsu","Põhjatihane","Põhjatsiitsitaja","Põhjavint","Põldlõoke","Põldtsiitsitaja","Põldvarblane","Põldvutt","Pöialpoiss","Rabapistrik","Rabapüü","Raisakotkas","Randkajakas","Randkiur","Randtiir","Rasvatihane","Raudkull","Ristpart","Roherähn","Rohevint","Rohukoskel","Rohunepp","Ronk","Roo-loorkull","Roo-ritsiklind","Roohabekas","Rooruik","Roosa-kuldnokk","Roosakajakas","Roosatiir","Roostepääsuke","Roosterind-tüll","Rootsiitsitaja","Rubiinööbik","Rukkirääk","Ruugerüdi","Rägapart","Rästas-roolind","Räusktiir","Rääkspart","Räästapääsuke","Rüüt","Sabatihane","Salu-lehelind","Salupäll","Salutihane","Sarviklõoke","Sarvikpütt","Siberi lehelind","Siberi raat","Siidhaigur","Siidisaba","Siisike","Sinikael-part","Siniraag","Sinirind","Sinisaba","Sinitihane","Soo-loorkull","Soo-roolind","Sookiur","Sookurg","Soopart","Sooräts","Soorüdi","Stepi-loorkull","Stepikajakas","Stepikiivitaja","Stepikotkas","Stepipistrik","Stepiviu","Suitsupääsuke","Suula","Suur-kirjurähn","Suur-konnakotkas","Suur-laukhani","Suurkoovitaja","Suurnokk-vint","Suurrüdi","Suuränn","Sõtkas","Söödikänn","Tait","Talvike","Tamme-kirjurähn","Teder","Tiigi-roolind","Tikutaja","Triip-ritsiklind","Tuhk-lehelind","Tumetilder","Tundra-rabahani","Tundrakaur","Tundrakiur","Tutkas","Tutt-tihane","Tutt-tiir","Tuttlõoke","Tuttpütt","Tuttvart","Tuuletallaja","Täpikhuik","Tõmmu-lehelind","Tõmmuiibis","Tõmmukajakas","Tõmmuvaeras","Urvalind","Vaaraohani","Vaenukägu","Vainurästas","Valge-toonekurg","Valgepõsk-lagle","Valgeselg-kirjurähn","Valgesilm-vart","Valgetiib-viires","Veetallaja","Veisehaigur","Vesipapp","Vihitaja","Viupart","Väike-kirjurähn","Väike-konnakotkas","Väike-käosulane","Väike-kärbsenäpp","Väike-laukhani","Väike-lehelind","Väike-põõsalind","Väikealk","Väikehuik","Väikehüüp","Väikekajakas","Väikekoovitaja","Väikekoskel","Väikeluik","Väikepistrik","Väikepütt","Väikerüdi","Väiketiir","Väiketrapp","Väiketsiitsitaja","Väiketüll","Välja-loorkull","Välja-väikelõoke","Värbkakk","Värbrüdi","Väänkael","Võsa-ritsiklind","Võsaraat","Vööt-käbilind","Vööt-põõsalind","Vööthani","Vöötkakk","Vöötnokk-kajakas","Vöötsaba-vigle","Õõnetuvi","Ööbik","Ööhaigur","Öösorr","Väike-lumehani","Tulipart","Siberi tõmmuvaeras","Lannuvart","Sini-rägapart","Ameerika viupart","Suurtrapp","Stepivuril","Suur-turteltuvi","Kanada kurg","Neitsikurg","Värbhuik","Tundrarüüt","Valgesaba-kiivitaja","Kõrbetüll","Tundra-neppvigle","Ameerika vihitaja","Suur-veetallaja","Älverüdi","Pikkjalg-rüdi","Stepi-pääsujooksur","Kõnnu-pääsujooksur","Harksaba-kajakas","Vandelkajakas","Põhja-tormilind","Vahemere tormilind","Suurpiiritaja","Randpiiritaja","Raipekotkas","Kumai-kaeluskotkas","Kääpakotkas","Stepi-tuuletallaja","Mongoolia kõnnuõgija","Punasaba-kõnnuõgija","Taigatihane","Stepilõoke","Leet-käosulane","Tarna-roolind","Kivipääsuke","Vööt-lehelind","Punakurk-põõsalind","Ruskerästas","Kivisiirak","Mägiraat","Idahänilane","Mongoolia kiur","Taigakiur","Kõrbeleevike","Punapea-tsiitsitaja","Rebassidrik","Ameerika väikeluik","Lääne-mustlagle","Kirde-mustlagle","Grööni suur-laukhani","Aafrika harksaba","Stepi-hallõgija","Lääne-sabatihane","Siseaasia must-lepalind","Mustpea-hänilane","Tõmmu-linavästrik","Mustluik","Eskimo lagle","Mõrsjapart","Sõnnpea-sõtkas","Läänesõtkas","Kübarkoskel","Kuupart","Puna-rägapart","Heleflamingo","Hiid-merikotkas","Tutt-karakaara","Ameerika tuuletallaja",
 ];
 
-const DELAY_MS = 2500; // P88b: elurikkus.ee blocks ~25 fast requests; ~22/min stays under
+const DELAY_MS = 1000; // P88d: pg_net fetch itself takes ~1.5-2.5 s, so ~3 s/species = ~20 req/min
 
 // Centroid tables duplicated from linnuliigid-snapshot (consolidation TBD).
 const COUNTY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
@@ -1027,6 +1027,39 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  // P88d: elurikkus.ee blocks the Supabase Edge IPs (since 2026-09-29) but not the DB host.
+  // Fetch one search page via pg_net (elu_pgnet_request / elu_pgnet_collect, service_role only),
+  // poll for the response, and throw errors in the same "HTTP <status>" shape as fetchWithTimeout
+  // so the P88b rate-limit stop keeps working. PGNET_RPC errors mean the RPCs are unavailable ->
+  // the caller falls back to the direct fetch.
+  const fetchViaPgnet = async (spName: string, timeoutMs: number): Promise<string> => {
+    const { data: reqRows, error: reqErr } = await supabase.rpc("elu_pgnet_request", { p_names: [spName] });
+    if (reqErr) throw new Error(`PGNET_RPC request: ${reqErr.message}`);
+    const first = Array.isArray(reqRows) && reqRows.length > 0 ? reqRows[0] as { request_id: number | string } : null;
+    const reqId = first ? Number(first.request_id) : NaN;
+    if (!Number.isFinite(reqId)) throw new Error("PGNET_RPC request: no request id");
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await delay(700);
+      const { data: resRows, error: resErr } = await supabase.rpc("elu_pgnet_collect", { p_ids: [reqId] });
+      if (resErr) throw new Error(`PGNET_RPC collect: ${resErr.message}`);
+      const row = Array.isArray(resRows) && resRows.length > 0
+        ? resRows[0] as { status_code: number | null; timed_out: boolean | null; error_msg: string | null; content: string | null }
+        : null;
+      if (!row) continue;
+      if (row.timed_out) throw new Error("PGNET_TIMEOUT upstream timed out");
+      const st = Number(row.status_code);
+      if (!Number.isFinite(st)) throw new Error(`PGNET_ERR ${String(row.error_msg ?? "no status").slice(0, 120)}`);
+      if (st < 200 || st >= 300) {
+        const snip = String(row.content ?? "").replace(/\s+/g, " ").slice(0, 120);
+        console.log("[elu-pgnet] non-ok", st, spName, snip);
+        throw new Error(`HTTP ${st} via=pgnet ${snip}`);
+      }
+      return String(row.content ?? "");
+    }
+    throw new Error("PGNET_TIMEOUT no response before deadline");
+  };
+
   let updated = 0;
   let totalObsParsed = 0;
   let totalWithSubId = 0;
@@ -1043,10 +1076,19 @@ Deno.serve(async (req) => {
   let attemptedCount = species.length;
 
   for (let i = 0; i < species.length; i++) {
+    // P88d: chunk budget - stop early so a slow pg_net never pushes the call past CALL_TIMEOUT_MS (55 s).
+    if (i > 0 && Date.now() - t0 > 30000) { attemptedCount = i; break; }
     const name = species[i];
     try {
       const searchUrl = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(name)}`;
-      const html = await fetchWithTimeout(searchUrl, 10000);
+      let html: string;
+      try {
+        html = await fetchViaPgnet(name, 12000);
+      } catch (pe) {
+        if (!String(pe).includes("PGNET_RPC")) throw pe;
+        console.log("[elu-pgnet] rpc unavailable, direct fetch", name, String(pe).slice(0, 160));
+        html = await fetchWithTimeout(searchUrl, 10000);
+      }
 
       // Parse per-observation rows from the HTML
       const parseResult = parseObservationsFromHtml(html, name);

@@ -107,7 +107,7 @@ export default function RareObservationsFilters({ filters, onChange }: Props) {
             active={filters.countries.includes(c.value)}
             onClick={() => toggleCountry(c.value)}
           >
-            <CountryFlag code={c.value} className="h-3" /><span className="ml-1 text-[11px]">{c.label}</span>
+            <CountryFlag code={c.value} height={12} /><span className="ml-1 text-[11px]">{c.label}</span>
           </ChipButton>
         ))}
       </div>

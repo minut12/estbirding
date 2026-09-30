@@ -25,14 +25,15 @@ export function hasCountryFlag(code: string | null | undefined): boolean {
   return !!code && code in FLAGS;
 }
 
-export function CountryFlag({ code, className }: { code: string | null | undefined; className?: string }) {
+export function CountryFlag({ code, className, height = 12 }: { code: string | null | undefined; className?: string; height?: number }) {
   if (!code) return null;
   const spec = FLAGS[code];
   if (!spec) return <span className={cn('text-[10px] font-semibold text-muted-foreground', className)}>{code}</span>;
   return (
     <svg
       viewBox={`0 0 ${spec.w} ${spec.h}`}
-      className={cn('inline-block h-3 w-auto rounded-[2px] ring-1 ring-black/15 align-[-1px]', className)}
+      className={cn('inline-block shrink-0 rounded-[2px] ring-1 ring-black/15 align-[-1px]', className)}
+      style={{ height, width: Math.round((height * spec.w) / spec.h) }}
       aria-label={code}
       role="img"
       dangerouslySetInnerHTML={{ __html: spec.body }}

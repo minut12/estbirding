@@ -50,7 +50,7 @@ export default function RareObservationCard({ observation: o }: Props) {
   const km = typeof o.distance_to_ee_km === 'number' ? Math.round(o.distance_to_ee_km) : null;
   return (
     <li className={cn('grid grid-cols-[36px_1fr_auto] items-center gap-3 rounded-r-lg border-l-[3px] border-border py-2 pr-1', tier && STRIPE[tier])}>
-      <div className="flex justify-center"><CountryFlag code={o.country_code} className="h-[18px] rounded-[3px]" /></div>
+      <div className="flex justify-center"><CountryFlag code={o.country_code} height={18} className="rounded-[3px]" /></div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
           <span className="font-semibold text-sm">{primaryName}</span>

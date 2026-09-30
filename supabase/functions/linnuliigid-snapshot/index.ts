@@ -1,4 +1,4 @@
-// redeploy-marker: P58b 2026-09-22
+// redeploy-marker: P91b 2026-09-30
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -1672,6 +1672,41 @@ async function updateSnapshot(
 }
 
 // Run one refresh batch. When speciesFilter is set (debug-only), only process that one species.
+// P91b: snapshot entries come from elurikkus_cache, which is kept fresh via DB pg_net (full run 6-hourly +
+// recent feed every 30 min). Scraping elurikkus.ee from Edge IPs is blocked since 2026-09-29.
+type P91CacheRow = {
+  species_name: string; lat: number | null; lon: number | null; t: string | null; t_dt: string | null;
+  occ7: number | null; coords_status: string | null; coords_source: string | null; locality: string | null;
+  municipality: string | null; county: string | null; individual_count: number | null; behavior: string | null;
+  collectors: string | null;
+};
+
+function p91FromCache(r: P91CacheRow | undefined): Awaited<ReturnType<typeof fetchSpeciesData>> | null {
+  if (!r || !r.t) return null;
+  const src = String(r.coords_source ?? "none");
+  const coordsSource = src === "exact" ? "exact" : (src === "municipality_centroid" ? "municipality" : (src === "county_centroid" ? "county" : "none"));
+  const st = String(r.coords_status ?? "missing");
+  const coordsStatus = st === "public" ? "public" : (st === "restricted" ? "restricted" : "missing");
+  const hasCoords = typeof r.lat === "number" && Number.isFinite(r.lat) && typeof r.lon === "number" && Number.isFinite(r.lon);
+  return {
+    lat: hasCoords ? r.lat : null,
+    lon: hasCoords ? r.lon : null,
+    latestDate: String(r.t).slice(0, 10) + "T00:00:00.000Z",
+    latestDateTime: r.t_dt ? new Date(r.t_dt).toISOString() : null,
+    occ7: typeof r.occ7 === "number" && Number.isFinite(r.occ7) ? r.occ7 : 0,
+    coordsStatus: hasCoords ? coordsStatus : "missing",
+    coordsSource: hasCoords ? coordsSource : "none",
+    locality: r.locality ?? null,
+    municipality: r.municipality ?? null,
+    county: r.county ?? null,
+    individualCount: r.individual_count ?? null,
+    behavior: r.behavior ?? null,
+    collectors: r.collectors ?? null,
+    districts: null,
+    eestiOmavalitsused: null,
+  };
+}
+
 async function runRefresh(
   supabase: any,
   opts?: { startIndex?: number; runId?: string; speciesFilter?: string }
@@ -1714,6 +1749,16 @@ async function runRefresh(
     ? existingRow.points_json as Record<string, { lat?: number | null; lon?: number | null; t?: string; t_dt?: string | null; occ7?: number; src?: string; visible?: boolean; coords_status?: "public" | "restricted" | "missing"; coords_source?: "exact" | "municipality" | "county" | "none"; locality?: string | null; municipality?: string | null; county?: string | null; individualCount?: number | null; behavior?: string | null; collectors?: string | null; districts?: string | null; eestiOmavalitsused?: string | null; }>
     : {};
 
+  // P91b: load elurikkus_cache once; each species entry is built from its row (no network per species).
+  const p91Cache = new Map<string, P91CacheRow>();
+  {
+    const { data: cRows, error: cErr } = await supabase
+      .from("elurikkus_cache")
+      .select("species_name, lat, lon, t, t_dt, occ7, coords_status, coords_source, locality, municipality, county, individual_count, behavior, collectors");
+    if (cErr) console.warn("[p91b] elurikkus_cache read failed:", cErr.message);
+    for (const r of (cRows ?? []) as P91CacheRow[]) p91Cache.set(r.species_name, r);
+    console.log("[p91b] cache rows:", p91Cache.size);
+  }
   // --- NOTIFICATION PREP: snapshot previous points (t + occ7 only) for later comparison ---
   const previousPoints: Record<string, { t?: string; occ7?: number }> = {};
   try {
@@ -1779,7 +1824,8 @@ async function runRefresh(
           for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
               if (attempt > 0) await sleep(400 * Math.pow(2, attempt - 1));
-              data = await fetchSpeciesData(name, speciesCtrl.signal);
+              // P91b: cache only. No cache row -> null -> the species keeps its existing snapshot value.
+              data = p91FromCache(p91Cache.get(name));
               break;
             } catch (e) {
               lastErr = e instanceof Error ? e : new Error(String(e));
@@ -1895,6 +1941,12 @@ async function runRefresh(
         }
       }
 
+      // P91b: burst guard. A catch-up build (first cache-based build after the 29 Sep outage, or any long gap)
+      // can see dozens of "new" species at once; send no pushes for that build instead of spamming.
+      if (newlySpottedSpecies.length > 30) {
+        console.log("[notify] P91b burst guard: skipping pushes for", newlySpottedSpecies.length, "species");
+        newlySpottedSpecies.length = 0;
+      }
       if (newlySpottedSpecies.length > 0) {
         console.log(
           "[notify] Newly spotted:",

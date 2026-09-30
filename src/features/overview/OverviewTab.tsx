@@ -163,6 +163,7 @@ type SourceObservation = {
   date?: string;
   location?: string;
   sub_id?: string;
+  has_media?: boolean;
 };
 
 type VaatlusteRaport = {
@@ -304,6 +305,18 @@ function findSubId(entry: VaatlusEntry, lookup: Map<string, string>): string | u
   return lookup.get(`${entry.species_lat}|${entry.date}|${entry.location}`) ?? entry.sub_id ?? undefined;
 }
 
+function buildHasMediaLookup(obs: SourceObservation[] | undefined): Set<string> {
+  const s = new Set<string>();
+  if (!Array.isArray(obs)) return s;
+  for (const o of obs) {
+    if (o?.has_media) s.add(`${o.species_lat || ''}|${o.date || ''}|${o.location || ''}`);
+  }
+  return s;
+}
+function findHasMedia(entry: VaatlusEntry, set: Set<string>): boolean {
+  return set.has(`${entry.species_lat}|${entry.date}|${entry.location}`);
+}
+
 const dayMonthFmt = new Intl.DateTimeFormat('et-EE', { day: 'numeric', month: 'long' });
 const dayMonthYearFmt = new Intl.DateTimeFormat('et-EE', { day: 'numeric', month: 'long', year: 'numeric' });
 const dateTimeFmt = new Intl.DateTimeFormat('et-EE', {
@@ -352,7 +365,57 @@ function formatObservers(observers: string[] | undefined): { text: string; unkno
   return { text: cleaned.join(', '), unknown: false };
 }
 
-function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string; domId?: string }) {
+type ChecklistExtra = { comments: { speciesCode: string; text: string }[]; checklistComment: string | null; photoCount: number };
+
+async function fetchChecklistExtra(subId: string): Promise<ChecklistExtra | null> {
+  const key = `bm_ebird_cl_v1:${subId}`;
+  try { const hit = sessionStorage.getItem(key); if (hit) return JSON.parse(hit) as ChecklistExtra; } catch { /* ignore */ }
+  try {
+    const r = await fetch(`/api/ebird-checklist?subId=${encodeURIComponent(subId)}`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j?.ok) return null;
+    const out: ChecklistExtra = { comments: Array.isArray(j.comments) ? j.comments : [], checklistComment: j.checklistComment ?? null, photoCount: Number(j.photoCount) || 0 };
+    try { sessionStorage.setItem(key, JSON.stringify(out)); } catch { /* ignore */ }
+    return out;
+  } catch { return null; }
+}
+
+function ChecklistDetails({ subId, ebirdCode }: { subId: string; ebirdCode?: string }) {
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const [data, setData] = useState<ChecklistExtra | null>(null);
+  useEffect(() => {
+    if (!open || state !== 'idle') return;
+    setState('loading');
+    fetchChecklistExtra(subId).then((d) => { setData(d); setState(d ? 'done' : 'error'); });
+  }, [open, state, subId]);
+  const mine = data ? data.comments.filter((c) => !ebirdCode || c.speciesCode === ebirdCode) : [];
+  const shown = mine.length ? mine : (data?.comments ?? []);
+  return (
+    <div className="space-y-2">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="text-xs text-primary hover:underline">
+        {open ? '\u25BE Peida kontrollnimekirja andmed' : '\u25B8 Kontrollnimekirja andmed'}
+      </button>
+      {open && state === 'loading' && <p className="text-xs text-muted-foreground">Laen&hellip;</p>}
+      {open && state === 'error' && <p className="text-xs text-muted-foreground">Kontrollnimekirja andmeid ei saanud laadida.</p>}
+      {open && state === 'done' && data && (
+        <div className="space-y-2">
+          {shown.length === 0 && !data.checklistComment && <p className="text-xs text-muted-foreground">Vaatleja kommentaari pole.</p>}
+          {shown.map((c, i) => (
+            <blockquote key={i} className="border-l-2 border-border pl-3 text-sm italic">{c.text}</blockquote>
+          ))}
+          {data.checklistComment && shown.length === 0 && (
+            <blockquote className="border-l-2 border-border pl-3 text-sm italic">{data.checklistComment}</blockquote>
+          )}
+          {data.photoCount > 0 && <p className="text-xs text-muted-foreground">{data.photoCount} fotot kontrollnimekirjas</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId, hasMedia }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string; domId?: string; hasMedia?: boolean }) {
   const tier = effectiveRarityTier(entry);
   const flag = entry.country_code && entry.country_code !== 'EE' && hasCountryFlag(entry.country_code) ? entry.country_code : undefined;
   const obs = formatObservers(entry.observers);
@@ -446,16 +509,25 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId }: { entry: Vaatl
           <span>{obs.text}</span>
         </div>
       )}
+      {(subId || hasMedia) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {subId && (entry.source === 'ebird' || entry.source === 'et_rarity_topup') && (
+            <a href={`https://ebird.org/checklist/${subId}`} target="_blank" rel="noopener noreferrer"
+               className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium hover:border-primary">
+              Kontrollnimekiri <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+          {subId && entry.source === 'elurikkus' && (
+            <a href={`https://elurikkus.ee/occurrences/${encodeURIComponent(subId)}`} target="_blank" rel="noopener noreferrer"
+               className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium hover:border-primary">
+              Vaata vaatlust <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+          {hasMedia && <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">fotoga</span>}
+        </div>
+      )}
       {subId && (entry.source === 'ebird' || entry.source === 'et_rarity_topup') && (
-        <a
-          href={`https://ebird.org/checklist/${subId}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-        >
-          Vaata kontrollnimekirja
-          <ExternalLink className="w-3 h-3" />
-        </a>
+        <ChecklistDetails subId={subId} ebirdCode={ebirdCode} />
       )}
       {typeof entry.count === 'number' && entry.count > 1 && (
         <div className="text-sm">
@@ -1092,6 +1164,8 @@ export default function OverviewTab() {
   const euEntries = useMemo(() => sortEntries(report?.europe_entries || []), [report]);
   const eeSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.estonia), [report]);
   const euSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.europe), [report]);
+  const eeMediaLookup = useMemo(() => buildHasMediaLookup(report?.source_data?.estonia), [report]);
+  const euMediaLookup = useMemo(() => buildHasMediaLookup(report?.source_data?.europe), [report]);
   // Use the most recent generated_at across both reports as the displayed "Värskendatud" timestamp.
   const lastUpdated = useMemo(() => {
     return [report?.generated_at, elurikkusReport?.generated_at]
@@ -1237,6 +1311,7 @@ export default function OverviewTab() {
   };
   const activeEntries = section === 'eu' ? euEntries : eeEntries;
   const activeLookup = section === 'eu' ? euSubIdLookup : eeSubIdLookup;
+  const activeMedia = section === 'eu' ? euMediaLookup : eeMediaLookup;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -1619,6 +1694,7 @@ export default function OverviewTab() {
                       key={`${entry.species_lat}-${entry.date}-${idx}`}
                       entry={entry}
                       subId={findSubId(entry, activeLookup)}
+                      hasMedia={findHasMedia(entry, activeMedia)}
                       ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
                       avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
                       domId={entryDomId(section === 'eu' ? 'eu' : 'ee', entry, idx)}

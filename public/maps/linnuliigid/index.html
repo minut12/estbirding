@@ -187,6 +187,9 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
   border:0;border-radius:10px;background:#2d7a4b;color:#fff;cursor:pointer;text-decoration:none;
   font:700 13px/1 system-ui,Arial,sans-serif}
 .bm-card-btn:hover{background:#25643d}
+/* P87a: Leaflet's .leaflet-container a {color:#0078A8} outranks .bm-card-btn/.bm-card-ico on <a> (same bug as P60d, rariliin already has it) */
+.leaflet-container a.bm-card-btn,.leaflet-container a.bm-card-btn:visited,.leaflet-container a.bm-card-btn:hover{color:#fff}
+.leaflet-container a.bm-card-ico{color:#4a5852}.leaflet-container a.bm-card-ico:hover{color:#2d7a4b}
 .bm-card-ico{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;
   border:1px solid #dde4df;border-radius:10px;background:#fff;color:#4a5852;cursor:pointer;text-decoration:none}
 .bm-card-ico:hover{background:#f2f8f4;color:#2d7a4b}
@@ -8480,6 +8483,15 @@ async function _applySnapshot(snap){
         var _gk = _GEO[_gi];
         if(snapPoint[_gk] === undefined && _existing[_gk] !== undefined){
           _merged[_gk] = _existing[_gk];
+        }
+      }
+      // P87b: snapshot row has no coords, so its coords_status/coords_source ('missing'/'none')
+      // describe nothing we keep; the kept lat/lon keep their own labels.
+      if(Number.isFinite(_existing.lat) && Number.isFinite(_existing.lon)){
+        var _P87K = ['coords_status','coords_source','coordsSource'];
+        for(var _p87i=0; _p87i<_P87K.length; _p87i++){
+          var _p87k = _P87K[_p87i];
+          if(_existing[_p87k] !== undefined) _merged[_p87k] = _existing[_p87k]; else delete _merged[_p87k];
         }
       }
       points[key] = _merged;

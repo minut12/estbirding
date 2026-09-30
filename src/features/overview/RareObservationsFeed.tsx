@@ -15,6 +15,16 @@ const DEFAULT_FILTERS: RareFilters = {
   timeWindowDays: 30,
 };
 
+const dayKeyFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Tallinn', year: 'numeric', month: '2-digit', day: '2-digit' });
+const dayLabelFmt = new Intl.DateTimeFormat('et-EE', { timeZone: 'Europe/Tallinn', day: 'numeric', month: 'long' });
+function dayLabel(iso: string, todayKey: string, yesterdayKey: string): { key: string; label: string } {
+  const d = new Date(iso);
+  const key = dayKeyFmt.format(d);
+  const base = dayLabelFmt.format(d);
+  const label = key === todayKey ? `T\u00e4na, ${base}` : key === yesterdayKey ? `Eile, ${base}` : base;
+  return { key, label };
+}
+
 export default function RareObservationsFeed() {
   const [filters, setFilters] = useState<RareFilters>(DEFAULT_FILTERS);
   const [observations, setObservations] = useState<RareObservation[]>([]);
@@ -35,7 +45,7 @@ export default function RareObservationsFeed() {
       let q = supabase
         .from('ebird_rare_observations')
         .select(
-          'id,species_et_name,species_lat_name,rarity_level,country_code,region,location,obs_date,obs_count,observer_names,distance_to_ee_km',
+          'id,species_et_name,species_lat_name,rarity_level,country_code,region,location,obs_date,obs_count,observer_names,distance_to_ee_km,ebird_sub_id',
           { count: 'exact' },
         )
         .order('obs_date', { ascending: false })
@@ -119,10 +129,7 @@ export default function RareObservationsFeed() {
     <section className="mt-8 pt-6 border-t border-border space-y-4 w-full max-w-full overflow-x-hidden">
       <header className="space-y-1">
         <h3 className="text-base font-semibold">Hiljutised raride vaatlused naabermaades</h3>
-        <p className="text-sm text-muted-foreground">
-          Arhiveeritud haruldaste liikide vaatlused LV, LT, BY, PL ja Kaliningradi piirkonnast.
-          Andmed kogutakse eBirdi kaudu kaks korda päevas.
-        </p>
+        <p className="text-sm text-muted-foreground">eBird &middot; FI, SE, PL, LV, LT, BY ja Loode-Venemaa{typeof totalCount === 'number' ? <> &middot; {totalCount} vaatlust</> : null}</p>
       </header>
 
       <RareObservationsFilters filters={filters} onChange={setFilters} />
@@ -141,15 +148,23 @@ export default function RareObservationsFeed() {
         </div>
       ) : (
         <>
-          <p className="text-xs text-muted-foreground">
-            Näitan {observations.length} vaatlust
-            {typeof totalCount === 'number' ? ` ${totalCount}-st` : ''}
-          </p>
-          <ul className="space-y-3 w-full max-w-full">
-            {observations.map((o) => (
-              <RareObservationCard key={o.id} observation={o} />
-            ))}
-          </ul>
+          {(() => {
+            const now = new Date();
+            const todayKey = dayKeyFmt.format(now);
+            const yesterdayKey = dayKeyFmt.format(new Date(now.getTime() - 86_400_000));
+            const groups: { key: string; label: string; rows: RareObservation[] }[] = [];
+            for (const o of observations) {
+              const { key, label } = dayLabel(o.obs_date, todayKey, yesterdayKey);
+              const last = groups[groups.length - 1];
+              if (last && last.key === key) last.rows.push(o); else groups.push({ key, label, rows: [o] });
+            }
+            return groups.map((g) => (
+              <div key={g.key}>
+                <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{g.label}</div>
+                <ul className="divide-y divide-border/60">{g.rows.map((o) => <RareObservationCard key={o.id} observation={o} />)}</ul>
+              </div>
+            ));
+          })()}
           {hasMore && (
             <Button
               variant="outline"
@@ -157,7 +172,7 @@ export default function RareObservationsFeed() {
               onClick={loadMore}
               disabled={loadingMore}
             >
-              {loadingMore ? 'Laadin…' : 'Lae rohkem'}
+              {loadingMore ? 'Laadin\u2026' : typeof totalCount === 'number' ? `N\u00e4ita rohkem (${totalCount - observations.length})` : 'N\u00e4ita rohkem'}
             </Button>
           )}
         </>

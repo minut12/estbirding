@@ -1,5 +1,5 @@
-import { MapPin, User } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { ExternalLink } from 'lucide-react';
+import { CountryFlag } from '@/components/icons/CountryFlag';
 import { cn } from '@/lib/utils';
 
 export type RareObservation = {
@@ -14,6 +14,7 @@ export type RareObservation = {
   obs_count: number | null;
   observer_names: string[] | null;
   distance_to_ee_km: number | null;
+  ebird_sub_id: string | null;
 };
 
 const RARITY_LABEL: Record<NonNullable<RareObservation['rarity_level']>, string> = {
@@ -22,24 +23,17 @@ const RARITY_LABEL: Record<NonNullable<RareObservation['rarity_level']>, string>
   mega: 'Mega rari',
 };
 
-const RARITY_CLASS: Record<NonNullable<RareObservation['rarity_level']>, string> = {
-  rare: 'bg-amber-500 text-white hover:bg-amber-500/90 border-transparent',
-  super: 'bg-red-600 text-white hover:bg-red-600/90 border-transparent',
-  mega: 'bg-red-800 text-white hover:bg-red-800/90 border-transparent',
+const STRIPE: Record<NonNullable<RareObservation['rarity_level']>, string> = {
+  rare: 'border-l-amber-500',
+  super: 'border-l-destructive',
+  mega: 'border-l-red-800 bg-red-900/5',
 };
 
-function formatRelativeDate(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return '';
-  const diffMs = Date.now() - then;
-  const days = Math.floor(diffMs / 86_400_000);
-  if (days <= 0) return 'täna';
-  if (days === 1) return 'eile';
-  if (days < 7) return `${days} päeva tagasi`;
-  if (days < 14) return '1 nädal tagasi';
-  if (days < 31) return `${Math.floor(days / 7)} nädalat tagasi`;
-  return 'üle kuu tagasi';
-}
+const TAG: Record<NonNullable<RareObservation['rarity_level']>, string> = {
+  rare: 'bg-amber-500 text-white',
+  super: 'bg-red-600 text-white',
+  mega: 'bg-red-800 text-white',
+};
 
 interface Props {
   observation: RareObservation;
@@ -49,64 +43,31 @@ export default function RareObservationCard({ observation: o }: Props) {
   const tier = o.rarity_level;
   const hasEt = !!o.species_et_name;
   const primaryName = hasEt ? o.species_et_name! : (o.species_lat_name || 'Tundmatu liik');
-  const subtitleLatin = hasEt ? o.species_lat_name : null;
+  const latin = hasEt ? o.species_lat_name : null;
   const countNum = o.obs_count ?? 1;
   const observers = Array.isArray(o.observer_names) ? o.observer_names.filter(Boolean) : [];
-  const observerLine = observers.length > 0 ? observers.join(', ') : null;
-
-  const locationParts = [o.location, o.region, o.country_code].filter(Boolean);
-  const locationLine = locationParts.join(', ');
-
+  const place = [o.location, o.region].filter(Boolean).join(', ');
+  const km = typeof o.distance_to_ee_km === 'number' ? Math.round(o.distance_to_ee_km) : null;
   return (
-    <li className="rounded-lg border border-border bg-card p-3 space-y-2 overflow-hidden w-full max-w-full">
-      <div className="flex items-start justify-between gap-2 min-w-0">
-        <div className="min-w-0">
-          {tier && (
-            <Badge className={cn('shrink-0', RARITY_CLASS[tier])}>
-              {RARITY_LABEL[tier]}
-            </Badge>
-          )}
-        </div>
-        <span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">
-          {formatRelativeDate(o.obs_date)}
-        </span>
-      </div>
-
+    <li className={cn('grid grid-cols-[36px_1fr_auto] items-center gap-3 rounded-r-lg border-l-[3px] border-border py-2 pr-1', tier && STRIPE[tier])}>
+      <div className="flex justify-center"><CountryFlag code={o.country_code} className="h-[18px] rounded-[3px]" /></div>
       <div className="min-w-0">
-        <p className={cn('font-semibold break-words', hasEt ? '' : 'italic')}>
-          {primaryName}
-        </p>
-        {subtitleLatin && (
-          <p className="text-sm italic text-muted-foreground break-words">
-            {subtitleLatin}
-          </p>
-        )}
+        <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+          <span className="font-semibold text-sm">{primaryName}</span>
+          {latin && <span className="text-xs italic text-muted-foreground">{latin}</span>}
+          {tier && <span className={cn('rounded-full px-1.5 py-px text-[10px] font-semibold', TAG[tier])}>{RARITY_LABEL[tier]}</span>}
+        </div>
+        <div className="text-xs text-muted-foreground truncate">
+          {place}{place && ' \u00b7 '}{countNum} {countNum === 1 ? 'isend' : 'isendit'}
+          {km !== null && <> {'\u00b7'} <b className="text-foreground">{km} km</b></>}
+        </div>
+        {observers.length > 0 && <div className="text-[11px] text-muted-foreground truncate">{observers.join(', ')}</div>}
       </div>
-
-      {locationLine && (
-        <p className="text-xs text-muted-foreground flex items-start gap-1.5 min-w-0">
-          <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-          <span className="min-w-0 break-words">
-            {locationLine}
-            {typeof o.distance_to_ee_km === 'number' && (
-              <> · {o.distance_to_ee_km} km Eestist</>
-            )}
-          </span>
-        </p>
-      )}
-
-      {(observerLine || countNum > 0) && (
-        <p className="text-xs text-muted-foreground flex items-start gap-1.5 min-w-0">
-          <User className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-          <span className="min-w-0 break-words">
-            {observerLine && <>{observerLine}</>}
-            {observerLine && countNum > 0 && <> · </>}
-            {countNum > 0 && (
-              <>{countNum} {countNum === 1 ? 'isend' : 'isendit'}</>
-            )}
-          </span>
-        </p>
-      )}
+      {o.ebird_sub_id ? (
+        <a href={`https://ebird.org/checklist/${o.ebird_sub_id}`} target="_blank" rel="noopener noreferrer" className="p-2 text-primary" aria-label="Ava eBirdis">
+          <ExternalLink className="w-4 h-4" />
+        </a>
+      ) : <span className="w-8" />}
     </li>
   );
 }

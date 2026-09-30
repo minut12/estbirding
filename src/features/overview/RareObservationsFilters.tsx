@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Slider } from '@/components/ui/slider';
+import { CountryFlag } from '@/components/icons/CountryFlag';
 import { cn } from '@/lib/utils';
 
 export type TimeWindow = 7 | 30 | 90 | 180 | 'all';
@@ -24,20 +24,15 @@ const TIME_WINDOWS: Array<{ value: TimeWindow; label: string }> = [
 ];
 
 const COUNTRIES: Array<{ value: string; label: string }> = [
+  { value: 'FI', label: 'FI' },
+  { value: 'SE', label: 'SE' },
+  { value: 'PL', label: 'PL' },
   { value: 'LV', label: 'LV' },
   { value: 'LT', label: 'LT' },
   { value: 'BY', label: 'BY' },
-  { value: 'PL', label: 'PL' },
-  { value: 'RU-KGD', label: 'RU-KGD' },
+  { value: 'RU-LEN', label: 'RU-LEN' },
+  { value: 'RU-PSK', label: 'RU-PSK' },
 ];
-
-const RARITIES: Array<{ value: 'rare' | 'super' | 'mega'; label: string }> = [
-  { value: 'rare', label: 'Rari' },
-  { value: 'super', label: 'Super' },
-  { value: 'mega', label: 'Mega' },
-];
-
-const MAX_DISTANCE_NO_LIMIT = 1500;
 
 interface Props {
   filters: RareFilters;
@@ -68,7 +63,6 @@ function ChipButton({
 
 export default function RareObservationsFilters({ filters, onChange }: Props) {
   const [searchInput, setSearchInput] = useState(filters.search);
-  const [sliderVisible, setSliderVisible] = useState(filters.maxDistanceKm);
 
   // Debounce search → parent
   useEffect(() => {
@@ -80,11 +74,6 @@ export default function RareObservationsFilters({ filters, onChange }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
-  // Keep slider's visible value in sync if parent resets filters
-  useEffect(() => {
-    setSliderVisible(filters.maxDistanceKm);
-  }, [filters.maxDistanceKm]);
-
   const toggleCountry = (cc: string) => {
     const has = filters.countries.includes(cc);
     onChange({
@@ -93,22 +82,9 @@ export default function RareObservationsFilters({ filters, onChange }: Props) {
     });
   };
 
-  const toggleRarity = (r: 'rare' | 'super' | 'mega') => {
-    const has = filters.rarities.includes(r);
-    onChange({
-      ...filters,
-      rarities: has ? filters.rarities.filter((x) => x !== r) : [...filters.rarities, r],
-    });
-  };
-
   const setTimeWindow = (tw: TimeWindow) => {
     onChange({ ...filters, timeWindowDays: tw });
   };
-
-  const distanceLabel =
-    sliderVisible >= MAX_DISTANCE_NO_LIMIT
-      ? 'Kogu Euroopa'
-      : `≤ ${sliderVisible} km`;
 
   return (
     <div className="space-y-3 w-full max-w-full">
@@ -131,19 +107,7 @@ export default function RareObservationsFilters({ filters, onChange }: Props) {
             active={filters.countries.includes(c.value)}
             onClick={() => toggleCountry(c.value)}
           >
-            {c.label}
-          </ChipButton>
-        ))}
-      </div>
-
-      <div className="flex flex-wrap gap-2 min-w-0">
-        {RARITIES.map((r) => (
-          <ChipButton
-            key={r.value}
-            active={filters.rarities.includes(r.value)}
-            onClick={() => toggleRarity(r.value)}
-          >
-            {r.label}
+            <CountryFlag code={c.value} className="h-3" /><span className="ml-1 text-[11px]">{c.label}</span>
           </ChipButton>
         ))}
       </div>
@@ -157,22 +121,6 @@ export default function RareObservationsFilters({ filters, onChange }: Props) {
           placeholder="Otsi liigi nime järgi…"
           className="pl-9 w-full"
           inputMode="search"
-        />
-      </div>
-
-      <div className="space-y-1.5 w-full max-w-full">
-        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground min-w-0">
-          <span className="shrink-0">Kaugus Eestist</span>
-          <span className="shrink-0 font-medium text-foreground">{distanceLabel}</span>
-        </div>
-        <Slider
-          value={[sliderVisible]}
-          min={50}
-          max={MAX_DISTANCE_NO_LIMIT}
-          step={50}
-          onValueChange={(v) => setSliderVisible(v[0] ?? MAX_DISTANCE_NO_LIMIT)}
-          onValueCommit={(v) => onChange({ ...filters, maxDistanceKm: v[0] ?? MAX_DISTANCE_NO_LIMIT })}
-          aria-label="Kaugus Eestist"
         />
       </div>
     </div>

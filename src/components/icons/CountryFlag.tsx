@@ -14,9 +14,12 @@ const FLAGS: Record<string, FlagSpec> = {
   LT: { w: 18, h: 12, body: '<rect width="18" height="4" fill="#FDB913"/><rect y="4" width="18" height="4" fill="#006A44"/><rect y="8" width="18" height="4" fill="#C1272D"/>' },
   PL: { w: 16, h: 10, body: '<rect width="16" height="5" fill="#fff"/><rect y="5" width="16" height="5" fill="#DC143C"/>' },
   DE: { w: 15, h: 9, body: '<rect width="15" height="3" fill="#000"/><rect y="3" width="15" height="3" fill="#DD0000"/><rect y="6" width="15" height="3" fill="#FFCE00"/>' },
+  BY: { w: 18, h: 9, body: '<rect width="18" height="6" fill="#C8313E"/><rect y="6" width="18" height="3" fill="#4AA657"/><rect width="2" height="9" fill="#fff"/>' },
   RU: { w: 18, h: 12, body: '<rect width="18" height="4" fill="#fff"/><rect y="4" width="18" height="4" fill="#0039A6"/><rect y="8" width="18" height="4" fill="#D52B1E"/>' },
 };
 FLAGS['RU-LEN'] = FLAGS.RU;
+FLAGS['RU-PSK'] = FLAGS.RU;
+FLAGS['RU-KGD'] = FLAGS.RU;
 
 export function hasCountryFlag(code: string | null | undefined): boolean {
   return !!code && code in FLAGS;

@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-09-30 - P85g user_feedback.note (prediction_ratings.note) reaches Sonnet
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 // P6b.1 2026-09-05: effort-normalised site share ranking (ennustus P6b.1)
 // P6b 2026-09-05: predicted_sites[] on entries + watch-list (ennustus P6b-EF)
@@ -550,7 +551,8 @@ for (
 const FEEDBACK_NOTE_ET =
   "Arvesta kasutaja hinnangut eelmistele ennustustele: kui kasutaja on liigi " +
   "märkinud võimatuks või valeks, põhjenda lühidalt, miks ennustus siiski " +
-  "jääb või miks see langeb, ja väldi tagasi lükatud kohti.";
+  "jääb või miks see langeb, ja väldi tagasi lükatud kohti. " +
+  "Kui kasutaja on lisanud hinnangule kommentaari, võta seda põhjenduses arvesse ja viita sellele lühidalt.";
 
 // P25: the species total for the intro. Rides in the USER payload for exactly
 // the reason FEEDBACK_NOTE_ET does -- SYSTEM_PROMPT, USER_PREFIX and
@@ -762,6 +764,8 @@ interface FeedbackFactor {
   multiplier: number;
   /** Site labels voted vale/voimatu, excluded from predicted_sites. */
   sites_rejected: string[];
+  /** P85g: the user's free-text note on the latest vote, trimmed, or null. */
+  note: string | null;
 }
 
 // P19: one prediction_ratings row, as the orchestrator reads it. The table has
@@ -774,6 +778,7 @@ interface RatingRow {
   site_index: number | null;
   rating: string | null;
   rated_at: string | null;
+  note: string | null;
 }
 
 // P19: only the two columns the site-label lookup needs off a past raport.
@@ -1387,6 +1392,7 @@ const FEEDBACK_NEUTRAL: FeedbackFactor = {
   days_ago: null,
   multiplier: 1,
   sites_rejected: [],
+  note: null,
 };
 
 function isFeedbackRating(v: unknown): v is FeedbackRating {
@@ -1625,7 +1631,7 @@ async function fetchCompute(
     ).toISOString();
     const { data: ratingData, error: ratingErr } = await sbRead
       .from("prediction_ratings")
-      .select("raport_id,ebird_code,site_index,rating,rated_at")
+      .select("raport_id,ebird_code,site_index,rating,rated_at,note")
       .gte("rated_at", sinceIso);
     if (ratingErr) throw new Error(ratingErr.message);
     const ratingRows = (ratingData ?? []) as RatingRow[];
@@ -1672,6 +1678,7 @@ async function fetchCompute(
         ),
         multiplier: FEEDBACK_MULT[latest.rating],
         sites_rejected: [],
+        note: (typeof latest.note === "string" && latest.note.trim()) ? latest.note.trim().slice(0, 300) : null,
       });
       feedbackVoimatuRaports.set(code, voimatuRaports.size);
     }
@@ -2844,6 +2851,7 @@ async function fetchCompute(
               rating: fb.rating,
               days_ago: fb.days_ago,
               sites_rejected: fb.sites_rejected,
+              ...(fb.note ? { note: fb.note } : {}),
             },
           }
           : {}),

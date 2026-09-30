@@ -8453,6 +8453,15 @@ async function _applySnapshot(snap){
     var keepClientScan = Number.isFinite(_existingClientScan) && _existingClientScan > 0 && Number.isFinite(_snapGeneratedAt) && _existingClientScan > _snapGeneratedAt;
     // Always merge the snapshot first — it owns positional/descriptive fields.
     const _existing = points[key] || {};
+    // P91a: newer SIGHTING wins. The server snapshot can be stale (its builder is blocked by elurikkus.ee);
+    // a snapshot row whose observation (t_dt, else t) is older than what the page already holds (e.g. from
+    // the Elurikkus cache) must not overwrite the date, 7-day count, coords or card fields.
+    var _p91ExMs = _existing.t_dt ? Date.parse(_existing.t_dt) : (_existing.t ? Date.parse(String(_existing.t).slice(0, 10) + 'T00:00:00Z') : NaN);
+    var _p91SnMs = snapPoint.t_dt ? Date.parse(snapPoint.t_dt) : (snapPoint.t ? Date.parse(String(snapPoint.t).slice(0, 10) + 'T00:00:00Z') : NaN);
+    if(Number.isFinite(_p91ExMs) && (!Number.isFinite(_p91SnMs) || _p91SnMs < _p91ExMs)){
+      var _P91K = ['t','t_dt','occ7','lat','lon','src','coords_status','coords_source','locality','municipality','county','eluExtra'];
+      for(var _p91i = 0; _p91i < _P91K.length; _p91i++) delete snapPoint[_P91K[_p91i]];
+    }
     var _clientFields = {};
     var _PRESERVE = ['occ7Ebird','occ7EbirdUpdated','occ7Elu','occ7EluUpdated','clientScannedAt','occ7Source','occ7PagesScanned'];
     for(var _pi=0;_pi<_PRESERVE.length;_pi++){

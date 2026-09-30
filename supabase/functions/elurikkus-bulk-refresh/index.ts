@@ -1,4 +1,4 @@
-// redeploy-marker: P87c 2026-09-30
+// redeploy-marker: P88a 2026-09-30
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
@@ -167,7 +167,14 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<string>
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      let snippet = "";
+      try { snippet = (await res.text()).replace(/\s+/g, " ").slice(0, 200); } catch (_e) { snippet = ""; }
+      const rl = res.headers.get("x-rate-limit-remaining");
+      const srv = res.headers.get("server");
+      console.log("[elu-fetch] non-ok", res.status, url, JSON.stringify({ rl, srv, snippet }));
+      throw new Error(`HTTP ${res.status} rl=${rl ?? "-"} ${snippet.slice(0, 120)}`);
+    }
     return await res.text();
   } finally {
     clearTimeout(timer);

@@ -8628,7 +8628,13 @@ async function _loadElurikkusCacheFromSupabase(){
       var p = points[key] || {};
       var existingTs = p.clientScannedAt ? new Date(p.clientScannedAt).getTime() : 0;
       var cacheTs = new Date(row.fetched_at).getTime();
-      if(cacheTs <= existingTs) continue;
+      // P90a: newer SIGHTING wins, not newer fetch. A browser scan (clientScannedAt) newer than the server
+      // fetch only blocks the server row when the browser already holds an equal-or-newer observation, so a
+      // failed or stale browser scan can no longer hide a newer server record.
+      var _rowObsMs = row.t_dt ? Date.parse(row.t_dt) : (row.t ? Date.parse(String(row.t).slice(0, 10) + 'T00:00:00Z') : NaN);
+      var _pObsMs = p.t_dt ? Date.parse(p.t_dt) : (p.t ? Date.parse(String(p.t).slice(0, 10) + 'T00:00:00Z') : NaN);
+      var _serverObsNewer = Number.isFinite(_rowObsMs) && (!Number.isFinite(_pObsMs) || _rowObsMs > _pObsMs);
+      if(cacheTs <= existingTs && !_serverObsNewer) continue;
       var hasCoords = Number.isFinite(row.lat) && Number.isFinite(row.lon);
       /* PRE-STAGE-C BLOCK (kept for rollback until verification passes):
       var merged_OLD = Object.assign({}, p, {

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -415,7 +415,7 @@ function ChecklistDetails({ subId, ebirdCode }: { subId: string; ebirdCode?: str
   );
 }
 
-function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId, hasMedia }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string; domId?: string; hasMedia?: boolean }) {
+function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId, hasMedia, onShowOnMap }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string; domId?: string; hasMedia?: boolean; onShowOnMap?: () => void }) {
   const tier = effectiveRarityTier(entry);
   const flag = entry.country_code && entry.country_code !== 'EE' && hasCountryFlag(entry.country_code) ? entry.country_code : undefined;
   const obs = formatObservers(entry.observers);
@@ -509,7 +509,7 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId, hasMedia }: { en
           <span>{obs.text}</span>
         </div>
       )}
-      {(subId || hasMedia) && (
+      {(subId || hasMedia || onShowOnMap) && (
         <div className="flex flex-wrap items-center gap-1.5">
           {subId && (entry.source === 'ebird' || entry.source === 'et_rarity_topup') && (
             <a href={`https://ebird.org/checklist/${subId}`} target="_blank" rel="noopener noreferrer"
@@ -522,6 +522,12 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId, hasMedia }: { en
                className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium hover:border-primary">
               Vaata vaatlust <ExternalLink className="w-3 h-3" />
             </a>
+          )}
+          {onShowOnMap && (
+            <button type="button" onClick={onShowOnMap}
+              className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium hover:border-primary">
+              <MapPin className="w-3 h-3" /> N&auml;ita kaardil
+            </button>
           )}
           {hasMedia && <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">fotoga</span>}
         </div>
@@ -975,6 +981,7 @@ type MyRating = { rating: PredictionRating; note: string | null; raportId: strin
 export default function OverviewTab() {
   const { session } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [report, setReport] = useState<VaatlusteRaport | null>(null);
   const [elurikkusReport, setElurikkusReport] = useState<ElurikkusRaport | null>(null);
   const [toenaosusReport, setToenaosusReport] = useState<ToenaosusRaport | null>(null);
@@ -1698,6 +1705,7 @@ export default function OverviewTab() {
                       ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
                       avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
                       domId={entryDomId(section === 'eu' ? 'eu' : 'ee', entry, idx)}
+                      onShowOnMap={section === 'ee' ? () => navigate('/', { state: { estbirding: { activeTab: 'kaart', mapId: 'rariliin', focusSpecies: entry.species_et } } }) : undefined}
                     />
                   ))
                 )}

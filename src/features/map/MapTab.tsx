@@ -2,7 +2,7 @@ import { maps, getActiveMap } from './config';
 import { getAllowedMapsForRole, resolveAllowedMapSelection } from './access';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/lib/version';
@@ -91,9 +91,17 @@ export type SidebarStateMessage = {
   open: boolean;
 };
 
+type MapNavState = { estbirding?: { activeTab?: string; mapId?: string; focusSpecies?: string } } | null;
+function readMapNav(state: unknown): { mapId?: string; focusSpecies?: string } | null {
+  const nav = (state as MapNavState)?.estbirding;
+  if (!nav || nav.activeTab !== 'kaart') return null;
+  return { mapId: typeof nav.mapId === 'string' ? nav.mapId : undefined, focusSpecies: typeof nav.focusSpecies === 'string' ? nav.focusSpecies : undefined };
+}
+
 export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const { user, isAdmin, hasPermission, role, permissions, session } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const availableMaps = useMemo(() => (
     getAllowedMapsForRole(role, permissions, maps)
   ), [permissions, role]);
@@ -102,6 +110,8 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     [permissions, role],
   );
   const [selectedId, setSelectedId] = useState(initialMap.id);
+  // P85e2: a requested map + species from Ulevaade (Naita kaardil). Held until the iframe loads.
+  const pendingFocusRef = useRef<{ mapId: string; species: string } | null>(null);
   // P40: true while the iframe's mobile species list covers the map (posted by map-hamburger-control.js).
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // P40: ≥901px = iframe desktop layout (sidebar beside the map). Below that the capsule is positioned by utilities.
@@ -170,6 +180,22 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       iframeRef.current?.contentWindow?.postMessage(msg, '*');
     } catch (e) { /* cross-origin safety */ }
   }, []);
+
+  useEffect(() => {
+    const nav = readMapNav(location.state);
+    if (!nav?.mapId) return;
+    const allowed = resolveAllowedMapSelection({ role, permissions, maps, requestedId: nav.mapId });
+    if (!allowed || allowed.id !== nav.mapId) return;
+    pendingFocusRef.current = nav.focusSpecies ? { mapId: nav.mapId, species: nav.focusSpecies } : null;
+    setSelectedId(nav.mapId);
+    if (nav.mapId === selectedId && iframeReadyRef.current && nav.focusSpecies) {
+      pendingFocusRef.current = null;
+      sendToIframe({ type: 'FOCUS_SPECIES', species: nav.focusSpecies });
+    }
+    // consume: a later popstate/refresh must not re-fire the jump
+    navigate('/', { replace: true, state: { estbirding: { activeTab: 'kaart' } } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
 
   // Send MAP_SHOWN to iframe so Leaflet can invalidateSize
   const sendMapShown = useCallback(() => sendToIframe({ type: 'MAP_SHOWN' }), [sendToIframe]);
@@ -848,6 +874,11 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       speciesName: species?.speciesName || '',
     };
     sendMapShown();
+    const pf = pendingFocusRef.current;
+    if (pf && pf.mapId === current.id) {
+      pendingFocusRef.current = null;
+      sendToIframe({ type: 'FOCUS_SPECIES', species: pf.species });
+    }
     // Send avatars and insets when iframe loads
     setTimeout(sendAvatarsToIframe, 300);
     setTimeout(sendSpeciesMetaToIframe, 350);

@@ -45,8 +45,10 @@ export default function Index() {
   // after Ülevaade -> Kaart the pathname is still /ulevaade while active is 'kaart', so the iframe's
   // OPEN_ULEVAADE push to the same path would not re-run this effect and the tab would never switch.
   useEffect(() => {
-    if (location.pathname === '/ulevaade') setActive('ulevaade');
-  }, [location.pathname, location.key]);
+    if (location.pathname === '/ulevaade') { setActive('ulevaade'); return; }
+    const nav = (location.state as { estbirding?: { activeTab?: string } } | null)?.estbirding;
+    if (location.pathname === '/' && nav?.activeTab === 'kaart') setActive('kaart');
+  }, [location.pathname, location.key, location.state]);
 
   useEffect(() => {
     const resolved = resolveAllowedMapSelection({ role, permissions, maps, requestedId: selectedMapId });

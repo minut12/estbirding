@@ -7875,6 +7875,21 @@ window.addEventListener('message', function(ev){
       _updateDebugPanel();
       return;
     }
+    if(t === 'FOCUS_SPECIES' && ev.data.species){
+      /* P85e2: Ulevaade "Naita kaardil". Markers may not exist yet right after load - retry up to ~12 s. */
+      var want = String(ev.data.species);
+      var wantSlug = slugifySpeciesKey(want);
+      var tries = 0;
+      var tick = function(){
+        var key = null;
+        if(markers.has(want)) key = want;
+        else { markers.forEach(function(_v, k){ if(!key && slugifySpeciesKey(k) === wantSlug) key = k; }); }
+        if(key){ try{ focusRecentSpecies(key); }catch(e){ console.warn('[rariliin] FOCUS_SPECIES failed', e && e.message); } return; }
+        if(++tries < 24) setTimeout(tick, 500);
+      };
+      tick();
+      return;
+    }
     if(t === 'SPECIES_VISIBILITY_RESTORE' && Array.isArray(ev.data.hiddenSpecies)){
       var hiddenSet = {};
       ev.data.hiddenSpecies.forEach(function(k){ hiddenSet[k] = true; });

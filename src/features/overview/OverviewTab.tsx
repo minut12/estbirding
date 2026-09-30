@@ -17,8 +17,7 @@ import {
   upsertPredictionRating,
   type PredictionRating,
 } from '@/lib/predictionRatings';
-import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3, Clock, Copy, Check, Wind } from 'lucide-react';
-import { toast } from 'sonner';
+import { AlertTriangle, X, ExternalLink, Bird, MapPin, Eye, BarChart3, Clock, Wind } from 'lucide-react';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 import { isSpringWindow } from '@/lib/speciesVisibility';
 import CorridorBadge from './CorridorBadge';
@@ -990,10 +989,6 @@ export default function OverviewTab() {
   const [section, setSection] = useState<OverviewSection>('ee');
   // P6: the species the map asked us to jump to, held until the Tõenäosus report has loaded.
   const [pendingEbirdCode, setPendingEbirdCode] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
-  const [isRefreshingToenaosus, setIsRefreshingToenaosus] = useState(false);
-  const [copiedToenaosus, setCopiedToenaosus] = useState(false);
 
   // P6, step 1 of 2: read what the map asked for. Mount-only -- this component is rendered behind
   // `active === 'ulevaade'` in Index, so it remounts on every switch back and the state is fresh.
@@ -1070,98 +1065,6 @@ export default function OverviewTab() {
   useEffect(() => {
     fetchLatest();
   }, [fetchLatest]);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    setRefreshError(null);
-    const startedAt = new Date().toISOString();
-
-    try {
-      const { error } = await supabase.functions.invoke('trigger-vaatluste-refresh', {
-        method: 'POST',
-        body: {},
-      });
-
-      if (error) {
-        const ctx: any = (error as any)?.context;
-        const status = ctx?.status;
-        if (status === 429 && ctx) {
-          const body = await ctx.json?.().catch(() => null);
-          const seconds = body?.retry_after_seconds ?? 60;
-          setRefreshError(
-            `Eelmine värskendus toimus hiljuti. Proovi uuesti ${seconds} sekundi pärast.`,
-          );
-        } else {
-          setRefreshError('Värskendamine ebaõnnestus. Proovi hiljem uuesti.');
-        }
-        setRefreshing(false);
-        return;
-      }
-
-      const TIMEOUT_MS = 90_000;
-      const POLL_MS = 3_000;
-      const deadline = Date.now() + TIMEOUT_MS;
-
-      let gotVaatluste = false;
-      let gotElurikkus = false;
-
-      while (Date.now() < deadline && !(gotVaatluste && gotElurikkus)) {
-        await new Promise((r) => setTimeout(r, POLL_MS));
-        const [vRes, eRes] = await Promise.allSettled([
-          gotVaatluste ? Promise.resolve(null) : fetchLatestVaatluste(),
-          gotElurikkus ? Promise.resolve(null) : fetchLatestElurikkus(),
-        ]);
-        if (!gotVaatluste && vRes.status === 'fulfilled' && vRes.value && vRes.value.generated_at > startedAt) {
-          setReport(vRes.value);
-          gotVaatluste = true;
-        }
-        if (!gotElurikkus && eRes.status === 'fulfilled' && eRes.value && eRes.value.generated_at > startedAt) {
-          setElurikkusReport(eRes.value);
-          gotElurikkus = true;
-        }
-      }
-
-      if (!gotVaatluste) {
-        setRefreshError('Värskendamine kestab oodatust kauem. Proovi hetke pärast lehte uuendada.');
-      }
-      setRefreshing(false);
-    } catch {
-      setRefreshError('Värskendamine ebaõnnestus. Proovi hiljem uuesti.');
-      setRefreshing(false);
-    }
-  }, []);
-
-  const handleRefreshToenaosus = useCallback(async () => {
-    setIsRefreshingToenaosus(true);
-    try {
-      const { error } = await supabase.functions.invoke('trigger-toenaosus-refresh', {
-        method: 'POST',
-        body: {},
-      });
-      if (error) {
-        const ctx: any = (error as any)?.context;
-        let detail = error.message || 'Tundmatu viga';
-        try {
-          const body = await ctx?.json?.();
-          if (body?.error) detail = body.error;
-          else if (body?.message) detail = body.message;
-        } catch { /* ignore */ }
-        toast.error(`Viga: ${detail}`);
-        setIsRefreshingToenaosus(false);
-        return;
-      }
-      toast.success('Värskendamine käivitatud — uus raport ilmub ~1-2 minuti pärast');
-      await new Promise((r) => setTimeout(r, 90_000));
-      try {
-        const fresh = await fetchLatestToenaosus();
-        setToenaosusReport(fresh);
-      } catch { /* ignore refetch errors */ }
-    } catch (e: any) {
-      toast.error(`Viga: ${e?.message || 'tundmatu viga'}`);
-    } finally {
-      setIsRefreshingToenaosus(false);
-    }
-  }, []);
 
   const mergedEstonia = useMemo(
     () => mergeEstoniaEntries(report?.estonia_entries, elurikkusReport?.estonia_entries),
@@ -1295,27 +1198,6 @@ export default function OverviewTab() {
     setMyRatings((m) => ({ ...m, [ebirdCode]: cur }));
     flashRatingMessage(ebirdCode, 'Salvestamine ebaõnnestus');
   }, [myRatings, toenaosusRaportId, flashRatingMessage]);
-  const handleCopyToenaosusJson = async () => {
-    const payload = {
-      source: 'toenaosus_raport',
-      copied_at: new Date().toISOString(),
-      period_label: periodStart && periodEnd ? formatPeriod(periodStart, periodEnd) : null,
-      period_start: toenaosusReport?.period_start ?? null,
-      period_end: toenaosusReport?.period_end ?? null,
-      generated_at: toenaosusReport?.generated_at ?? null,
-      candidate_count: sortedToenaosusEntries.length,
-      items: sortedToenaosusEntries,
-    };
-    const json = JSON.stringify(payload, null, 2);
-    try {
-      await navigator.clipboard.writeText(json);
-      setCopiedToenaosus(true);
-      setTimeout(() => setCopiedToenaosus(false), 2000);
-    } catch (err) {
-      console.error('[toenaosus-copy] clipboard write failed', err);
-      toast.error('Kopeerimine ebaõnnestus');
-    }
-  };
   const activeEntries = section === 'eu' ? euEntries : eeEntries;
   const activeLookup = section === 'eu' ? euSubIdLookup : eeSubIdLookup;
   const activeMedia = section === 'eu' ? euMediaLookup : eeMediaLookup;
@@ -1335,30 +1217,7 @@ export default function OverviewTab() {
               </>
             )}
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="shrink-0 gap-2"
-          >
-            <RefreshCw className={cn('w-4 h-4', refreshing && 'animate-spin')} />
-            {refreshing ? 'Värskendan...' : 'Värskenda'}
-          </Button>
         </header>
-
-        {refreshError && (
-          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            <span className="flex-1">{refreshError}</span>
-            <button
-              onClick={() => setRefreshError(null)}
-              className="shrink-0 opacity-70 hover:opacity-100"
-              aria-label="Sulge"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
 
         {loading && (
           <div className="space-y-3">
@@ -1378,7 +1237,7 @@ export default function OverviewTab() {
         {!loading && !error && !report && (
           <Card className="p-6 text-center">
             <p className="text-sm text-muted-foreground">
-              Ülevaadet pole veel koostatud. Vajuta Värskenda või oota järgmist automaatset uuendust kell 06:00 või 18:00.
+              Ülevaadet pole veel koostatud. Järgmine automaatne uuendus on kell 06:00 või 18:00.
             </p>
           </Card>
         )}
@@ -1452,31 +1311,9 @@ export default function OverviewTab() {
               />
             ) : section === 'toenaosus' ? (
               <div className="space-y-3 w-full max-w-full overflow-x-hidden">
-                <div className="flex justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCopyToenaosusJson}
-                    disabled={sortedToenaosusEntries.length === 0}
-                    className="gap-2"
-                  >
-                    {copiedToenaosus ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    {copiedToenaosus ? 'Kopeeritud!' : 'Kopeeri JSON'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRefreshToenaosus}
-                    disabled={isRefreshingToenaosus}
-                    className="gap-2"
-                  >
-                    <RefreshCw className={cn('w-4 h-4', isRefreshingToenaosus && 'animate-spin')} />
-                    {isRefreshingToenaosus ? 'Värskendab...' : 'Värskenda nüüd'}
-                  </Button>
-                </div>
                 {toenaosusReport === null ? (
                 <p className="text-sm text-muted-foreground text-center py-8">
-                  Tõenäosuse andmed pole veel saadaval. Vajuta Värskenda nuppu.
+                  Tõenäosuse andmed pole veel saadaval.
                 </p>
               ) : sortedToenaosusEntries.length === 0 ? (
                 <>

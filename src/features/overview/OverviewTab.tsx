@@ -518,7 +518,7 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId, hasMedia }: { en
             </a>
           )}
           {subId && entry.source === 'elurikkus' && (
-            <a href={`https://elurikkus.ee/occurrences/${encodeURIComponent(subId)}`} target="_blank" rel="noopener noreferrer"
+            <a href={`https://elurikkus.ee/app/occurrences/occurrence/${encodeURIComponent(subId)}`} target="_blank" rel="noopener noreferrer"
                className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium hover:border-primary">
               Vaata vaatlust <ExternalLink className="w-3 h-3" />
             </a>

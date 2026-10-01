@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loadSettings, saveSettings, NEWS_AUTO_TRANSLATE_ET_KEY, type AppSettings } from '@/lib/settings';
+import { loadSettings, saveSettings, type AppSettings } from '@/lib/settings';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -517,19 +517,6 @@ export default function SettingsTab() {
     toast.success('Seaded salvestatud');
   };
 
-  const handleAutoTranslateToggle = (checked: boolean) => {
-    const next = { ...form, autoTranslateToEstonian: checked };
-    setStoredEndpoint(translationApiUrl);
-    ensureSupabaseProxyBaseStored();
-    setStoredEndpointView(getStoredEndpoint());
-    setForm(next);
-    saveSettings(next);
-    localStorage.setItem(NEWS_AUTO_TRANSLATE_ET_KEY, checked ? '1' : '0');
-    toast.success(checked
-      ? 'Võõrkeelsete uudiste tõlge on sisse lülitatud'
-      : 'Võõrkeelsete uudiste tõlge on välja lülitatud');
-  };
-
   const handleGpsToggle = (checked: boolean) => {
     const next = { ...form, gpsEnabled: checked };
     setForm(next);
@@ -871,19 +858,6 @@ export default function SettingsTab() {
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between rounded-md border border-border p-3">
-          <div className="space-y-1">
-            <Label htmlFor="autoTranslate">Tõlgi võõrkeelsed uudised eesti keelde</Label>
-            <p className="text-xs text-muted-foreground">
-              Kui väljas, siis võõrkeelseid uudiseid ei tõlgita ega kuvata tõlgituna News vaates.
-            </p>
-          </div>
-          <Switch
-            id="autoTranslate"
-            checked={form.autoTranslateToEstonian}
-            onCheckedChange={handleAutoTranslateToggle}
-          />
-        </div>
         <div className="rounded-md border border-border p-3 space-y-2">
           <div className="text-sm font-medium">Admin test</div>
           <Button

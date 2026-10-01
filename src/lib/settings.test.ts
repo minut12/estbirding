@@ -34,3 +34,27 @@ describe('gpsEnabled setting', () => {
     expect(isGpsEnabled()).toBe(false);
   });
 });
+
+describe('legacy autoTranslateToEstonian', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('strips the legacy field and removes the legacy news key on load', () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        newsSourceUrl: '',
+        eventsSourceUrl: '',
+        autoTranslateToEstonian: false,
+        enableSpeciesPredictionBeta: false,
+        gpsEnabled: true,
+      }),
+    );
+    localStorage.setItem('news_auto_translate_et', '0');
+    const result = loadSettings();
+    expect('autoTranslateToEstonian' in result).toBe(false);
+    expect(localStorage.getItem('news_auto_translate_et')).toBeNull();
+    expect(result.gpsEnabled).toBe(true);
+  });
+});

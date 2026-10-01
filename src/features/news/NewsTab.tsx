@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
 import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/locale';
 import { toast } from 'sonner';
 import { getProxyMode } from '@/config/proxyEndpoint';
@@ -635,7 +634,6 @@ export default function NewsTab() {
   const scrollPosRef = useRef(0);
   const appLocale = resolveAppLocale();
   const showEtContent = isEstonianLocale(appLocale);
-  const autoTranslateEnabled = isAutoTranslateNewsToEtEnabled();
   const [resolvedProxyBase, setResolvedProxyBase] = useState(() => getProxyBase());
   const [activeProxyName, setActiveProxyName] = useState(() => getProxyMode(getProxyBase()));
   const [lastNewsFetchErrorShort, setLastNewsFetchErrorShort] = useState('');
@@ -959,7 +957,7 @@ export default function NewsTab() {
           reason: 'manual',
           cache_images: true,
           cache_limit: 10,
-          translateForeignNews: autoTranslateEnabled,
+          translateForeignNews: true,
         },
       });
       if (error) throw new Error(error.message || `${fnName}: ${formatErrorReason(error)}`);
@@ -1038,7 +1036,6 @@ export default function NewsTab() {
         item={selected}
         sources={sources}
         showEtContent={showEtContent}
-        autoTranslateEnabled={autoTranslateEnabled}
         canArchiveNews={canArchiveNews}
         onBack={closeArticle}
         onToggleArchive={() => toggleArchive(selected.id, selected.is_archived)}
@@ -1170,7 +1167,6 @@ export default function NewsTab() {
                 sources={sources}
                 proxyBase={resolvedProxyBase}
                 showEtContent={showEtContent}
-                autoTranslateEnabled={autoTranslateEnabled}
                 onOpen={() => openArticle(item)}
               />
             ))}
@@ -1199,12 +1195,11 @@ export default function NewsTab() {
 }
 
 /* News Card */
-function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnabled, onOpen }: {
+function NewsCard({ item, sources, proxyBase, showEtContent, onOpen }: {
   item: NewsItem;
   sources: NewsSource[];
   proxyBase: string;
   showEtContent: boolean;
-  autoTranslateEnabled: boolean;
   onOpen: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -1216,8 +1211,8 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
   const translatedTitle = useMemo(() => getTranslatedTitle(item), [item]);
   const translatedBody = useMemo(() => getTranslatedBody(item), [item]);
   const hasTranslation = Boolean(translatedTitle || translatedBody);
-  const useEtDisplay = showEtContent && autoTranslateEnabled && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
-  const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
+  const useEtDisplay = showEtContent && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
+  const isPending = showEtContent && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
   const displayTitle = useMemo(() => (
     useEtDisplay
       ? getDisplayTitleForSource(sourceName, translatedTitle || item.title || '')
@@ -1336,11 +1331,10 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
 }
 
 /* Article View (lazy-loads content) */
-function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, canArchiveNews, onBack, onToggleArchive }: {
+function ArticleView({ item, sources, showEtContent, canArchiveNews, onBack, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
   showEtContent: boolean;
-  autoTranslateEnabled: boolean;
   canArchiveNews: boolean;
   onBack: () => void;
   onToggleArchive: () => void;
@@ -1388,7 +1382,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, canAr
     }
   };
   const hasTranslation = Boolean(translatedTitle || translatedBody);
-  const canShowTranslated = showEtContent && autoTranslateEnabled && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
+  const canShowTranslated = showEtContent && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
 
   // Per-item view mode persisted in localStorage, default = translated when available
   const storageKey = `news_view_mode_${item.id}`;
@@ -1476,7 +1470,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, canAr
   );
   const hasTranslatedInlineMedia = showTranslated && preservedMediaBlocks.length > 0 && translatedParagraphs.length > 0;
   const originalUrl = currentItem.permalink_url || currentItem.url || '#';
-  const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
+  const isPending = showEtContent && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
 
   useEffect(() => {
     if (showTranslated && !hasTranslation && import.meta.env.DEV) {

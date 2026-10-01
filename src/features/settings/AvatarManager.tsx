@@ -333,6 +333,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     const doSave = async () => {
       if (scope.id === 'rariliin') {
         const patch = {
+          rarityLevel,
           rariliinCode: rariliinCode.trim() || undefined,
           notificationNote: notificationNote || undefined,
           notify,
@@ -602,6 +603,18 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
                 {selectedScopeMeta.notificationNote && <div>Teate märkus: {selectedScopeMeta.notificationNote}</div>}
               </div>
             )}
+            <Label htmlFor="rarityLevel">{ET_STRINGS.rarityLabel}</Label>
+            <select
+              id="rarityLevel"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={rarityLevel}
+              onChange={(e) => setRarityLevel(e.target.value as 'none' | 'rare' | 'super' | 'mega')}
+            >
+              <option value="none">{ET_STRINGS.rarityNormal}</option>
+              <option value="rare">{ET_STRINGS.rarityRare}</option>
+              <option value="super">{ET_STRINGS.raritySuper}</option>
+              <option value="mega">{ET_STRINGS.rarityMega}</option>
+            </select>
             {scope.id !== 'rariliin' && (<>
             <Label htmlFor="ebirdCode">eBird speciesCode</Label>
             <Input
@@ -639,18 +652,6 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
                     : <span className="font-medium text-foreground tabular-nums">{obsCount.toLocaleString('et-EE')}</span>}
               </p>
             )}
-            <Label htmlFor="rarityLevel">{ET_STRINGS.rarityLabel}</Label>
-            <select
-              id="rarityLevel"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={rarityLevel}
-              onChange={(e) => setRarityLevel(e.target.value as 'none' | 'rare' | 'super' | 'mega')}
-            >
-              <option value="none">{ET_STRINGS.rarityNormal}</option>
-              <option value="rare">{ET_STRINGS.rarityRare}</option>
-              <option value="super">{ET_STRINGS.raritySuper}</option>
-              <option value="mega">{ET_STRINGS.rarityMega}</option>
-            </select>
             <Label>Saabumise klassifikatsioon</Label>
             <div className="flex flex-col gap-1 text-sm">
               <label className="flex items-center gap-2">

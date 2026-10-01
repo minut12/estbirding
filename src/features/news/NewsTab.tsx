@@ -2,14 +2,13 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/config/supabaseClient';
 import {
-  Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink,
+  Newspaper, ChevronLeft, ExternalLink,
   Search, RefreshCw, Loader2, Languages, Play,
 } from 'lucide-react';
 import { CountryFlag, hasCountryFlag, sourceCountry, sourceChipLabel } from '@/components/icons/CountryFlag';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/locale';
 import { toast } from 'sonner';
@@ -17,8 +16,6 @@ import { getProxyMode } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
 import { normalizeDisplayText } from '@/lib/textNormalize';
 import { getNewsImageSrc, getProxiedImageUrl, getProxyBase, isProxiedImageUrl } from './newsImage';
-import { useAuth } from '@/features/auth/AuthContext';
-import { PERMISSIONS } from '@/features/auth/permissions';
 
 /* Types */
 interface NewsItem {
@@ -358,7 +355,7 @@ type PreservedMediaBlock = {
   key: string;
 };
 
-const ARTICLE_MEDIA_PROSE_CLASS = 'prose prose-sm max-w-none overflow-x-hidden text-foreground [&_a]:text-primary [&>*]:my-0 [&_p]:my-0 [&_div]:my-0 [&_figure]:my-0 [&_figcaption]:mt-2 [&_figcaption]:mb-0 [&_blockquote]:my-0 [&_iframe]:block [&_iframe]:w-full [&_iframe]:max-w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_iframe]:border-0 [&_video]:block [&_video]:w-full [&_video]:max-w-full [&_video]:h-auto [&_video]:rounded-xl [&_embed]:block [&_embed]:w-full [&_embed]:max-w-full [&_embed]:rounded-xl [&_object]:block [&_object]:w-full [&_object]:max-w-full [&_object]:rounded-xl [&_img]:max-w-full [&_figure]:max-w-full [&_.instagram-media]:max-w-full [&_.twitter-tweet]:max-w-full';
+const ARTICLE_MEDIA_PROSE_CLASS = 'prose prose-sm max-w-none overflow-x-hidden text-foreground [&_a]:text-primary [&>*]:my-0 [&_p]:my-0 [&_div]:my-0 [&_figure]:my-3 [&_figcaption]:mt-2 [&_figcaption]:mb-0 [&_blockquote]:my-0 [&_iframe]:block [&_iframe]:w-full [&_iframe]:max-w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_iframe]:border-0 [&_video]:block [&_video]:w-full [&_video]:max-w-full [&_video]:h-auto [&_video]:rounded-xl [&_embed]:block [&_embed]:w-full [&_embed]:max-w-full [&_embed]:rounded-xl [&_object]:block [&_object]:w-full [&_object]:max-w-full [&_object]:rounded-xl [&_img]:max-w-full [&_figure_img]:w-full [&_figure_img]:rounded-xl [&_figure]:max-w-full [&_.instagram-media]:max-w-full [&_.twitter-tweet]:max-w-full';
 
 function isSocialEmbedBlock(node: Element): boolean {
   if (node.tagName.toLowerCase() !== 'blockquote') return false;
@@ -724,7 +721,6 @@ function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: strin
 
 /* Main component */
 export default function NewsTab() {
-  const { isAdmin, hasPermission } = useAuth();
   const initialListState = useMemo(() => readNewsListState(), []);
   const [tab, setTab] = useState<'latest' | 'archive'>(initialListState?.tab || 'latest');
   const [search, setSearch] = useState(initialListState?.search || '');
@@ -739,7 +735,6 @@ export default function NewsTab() {
   const [lastNewsFetchErrorShort, setLastNewsFetchErrorShort] = useState('');
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(() => readLastNewsRefreshAt());
   const utf8Probe = 'Kõik allikad õäöü';
-  const canArchiveNews = isAdmin || hasPermission(PERMISSIONS.newsArchive);
 
   const persistListState = useCallback((overrides: Partial<NewsListState> = {}) => {
     writeNewsListState({
@@ -1038,30 +1033,6 @@ export default function NewsTab() {
     toast.error('Uudiste laadimine ebaõnnestus (fetch): ' + shortReason.slice(0, 120) + ' [' + getErrorHostLabel() + ']');
   }, [isError, newsQueryError]);
 
-  // Toggle archive via DB update
-  const archiveMutation = useMutation({
-    mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
-      if (!canArchiveNews) {
-        throw new Error('Puudub õigus uudist arhiveerida');
-      }
-      const { error } = await supabase.functions.invoke('news-archive', {
-        body: { id, archived },
-      });
-      if (error) throw error;
-    },
-    onSuccess: (_data, variables) => {
-      // Optimistically remove the item from the current list
-      setNewsItems((prev) => prev.filter((item) => item.id !== variables.id));
-    },
-    onError: () => {
-      toast.error('Arhiveerimise viga');
-    },
-  });
-
-  const toggleArchive = useCallback((id: string, currentArchived: boolean) => {
-    archiveMutation.mutate({ id, archived: !currentArchived });
-  }, [archiveMutation]);
-
   // Pull / refresh
   const pullMutation = useMutation({
     mutationFn: async () => {
@@ -1151,9 +1122,7 @@ export default function NewsTab() {
         item={selected}
         sources={sources}
         showEtContent={showEtContent}
-        canArchiveNews={canArchiveNews}
         onBack={closeArticle}
-        onToggleArchive={() => toggleArchive(selected.id, selected.is_archived)}
       />
     );
   }
@@ -1164,7 +1133,21 @@ export default function NewsTab() {
 
   const titleEl = <h2 className="font-semibold text-foreground text-lg">Uudised</h2>;
 
-  const refreshControls = (
+  const refreshButtonIcon = pullMutation.isPending
+    ? <Loader2 className="w-4 h-4 animate-spin" />
+    : <RefreshCw className="w-4 h-4" />;
+
+  const refreshControls = isDesktop ? (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => pullMutation.mutate()}
+      disabled={pullMutation.isPending}
+      title={`Värskenda · ${formatNewsRefreshTimestamp(lastRefreshAt)}`}
+    >
+      {refreshButtonIcon}
+    </Button>
+  ) : (
     <>
       <span className="text-xs text-muted-foreground whitespace-nowrap">
         {formatNewsRefreshTimestamp(lastRefreshAt)}
@@ -1176,9 +1159,7 @@ export default function NewsTab() {
         disabled={pullMutation.isPending}
         title="Värskenda"
       >
-        {pullMutation.isPending
-          ? <Loader2 className="w-4 h-4 animate-spin" />
-          : <RefreshCw className="w-4 h-4" />}
+        {refreshButtonIcon}
       </Button>
     </>
   );
@@ -1207,7 +1188,7 @@ export default function NewsTab() {
   );
 
   const searchEl = (
-    <div className={isDesktop ? 'relative w-56' : 'relative flex-1'}>
+    <div className={isDesktop ? 'relative w-44' : 'relative flex-1'}>
       <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
       <Input
         placeholder="Otsi uudiseid…"
@@ -1444,16 +1425,17 @@ function useNewsCardModel(item: NewsItem, sources: NewsSource[], showEtContent: 
 export type NewsCardModel = ReturnType<typeof useNewsCardModel>;
 
 /* Meta line: flag, source, date, translation glyph */
-function NewsMeta({ model, className }: { model: NewsCardModel; className?: string }) {
+function NewsMeta({ model, className, dateText }: { model: NewsCardModel; className?: string; dateText?: string }) {
   const { code, sourceName, shortDate, useEtDisplay, isPending } = model;
+  const date = dateText ?? shortDate;
   return (
     <div className={cn('flex items-center gap-1.5 text-xs text-muted-foreground min-w-0', className)}>
       {code && hasCountryFlag(code) && <CountryFlag code={code} />}
       <span className="font-medium text-foreground/80 truncate">{sourceName}</span>
-      {shortDate && (
+      {date && (
         <>
           <span aria-hidden="true" className="opacity-60">&middot;</span>
-          <span className="whitespace-nowrap">{shortDate}</span>
+          <span className="whitespace-nowrap">{date}</span>
         </>
       )}
       {useEtDisplay ? (
@@ -1637,16 +1619,15 @@ function NewsGridCard({ item, sources, proxyBase, showEtContent, featured = fals
 }
 
 /* Article View (lazy-loads content) */
-function ArticleView({ item, sources, showEtContent, canArchiveNews, onBack, onToggleArchive }: {
+function ArticleView({ item, sources, showEtContent, onBack }: {
   item: NewsItem;
   sources: NewsSource[];
   showEtContent: boolean;
-  canArchiveNews: boolean;
   onBack: () => void;
-  onToggleArchive: () => void;
 }) {
   const [currentItem, setCurrentItem] = useState<NewsItem>(item);
-  const [retranslating, setRetranslating] = useState(false);
+  const isDesktop = useIsDesktopNews();
+  const model = useNewsCardModel(currentItem, sources, showEtContent);
 
   // Keep currentItem in sync when the parent passes a different article
   useEffect(() => { setCurrentItem(item); }, [item.id]);
@@ -1661,54 +1642,21 @@ function ArticleView({ item, sources, showEtContent, canArchiveNews, onBack, onT
   const translatedTitle = useMemo(() => getTranslatedTitle(currentItem), [currentItem]);
   const translatedBody = useMemo(() => getTranslatedBody(currentItem), [currentItem]);
 
-  const handleRetranslate = async () => {
-    if (retranslating) return;
-    setRetranslating(true);
-    try {
-      const { error } = await supabase.functions.invoke('translate-news-item-et', {
-        body: { id: currentItem.id, force: true },
-      });
-      if (error) throw error;
-
-      const { data: refreshed, error: fetchError } = await supabase
-        .from('news_items')
-        .select('*')
-        .eq('id', currentItem.id)
-        .single();
-      if (fetchError) throw fetchError;
-      if (refreshed) {
-        setCurrentItem((prev) => ({ ...prev, ...(refreshed as Partial<NewsItem>) }));
-        toast.success('Tõlge uuendatud');
-      }
-    } catch (e: any) {
-      const msg = (e?.message || String(e)).slice(0, 200);
-      toast.error(`Tõlke uuendamine ebaõnnestus: ${msg}`);
-    } finally {
-      setRetranslating(false);
-    }
-  };
   const hasTranslation = Boolean(translatedTitle || translatedBody);
   const canShowTranslated = showEtContent && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
 
-  // Per-item view mode persisted in localStorage, default = translated when available
+  // Per-item view mode persisted in localStorage. Only an explicit user choice
+  // ('original:user') pins the original; otherwise the translation is shown
+  // whenever one is available (legacy auto-written 'original' values are ignored).
   const storageKey = `news_view_mode_${item.id}`;
-  const [viewMode, setViewMode] = useState<'translated' | 'original'>(() => {
-    if (!canShowTranslated) return 'original';
-    const stored = localStorage.getItem(storageKey);
-    if (stored === 'original') return 'original';
-    return 'translated';
-  });
+  const [viewMode, setViewMode] = useState<'translated' | 'original'>(() => (
+    localStorage.getItem(storageKey) === 'original:user' ? 'original' : 'translated'
+  ));
 
   const handleViewMode = (mode: 'translated' | 'original') => {
     setViewMode(mode);
-    localStorage.setItem(storageKey, mode);
+    localStorage.setItem(storageKey, mode === 'original' ? 'original:user' : 'translated');
   };
-
-  useEffect(() => {
-    if (canShowTranslated) return;
-    setViewMode('original');
-    localStorage.setItem(storageKey, 'original');
-  }, [canShowTranslated, storageKey]);
 
   useEffect(() => {
     if (item.content_html || item.source_slug !== 'eoy') return;
@@ -1738,7 +1686,6 @@ function ArticleView({ item, sources, showEtContent, canArchiveNews, onBack, onT
 
   const proxyBase = getProxyBase();
   const showTranslated = canShowTranslated && viewMode === 'translated';
-  const showToggle = canShowTranslated;
 
   const displayTitle = useMemo(() => (
     showTranslated
@@ -1776,7 +1723,6 @@ function ArticleView({ item, sources, showEtContent, canArchiveNews, onBack, onT
   );
   const hasTranslatedInlineMedia = showTranslated && preservedMediaBlocks.length > 0 && translatedParagraphs.length > 0;
   const originalUrl = currentItem.permalink_url || currentItem.url || '#';
-  const isPending = showEtContent && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
 
   useEffect(() => {
     if (showTranslated && !hasTranslation && import.meta.env.DEV) {
@@ -1797,7 +1743,7 @@ function ArticleView({ item, sources, showEtContent, canArchiveNews, onBack, onT
   }, [heroImageUrl, item.id]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className={cn('flex flex-col h-full', isDesktop && 'mx-auto w-full max-w-[680px]')}>
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card">
         <Button variant="ghost" size="icon" onClick={onBack}>
           <ChevronLeft className="w-5 h-5" />
@@ -1809,7 +1755,7 @@ function ArticleView({ item, sources, showEtContent, canArchiveNews, onBack, onT
           <img
             src={heroSrc}
             alt=""
-            className="w-full rounded-xl object-cover max-h-56 bg-muted"
+            className={cn('object-cover bg-muted', isDesktop ? 'w-full aspect-video rounded-xl' : 'aspect-[4/3] -mx-4 w-[calc(100%+2rem)] max-w-none rounded-none')}
             referrerPolicy="no-referrer"
             crossOrigin="anonymous"
             onError={() => {
@@ -1826,45 +1772,28 @@ function ArticleView({ item, sources, showEtContent, canArchiveNews, onBack, onT
             }}
           />
         ) : (
-          <div className="w-full rounded-xl bg-muted flex items-center justify-center h-40">
+          <div className={cn('bg-muted flex items-center justify-center', isDesktop ? 'w-full aspect-video rounded-xl' : 'aspect-[4/3] -mx-4 w-[calc(100%+2rem)] max-w-none rounded-none')}>
             <Newspaper className="w-12 h-12 text-muted-foreground/30" />
           </div>
         )}
-        <h1 className="text-xl font-bold text-foreground">{displayTitle}</h1>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="secondary">{sourceName}</Badge>
-          {isPending && (
-            <Badge variant="outline" className="text-amber-600 border-amber-300">
-              Tõlkimisel…
-            </Badge>
+        <h1 className="text-2xl font-bold leading-tight text-foreground [text-wrap:balance]">{displayTitle}</h1>
+        <div className="flex items-center gap-3 flex-wrap">
+          <NewsMeta model={model} dateText={formatEstDate(currentItem.published_at || currentItem.created_at || currentItem.fetched_at || '')} />
+          {canShowTranslated && (
+            <button
+              type="button"
+              aria-pressed={showTranslated}
+              onClick={() => handleViewMode(showTranslated ? 'original' : 'translated')}
+              className={cn(
+                'ml-auto inline-flex items-center gap-1.5 h-8 pl-2 pr-3 rounded-full border text-xs font-medium',
+                showTranslated ? 'bg-primary/10 border-transparent text-primary' : 'border-border text-foreground/80',
+              )}
+            >
+              <Languages className="w-3.5 h-3.5" />
+              {showTranslated ? 'eesti keeles' : 'originaal'}
+            </button>
           )}
-          {showTranslated && <Badge variant="outline">Tõlgitud</Badge>}
-          <span className="text-xs text-muted-foreground">{formatEstDate(currentItem.published_at || currentItem.created_at || currentItem.fetched_at || '')}</span>
         </div>
-
-        {/* Tõlgitud / Originaal toggle */}
-        {showToggle && (
-          <div className="flex gap-1 bg-muted rounded-lg p-1 w-fit">
-            <button
-              onClick={() => handleViewMode('translated')}
-              className={cn(
-                'px-3 py-1 text-sm font-medium rounded-md transition-colors',
-                viewMode === 'translated' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
-              )}
-            >
-              Tõlgitud
-            </button>
-            <button
-              onClick={() => handleViewMode('original')}
-              className={cn(
-                'px-3 py-1 text-sm font-medium rounded-md transition-colors',
-                viewMode === 'original' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
-              )}
-            >
-              Originaal
-            </button>
-          </div>
-        )}
 
         {loadingContent ? (
           <div className="space-y-3">
@@ -1878,7 +1807,7 @@ function ArticleView({ item, sources, showEtContent, canArchiveNews, onBack, onT
             dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}
           />
         ) : hasTranslatedInlineMedia ? (
-          <div className="space-y-2 overflow-x-hidden text-sm leading-relaxed text-foreground">
+          <div className="space-y-2 overflow-x-hidden text-[15.5px] leading-relaxed text-foreground">
             {preservedMediaBlocks
               .filter((block) => block.afterTextBlock === 0)
               .map((block) => (
@@ -1908,12 +1837,24 @@ function ArticleView({ item, sources, showEtContent, canArchiveNews, onBack, onT
         ) : contentError ? (
           <p className="text-sm text-muted-foreground italic">{contentError}</p>
         ) : displayBody ? (
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">
+          <p className={cn('text-foreground leading-relaxed whitespace-pre-line', showTranslated ? 'text-[15.5px]' : 'text-sm')}>
             {showTranslated ? displayBody : toPlainText(displayBody)}
           </p>
         ) : (
           <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
         )}
+
+        {!loadingContent && showTranslated && !hasTranslatedInlineMedia && preservedMediaBlocks.length > 0 ? (
+          <div className="space-y-2 overflow-x-hidden">
+            {preservedMediaBlocks.map((block) => (
+              <div
+                key={block.key}
+                className={ARTICLE_MEDIA_PROSE_CLASS}
+                dangerouslySetInnerHTML={{ __html: block.html }}
+              />
+            ))}
+          </div>
+        ) : null}
 
         {showTranslated && !hasTranslatedInlineMedia && articleImages.length > 0 ? (
           <div className="space-y-3">
@@ -1936,31 +1877,12 @@ function ArticleView({ item, sources, showEtContent, canArchiveNews, onBack, onT
           </div>
         ) : null}
 
-        <div className="flex gap-2 pt-2">
+        <div className="flex gap-2 pt-4 mt-2 border-t border-border">
           <a href={originalUrl} target="_blank" rel="noopener noreferrer">
             <Button variant="outline" size="sm" className="gap-1.5">
               <ExternalLink className="w-3.5 h-3.5" /> Ava originaal
             </Button>
           </a>
-          {canArchiveNews && (
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={onToggleArchive}>
-              {currentItem.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-              {currentItem.is_archived ? 'Taasta' : 'Arhiveeri'}
-            </Button>
-          )}
-          {isNonEtSource && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={handleRetranslate}
-              disabled={retranslating}
-              title="Tõlgi see uudis uuesti uue prompti ja mudeliga"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${retranslating ? 'animate-spin' : ''}`} />
-              {retranslating ? 'Tõlgib…' : 'Tõlgi uuesti'}
-            </Button>
-          )}
         </div>
       </div>
     </div>

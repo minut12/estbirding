@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-01 - P89b Gemini model chain + retry on 429/503 (gemini-2.5-flash retired for new keys)
 // redeploy-marker: 2026-10-01 - P89 Anthropic Messages with Gemini fallback (reactive + LLM_FORCE_PROVIDER)
 //
 // Drop-in for `fetch("https://api.anthropic.com/v1/messages", ...)`.
@@ -13,14 +14,23 @@
 // it is not a credit problem and the signal is already aborted.
 //
 // Env (Supabase Secrets): ANTHROPIC_API_KEY, GEMINI_API_KEY,
-//   GEMINI_MODEL (default gemini-2.5-flash), LLM_FORCE_PROVIDER (anthropic|gemini)
+//   GEMINI_MODEL (comma-separated chain, tried in order; default below),
+//   LLM_FORCE_PROVIDER (anthropic|gemini)
+// Gemini free tier returns 503 UNAVAILABLE "high demand" often; each model in
+// the chain is tried up to GEMINI_ATTEMPTS times with a short backoff before
+// moving to the next model. The last failure is what the caller sees.
 
 export type LlmProvider = "anthropic" | "gemini";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+// gemini-2.5-flash is listed by /models but refused for new keys (404 "no longer
+// available to new users"), so the chain starts at 3.8 and steps down to the
+// lite tiers, which see less 503 pressure.
+const DEFAULT_GEMINI_MODELS = "gemini-3.8-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite";
+const GEMINI_ATTEMPTS = 2;
+const GEMINI_RETRY_MS = 4000;
 
 type AnthropicTextBlock = { type?: string; text?: string };
 type AnthropicMessage = { role: string; content: string | AnthropicTextBlock[] };
@@ -139,10 +149,30 @@ function geminiToAnthropic(g: GeminiResponse, model: string): AnthropicShapedRes
   };
 }
 
-async function callGemini(req: AnthropicMessagesRequest, signal?: AbortSignal): Promise<Response> {
-  const apiKey = (Deno.env.get("GEMINI_API_KEY") || "").trim();
-  if (!apiKey) throw new Error("missing_env:GEMINI_API_KEY");
-  const model = (Deno.env.get("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL).trim();
+export function geminiModels(): string[] {
+  const raw = (Deno.env.get("GEMINI_MODEL") || DEFAULT_GEMINI_MODELS).trim();
+  const list = raw.split(",").map((m) => m.trim()).filter(Boolean);
+  return list.length ? list : DEFAULT_GEMINI_MODELS.split(",");
+}
+
+function geminiRetryable(status: number): boolean {
+  return status === 429 || status === 503 || status === 500;
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true });
+  });
+}
+
+// One attempt against one model. Non-2xx comes back as a Response (not a throw).
+async function callGeminiOnce(
+  req: AnthropicMessagesRequest,
+  apiKey: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<Response> {
   const res = await fetch(GEMINI_BASE + "/" + model + ":generateContent", {
     method: "POST",
     headers: { "x-goog-api-key": apiKey, "content-type": "application/json" },
@@ -176,6 +206,30 @@ async function callGemini(req: AnthropicMessagesRequest, signal?: AbortSignal): 
     status: 200,
     headers: { "content-type": "application/json" },
   });
+}
+
+// Walk the model chain; retry transient statuses per model; return the last
+// failure Response if every model is exhausted.
+async function callGemini(req: AnthropicMessagesRequest, signal?: AbortSignal): Promise<Response> {
+  const apiKey = (Deno.env.get("GEMINI_API_KEY") || "").trim();
+  if (!apiKey) throw new Error("missing_env:GEMINI_API_KEY");
+  let last: Response | null = null;
+  for (const model of geminiModels()) {
+    for (let attempt = 1; attempt <= GEMINI_ATTEMPTS; attempt++) {
+      if (signal?.aborted) break;
+      const res = await callGeminiOnce(req, apiKey, model, signal);
+      if (res.ok) return res;
+      last = res;
+      const retry = geminiRetryable(res.status);
+      console.log(
+        "[llm] gemini_fail model=" + model + " attempt=" + attempt + " status=" + res.status +
+          (retry ? (attempt < GEMINI_ATTEMPTS ? " retrying" : " next_model") : " not_retryable next_model"),
+      );
+      if (!retry) break;
+      if (attempt < GEMINI_ATTEMPTS) await sleep(GEMINI_RETRY_MS, signal);
+    }
+  }
+  return last ?? new Response("gemini: no models configured", { status: 502 });
 }
 
 /**

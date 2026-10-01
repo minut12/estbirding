@@ -24,5 +24,17 @@ swift + Finnish-stork rows re-enter the pending queue each run).
 common name and attaches a *wrong* Latin — a distinct failure mode from anchor loss (the
 anchor is present but points at the wrong species).
 
+**Update (2026-10-01, P86d) — in-item propagation.** The invariant is relaxed *within one
+news item*: the X→Y rewrites made on anchored mentions (body first, then title, one shared
+set per item) are also applied to the item's unanchored mentions in title and body, matched
+by stem. Why: titles rarely carry Latin, so the title kept "Rifftiiru" while the corrected
+body said "tutt-tiir". Guards keep it conservative — a token followed by its own
+`(Latin)` is never rewritten; a group is skipped when a correctly-anchored same-stem mention
+survives, when one X maps to two different Y, when X is a shared head word of multi-word
+dict names (`pistrik`, `tiir`, `part`, `kotkas`…), when X is shorter than 4 letters, or
+when Y already starts with X's stem.
+**Still a no-op:** an item with no Latin anchor anywhere produces no X→Y set, so nothing is
+corrected. Code: `supabase/functions/_shared/bird-names.ts` (`propagateReplacements`).
+
 **Related.** [[2026-07-13-n8n-silently-drops-credentials-and-settings-on-import]] — the
 sibling gotcha in the same import-and-verify workflow.

@@ -1,9 +1,18 @@
+// redeploy: P86d 2026-10-01 - retry fill: error rows (<3 attempts, 30 days) after pending ones; select adds translation_v2_error
 // get-news-untranslated-v2
-// Returns rows from news_items where translation_v2_status = 'pending'.
+// Returns rows from news_items where translation_v2_status = 'pending', and,
+// when fewer than `limit` are pending, fills up with 'error' rows from the last
+// RETRY_WINDOW_DAYS whose translation_v2_error does not yet carry "[retry 3]"
+// (news-translate-v2 prefixes every failure with "[retry N] "). Rows whose
+// error is NULL are excluded by design (NOT LIKE on NULL is not true).
 // Auth: X-Webhook-Secret header must equal VAATLUSTE_WEBHOOK_SECRET.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const RETRY_WINDOW_DAYS = 30;
+const RETRY_EXHAUSTED_PATTERN = '[retry 3]%';
+const SELECT_COLUMNS = 'id,source_slug,source_lang,title,body,translation_v2_error';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -56,9 +65,9 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  const { data, error } = await supabase
+  const { data: pendingRows, error } = await supabase
     .from('news_items')
-    .select('id,source_slug,source_lang,title,body')
+    .select(SELECT_COLUMNS)
     .eq('translation_v2_status', 'pending')
     .neq('source_slug', 'eoy')
     .or('source_lang.is.null,source_lang.neq.et')
@@ -69,7 +78,29 @@ serve(async (req) => {
     return jsonResponse(500, { error: 'db_error', detail: error.message });
   }
 
-  return new Response(JSON.stringify(data ?? []), {
+  let rows = pendingRows ?? [];
+  if (rows.length < limit) {
+    const since = new Date(Date.now() - RETRY_WINDOW_DAYS * 86_400_000)
+      .toISOString();
+    const { data: retryRows, error: retryError } = await supabase
+      .from('news_items')
+      .select(SELECT_COLUMNS)
+      .eq('translation_v2_status', 'error')
+      .is('title_et_v2', null)
+      .neq('source_slug', 'eoy')
+      .or('source_lang.is.null,source_lang.neq.et')
+      .not('translation_v2_error', 'like', RETRY_EXHAUSTED_PATTERN)
+      .gte('published_at', since)
+      .order('published_at', { ascending: false })
+      .limit(limit - rows.length);
+
+    if (retryError) {
+      return jsonResponse(500, { error: 'db_error', detail: retryError.message });
+    }
+    rows = [...rows, ...(retryRows ?? [])];
+  }
+
+  return new Response(JSON.stringify(rows), {
     status: 200,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });

@@ -1,3 +1,4 @@
+// redeploy: P86d 2026-10-01 - corrector moved to _shared/bird-names.ts (part-wise sameSpecies, multi-word dict names, title/body stem propagation), [retry N] error prefix
 // redeploy-marker: 2026-10-01 - P86d1 tolerant TITLE/BODY delimiters + raw head on parse failure
 // redeploy-marker: 2026-10-01 - P86d0 drop temperature (rejected by claude-sonnet-5-5); P75/P85i model lines unchanged
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
@@ -27,6 +28,13 @@
 // call ~15 s, so ~5-6 items per tick against a typical daily pending of 1-3.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  deCyrillic,
+  fixItemBirdNames,
+  type LatinToEt,
+  parseLinnud,
+} from "../_shared/bird-names.ts";
+import { withRetryPrefix } from "../_shared/retry-prefix.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 
@@ -110,166 +118,14 @@ if (SYSTEM_PROMPT.length !== 2633) {
 // fetched once per execution -- kept that way here, cached for the invocation)
 // ---------------------------------------------------------------------------
 
-// Deterministic bird-name correction (ported from _shared/bird-names-et.ts) + build PATCH.
-// Dictionary = Linnud.txt (EOU checklist) hosted in Storage.
-
-function parseLinnud(tsv: string): Record<string, string> {
-  const map: Record<string, string> = {};
-  const lines = String(tsv || "").replace(/^\uFEFF/, "").split(/\r?\n/).filter(
-    Boolean,
-  );
-  if (lines.length < 2) return map;
-  const header = lines[0].split("\t").map(function (c) {
-    return c.trim();
-  });
-  const li = header.indexOf("nimi_lk");
-  const ei = header.indexOf("nimi_ek");
-  if (li < 0 || ei < 0) return map;
-  for (let i = 1; i < lines.length; i++) {
-    const cells = lines[i].split("\t");
-    const est = String(cells[ei] || "").replace(/\s*\([^)]*\)\s*/g, " ")
-      .replace(/\s+/g, " ").trim();
-    if (!est) continue;
-    const aliases = String(cells[li] || "").split(",");
-    for (let a = 0; a < aliases.length; a++) {
-      const key = aliases[a].toLowerCase().replace(/\*/g, "")
-        .replace(/[()\[\]]/g, "").replace(/\s+/g, " ").trim();
-      if (key && !map[key]) map[key] = est;
-    }
-  }
-  return map;
-}
-
-const CALQUES: Array<[RegExp, string]> = [
-  [/\bDalmaatsia\s+pelikan(i|it|ile|is|ist|iks|iga|ina)?\b/gi, "käharpelikan$1"],
-  [/\bDalmaatia\s+pelikan(i|it|ile|is|ist|iks|iga|ina)?\b/gi, "käharpelikan$1"],
-  [/\bSabatiigli\s+kiivitaja(t|le|s|st|ks|ga|na)?\b/gi, "stepikiivitaja$1"],
-  [
-    /\bkannusvästrik(u|ut|ule|us|ust|uks|uga|una|ud|ute|uid|utes|utega|uteta)?\b/gi,
-    "valgekael-kiivitaja$1",
-  ],
-  [/\btuttvart-koiras(t|tega|le|s|st|ks|ina)?\b/gi, "tutka-isane$1"],
-  [/\btuttvart-koirased(?=\b)/gi, "tutka-isased"],
-  [/\bkoirased\b/gi, "isased"],
-  [/\bkoirastega\b/gi, "isastega"],
-  [/\bkoirast\b/gi, "isast"],
-  [/\bkoiraste\b/gi, "isaste"],
-  [/\btuttvartidel\b/gi, "tutkadel"],
-  [/\btuttvartid\b/gi, "tutkad"],
-  [/\bvappubukett(i|it|ile|is|ist|iks|iga|ina)?\b/gi, "kevadlille$1"],
-  [/\bvappuõis(t|tega|le|s|st|ks|ed)?\b/gi, "kevadlille$1"],
-];
-
-function fixCalques(t: string): string {
-  if (!t) return t;
-  let r = t;
-  for (let i = 0; i < CALQUES.length; i++) {
-    r = r.replace(CALQUES[i][0], CALQUES[i][1]);
-  }
-  return r;
-}
-
-function sameSpecies(a: string, b: string): boolean {
-  a = String(a || "").toLowerCase().trim();
-  b = String(b || "").toLowerCase().trim();
-  if (!a || !b) return false;
-  if (a === b) return true;
-  const n = Math.min(a.length, b.length);
-  let i = 0;
-  while (i < n && a[i] === b[i]) i++;
-  return i >= 4 && i >= 0.5 * n;
-}
-
-function fixBirdNames(text: string, latinToEt: Record<string, string>): string {
-  if (!text) return text;
-  const normalized = String(text)
-    .replace(/\(\s*\*\s*([A-Z][a-z]+\s+[a-z]+)\s*\*\s*\)/g, "($1)")
-    .replace(/\(\s*_\s*([A-Z][a-z]+\s+[a-z]+)\s*_\s*\)/g, "($1)")
-    .replace(/\(\s*<i>\s*([A-Z][a-z]+\s+[a-z]+)\s*<\/i>\s*\)/gi, "($1)");
-  let result = normalized.replace(
-    /([\p{L}\-]+(?:\s+[\p{L}\-]+){0,3})\s*\(([A-Z][a-z]+\s+[a-z]+)\)/gu,
-    function (m: string, _e: string, latin: string) {
-      const c = latinToEt[latin.toLowerCase()];
-      if (!c) return m;
-      const words = _e.split(/\s+/);
-      const name = words[words.length - 1];
-      if (sameSpecies(name, c)) return m;
-      const pre = words.slice(0, -1).join(" ");
-      return (pre ? pre + " " : "") + c + " (" + latin + ")";
-    },
-  );
-  result = result.replace(
-    /(?<!\()(?<!\w)\b([A-Z][a-z]+\s+[a-z]+)\b(?!\))/g,
-    function (m: string, latin: string) {
-      const c = latinToEt[latin.toLowerCase()];
-      return c ? (c + " (" + latin + ")") : m;
-    },
-  );
-  const seen: Record<string, boolean> = {};
-  result = result.replace(
-    /\s*\(([A-Z][a-z]+\s+[a-z]+)\)/g,
-    function (m: string, latin: string) {
-      const key = latin.toLowerCase();
-      if (!latinToEt[key]) return m;
-      if (seen[key]) return "";
-      seen[key] = true;
-      return m;
-    },
-  );
-  return fixCalques(result);
-}
-
-const CYR: Record<string, string> = {
-  "а": "a",
-  "б": "b",
-  "в": "v",
-  "г": "g",
-  "д": "d",
-  "е": "e",
-  "ё": "jo",
-  "ж": "zh",
-  "з": "z",
-  "и": "i",
-  "й": "j",
-  "к": "k",
-  "л": "l",
-  "м": "m",
-  "н": "n",
-  "о": "o",
-  "п": "p",
-  "р": "r",
-  "с": "s",
-  "т": "t",
-  "у": "u",
-  "ф": "f",
-  "х": "h",
-  "ц": "ts",
-  "ч": "ch",
-  "ш": "sh",
-  "щ": "sch",
-  "ъ": "",
-  "ы": "y",
-  "ь": "",
-  "э": "e",
-  "ю": "ju",
-  "я": "ja",
-};
-
-function deCyrillic(s: string): string {
-  if (!s) return s;
-  return String(s).replace(/[\u0400-\u04FF]/g, function (ch: string) {
-    const low = ch.toLowerCase();
-    const r = CYR[low];
-    if (r === undefined) return "";
-    if (ch !== low && r) return r.charAt(0).toUpperCase() + r.slice(1);
-    return r;
-  });
-}
+// Deterministic bird-name correction lives in ../_shared/bird-names.ts (P86d):
+// parseLinnud, sameSpecies, fixItemBirdNames, CALQUES, deCyrillic. The
+// dictionary = Linnud.txt (EOU checklist) hosted in Storage is loaded here.
 
 // Fetched once per invocation (n8n: once per execution). 1.68 MB, no CDN cache.
-let linnudCache: Record<string, string> | null = null;
+let linnudCache: LatinToEt | null = null;
 
-async function loadLinnud(): Promise<Record<string, string>> {
+async function loadLinnud(): Promise<LatinToEt> {
   if (linnudCache) return linnudCache;
   const res = await fetch(LINNUD_URL, { method: "GET" });
   if (!res.ok) throw new Error("linnud_fetch HTTP " + res.status);
@@ -296,6 +152,8 @@ interface PendingItem {
   source_lang: string | null;
   title: string | null;
   body: string | null;
+  // Previous attempt's error ("[retry N] ..."), present on re-queued rows.
+  translation_v2_error?: string | null;
 }
 
 // The shape n8n's `Parse Sonnet` produced.
@@ -304,6 +162,7 @@ interface ParsedItem {
   source_slug: string | null;
   title: string | null;
   body: string | null;
+  prev_error: string | null;
   title_raw?: string;
   body_raw?: string;
   translation_engine?: string;
@@ -377,6 +236,7 @@ function parseSonnet(src: PendingItem, resp: AnthropicResponse): ParsedItem {
     source_slug: src.source_slug,
     title: src.title,
     body: src.body,
+    prev_error: src.translation_v2_error ?? null,
   };
   try {
     if (resp && resp.error) {
@@ -418,18 +278,26 @@ function parseSonnet(src: PendingItem, resp: AnthropicResponse): ParsedItem {
 }
 
 // n8n node: Correct + patch (the per-item half; dictionary load is hoisted)
-function buildPatch(it: ParsedItem, latinToEt: Record<string, string>): Patch {
+function buildPatch(it: ParsedItem, latinToEt: LatinToEt): Patch {
   if (it._error || (!it.title_raw && !it.body_raw)) {
     return {
       translation_v2_status: "error",
-      translation_v2_error: String(it._error || "empty translation").slice(0, 800),
+      translation_v2_error: withRetryPrefix(
+        it.prev_error,
+        String(it._error || "empty translation"),
+      ),
     };
   }
+  const fixed = fixItemBirdNames(
+    {
+      title: deCyrillic(String(it.title_raw || "")),
+      body: deCyrillic(String(it.body_raw || "")),
+    },
+    latinToEt,
+  );
   return {
-    title_et_v2:
-      fixBirdNames(deCyrillic(String(it.title_raw || "")), latinToEt) || null,
-    body_et_v2:
-      fixBirdNames(deCyrillic(String(it.body_raw || "")), latinToEt) || null,
+    title_et_v2: fixed.title || null,
+    body_et_v2: fixed.body || null,
     translation_engine: it.translation_engine || null,
     translation_v2_status: "done",
     translation_v2_error: null,
@@ -715,7 +583,7 @@ Deno.serve(async (req) => {
     // --- n8n node: Correct + patch (dictionary, once per run) --------------
     const latinToEt = items.length > 0
       ? await loadLinnud()
-      : {} as Record<string, string>;
+      : {} as LatinToEt;
 
     // --- per item, sequentially (n8n ran items one after another) ----------
     for (let i = 0; i < items.length; i++) {

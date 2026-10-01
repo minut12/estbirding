@@ -261,14 +261,16 @@ function rewriteSpan(
   const keptPre = words.slice(0, words.length - 1 - take);
   const spanText = spanWords.join(" ");
   const newName = lastSame ? dictLead.concat([last]).join(" ") : dictName;
-  const anchored = newName + " (" + latin + ")";
   const prefix = keptPre.length > 0 ? keptPre.join(" ") + " " : "";
   if (lowerNfc(newName) === lowerNfc(spanText)) {
     return { replacement: null, text: prefix + spanText + " (" + latin + ")" };
   }
+  const atStart = isSentenceStart(text, starts[words.length - 1 - take]) &&
+    isCapitalised(spanWords[0]);
+  const shown = atStart ? capitaliseFirst(newName) : newName;
   return {
     replacement: { from: spanText, to: newName, lastSame, latin },
-    text: prefix + anchored,
+    text: prefix + shown + " (" + latin + ")",
   };
 }
 
@@ -295,9 +297,11 @@ export function correctAnchoredNames(
   );
   const pass2 = pass1.replace(
     BARE_LATIN_RE,
-    function (m: string, latin: string) {
+    function (m: string, latin: string, offset: number) {
       const c = latinToEt[latin.toLowerCase()];
-      return c ? (c + " (" + latin + ")") : m;
+      if (!c) return m;
+      const shown = isSentenceStart(pass1, offset) ? capitaliseFirst(c) : c;
+      return shown + " (" + latin + ")";
     },
   );
   return { text: pass2, replacements };

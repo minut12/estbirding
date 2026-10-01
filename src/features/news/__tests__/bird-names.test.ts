@@ -1,7 +1,7 @@
 // P86d: news bird-name corrector (supabase/functions/_shared/bird-names.ts)
 // and the "[retry N]" error prefix (supabase/functions/_shared/retry-prefix.ts).
 // The fixture is a verbatim subset of Linnud.txt (header + lines 75, 111,
-// 1451, 1484, 2385, 2395, 8245). Real sentences come from news_items
+// 1451, 1484, 2385, 2395, 4113, 8245). Real sentences come from news_items
 // fa876bd4, a8df7b22, 3be4f385, e6a6f8cd; their raw Sonnet drafts are
 // reconstructed from the stored corrector output.
 
@@ -29,6 +29,7 @@ const FIXTURE_TSV = [
   "Charadriiformes\tkurvitsalised\tScolopacidae\tkurvitslased\tCalidris falcinellus, Limicola falcinellus\tplütt\tBroad-billed Sandpiper",
   "Falconiformes\tpistrikulised\tFalconidae\tpistriklased\tFalco cherrug\tstepipistrik\tSaker Falcon, Saker",
   "Falconiformes\tpistrikulised\tFalconidae\tpistriklased\tFalco eleonorae\tvahemere pistrik\tEleonora's Falcon",
+  "Passeriformes\tvärvulised\tEmberizidae\ttsiitsitajalased\tEmberiza aureola\tkuldtsiitsitaja\tYellow-breasted Bunting",
   "Passeriformes\tvärvulised\tSturnidae\tkuldnoklased\tSturnus vulgaris\tkuldnokk (harilik kuldnokk)\tCommon Starling, European Starling, Starling",
 ].join("\r\n");
 
@@ -39,7 +40,7 @@ const fixItem = (title: string, body: string): ItemText =>
 
 describe("parseLinnud (PL1)", () => {
   it("maps every Latin alias to the Estonian name and strips parentheticals", () => {
-    expect(Object.keys(DICT)).toHaveLength(10);
+    expect(Object.keys(DICT)).toHaveLength(11);
     expect(DICT["sterna sandvicensis"]).toBe("tutt-tiir");
     expect(DICT["thalasseus sandvicensis"]).toBe("tutt-tiir");
     expect(DICT["buteo ferox"]).toBe("stepiviu");
@@ -109,9 +110,9 @@ describe("isSentenceStart (D6)", () => {
 });
 
 describe("rule 2: multi-word dictionary names (R1-R4)", () => {
-  it("R1 Eleonora pistrik -> vahemere pistrik", () => {
+  it("R1 Eleonora pistrik -> Vahemere pistrik", () => {
     expect(fixBirdNames("Eleonora pistrik (Falco eleonorae)", DICT))
-      .toBe("vahemere pistrik (Falco eleonorae)");
+      .toBe("Vahemere pistrik (Falco eleonorae)");
   });
   it("R2 inserts the missing dictionary prefix and keeps a lowercase verb", () => {
     expect(fixBirdNames("vaatlesid pistrik (Falco eleonorae)", DICT))
@@ -119,7 +120,7 @@ describe("rule 2: multi-word dictionary names (R1-R4)", () => {
   });
   it("R3 repairs the old corrector output", () => {
     expect(fixBirdNames("Eleonora vahemere pistrik (Falco eleonorae)", DICT))
-      .toBe("vahemere pistrik (Falco eleonorae)");
+      .toBe("Vahemere pistrik (Falco eleonorae)");
   });
   it("R4 keeps a place name before a complete name", () => {
     expect(fixBirdNames("Poola vahemere pistrik (Falco eleonorae)", DICT))
@@ -136,7 +137,7 @@ describe("inflection is preserved when the species matches (I1-I2)", () => {
   });
   it("I2 replaces only the leading word of an inflected multi-word name", () => {
     expect(fixBirdNames("Eleonora pistrikuga (Falco eleonorae)", DICT))
-      .toBe("vahemere pistrikuga (Falco eleonorae)");
+      .toBe("Vahemere pistrikuga (Falco eleonorae)");
   });
 });
 
@@ -154,7 +155,7 @@ describe("propagation to unanchored mentions and the title (P1-P7)", () => {
       title:
         "Tutt-tiiru vaatlusi registreeriti Tiira linnuandmebaasis sel suvel üle kümne korra keskmisest rohkem",
       body:
-        "tutt-tiir (Sterna sandvicensis) vaatlusi registreeriti Tiira linnuandmebaasis sel suvel üle kümne korra keskmisest rohkem. " +
+        "Tutt-tiir (Sterna sandvicensis) vaatlusi registreeriti Tiira linnuandmebaasis sel suvel üle kümne korra keskmisest rohkem. " +
         "Suurimas parves täheldati Kotkas 68 tutt-tiir, mis ületab mõne aasta kogu Soomes registreeritud isendite arvu. " +
         "Esinemine koondus ida-Soome lahele, kus enamikul hilissuvedel nähakse vaid käputäit tutt-tiirusid \u2013 kui sedagi. " +
         "Lääne-Eestis on tutt-tiir üsna tavaline, kohati pesitsev liik. " +
@@ -192,7 +193,7 @@ describe("propagation to unanchored mentions and the title (P1-P7)", () => {
       body:
         "Suur haruldus Poolas! Dorota Łukasik ja kaaslased vaatlesid 18. septembril Krynica Morska rändevaatluspostil (Stowarzyszenie Drapolicz) vahemere pistrik (Falco eleonorae) \u2013 see on liigi seitsmes registreering Poolas. " +
         "Tegemist on tänavu teise vahemere pistrikuga samal vaatluspostil: esimene, ebaküps isend, nähti seal juba 5. septembril. " +
-        "vahemere pistrik pesitseb Vahemere piirkonnas. Fotod: Piotr Zieliński. Palju õnne!",
+        "Vahemere pistrik pesitseb Vahemere piirkonnas. Fotod: Piotr Zieliński. Palju õnne!",
     });
   });
 
@@ -214,6 +215,25 @@ describe("propagation to unanchored mentions and the title (P1-P7)", () => {
       title: "Stepi-loorkull rändel",
       body: "üks stepi-loorkull (Circus macrourus) lendas",
     });
+  });
+});
+
+describe("sentence-start capitalisation (S1-S4)", () => {
+  it("S1 capitalises a replacement at sentence start", () => {
+    expect(fixBirdNames("Kowalski. Rohetsiitsitaja (Emberiza aureola) on", DICT))
+      .toBe("Kowalski. Kuldtsiitsitaja (Emberiza aureola) on");
+  });
+  it("S2 keeps a mid-sentence replacement lowercase", () => {
+    expect(fixBirdNames("nägid Rohetsiitsitaja (Emberiza aureola)", DICT))
+      .toBe("nägid kuldtsiitsitaja (Emberiza aureola)");
+  });
+  it("S3 no-op branch keeps the draft case", () => {
+    const s = "Kowalski. Kuldtsiitsitaja (Emberiza aureola) on";
+    expect(fixBirdNames(s, DICT)).toBe(s);
+  });
+  it("S4 capitalises a bare binomial named at sentence start", () => {
+    expect(fixBirdNames("Kowalski. Calidris falcinellus nähti", DICT))
+      .toBe("Kowalski. Plütt (Calidris falcinellus) nähti");
   });
 });
 

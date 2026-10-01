@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-01 - P89c drop thinkingConfig (400 INVALID_ARGUMENT on Gemini 3.x), 1024 output floor
 // redeploy-marker: 2026-10-01 - P89b Gemini model chain + retry on 429/503 (gemini-2.5-flash retired for new keys)
 // redeploy-marker: 2026-10-01 - P89 Anthropic Messages with Gemini fallback (reactive + LLM_FORCE_PROVIDER)
 //
@@ -31,6 +32,7 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_GEMINI_MODELS = "gemini-3.8-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite";
 const GEMINI_ATTEMPTS = 2;
 const GEMINI_RETRY_MS = 4000;
+const GEMINI_MIN_OUTPUT_TOKENS = 1024;
 
 type AnthropicTextBlock = { type?: string; text?: string };
 type AnthropicMessage = { role: string; content: string | AnthropicTextBlock[] };
@@ -103,11 +105,12 @@ function toGeminiBody(req: AnthropicMessagesRequest): Record<string, unknown> {
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: blocksToText(m.content) }],
   }));
+  // No thinkingConfig: Gemini 3.x rejects thinkingBudget with 400
+  // INVALID_ARGUMENT (verified 2026-10-01 on gemini-3.5-flash-lite). Thinking
+  // tokens count against maxOutputTokens, so a floor keeps tiny requests (the
+  // 32-token language classifier) from coming back truncated.
   const generationConfig: Record<string, unknown> = {
-    maxOutputTokens: req.max_tokens,
-    // Flash would otherwise spend max_tokens on hidden thinking and come back
-    // truncated -> every call site's max_tokens guard would fire.
-    thinkingConfig: { thinkingBudget: 0 },
+    maxOutputTokens: Math.max(req.max_tokens, GEMINI_MIN_OUTPUT_TOKENS),
   };
   if (typeof req.temperature === "number") generationConfig.temperature = req.temperature;
   const body: Record<string, unknown> = { contents, generationConfig };

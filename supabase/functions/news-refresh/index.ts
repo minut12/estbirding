@@ -1,6 +1,9 @@
 ﻿import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { fetchSourceItems, normalizeSourceUrl, SourceFetchError } from "../_shared/source-fetch.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import { stripFeedFooterHtml, stripFeedFooterText } from "../_shared/news-text.ts";
+
+// redeploy: 2026-10-01 P86c2 -- strip FetchRSS feed footer from body/content_html at ingest
 
 type SourceRow = {
   id: string;
@@ -700,14 +703,16 @@ function normalizeRssItems(items: Awaited<ReturnType<typeof fetchSourceItems>>, 
     const itemSourceKey = `${sourceIdentity}:${guid}`;
     const rawLang = String((item.raw_json as Record<string, unknown> | null)?.language || "").trim().toLowerCase();
     const language = rawLang || (source.slug === "eoy" ? "et" : "unknown");
+    const body = item.body ? stripFeedFooterText(item.body) : "";
+    const bodyHtml = item.body_html ? stripFeedFooterHtml(item.body_html) : "";
     out.push({
       source_id: source.id,
       source_key: itemSourceKey,
       source_slug: source.slug,
       external_id: externalId || normalizedLink || null,
       title,
-      body: item.body || null,
-      summary: item.body?.slice(0, 500) || null,
+      body: body || null,
+      summary: body.slice(0, 500) || null,
       image_url: decodeUrl(item.image_url),
       url,
       permalink_url: url,
@@ -715,7 +720,7 @@ function normalizeRssItems(items: Awaited<ReturnType<typeof fetchSourceItems>>, 
       published_at: publishedAt.iso,
       fetched_at: now,
       raw_json: item.raw_json,
-      content_html: item.body_html || null,
+      content_html: bodyHtml || null,
       language,
       source_lang: language,
       archived: false,

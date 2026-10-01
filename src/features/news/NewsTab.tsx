@@ -1,9 +1,9 @@
 ﻿import { Fragment, useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/config/supabaseClient';
 import {
   Newspaper, ChevronLeft, ExternalLink,
-  Search, RefreshCw, Loader2, Languages, Play,
+  Search, Loader2, Languages, Play,
 } from 'lucide-react';
 import { CountryFlag, hasCountryFlag, sourceCountry, sourceChipLabel } from '@/components/icons/CountryFlag';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,6 +16,7 @@ import { getProxyMode } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
 import { normalizeDisplayText } from '@/lib/textNormalize';
 import { getNewsImageSrc, getProxiedImageUrl, getProxyBase, isProxiedImageUrl } from './newsImage';
+import { firstSentence, getCanonicalSourceValue, stripFeedFooterHtml, stripFeedFooterText } from './newsText';
 
 /* Types */
 interface NewsItem {
@@ -72,7 +73,6 @@ const PAGE_SIZE = 25;
 const NEWS_LIST_STATE_KEY = 'estbirding.news.listState.v1';
 const NEWS_HASH_LIST = '#news';
 const NEWS_HASH_ARTICLE = '#news-article';
-const NEWS_LAST_REFRESH_KEY = 'estbirding.news.lastRefreshAt.v1';
 
 const NEWS_VIEW_SELECT = 'id,source_key,title,title_et,title_et_v2,body,body_et,body_et_v2,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,created_at,external_id,source_id,source_slug,source_name,cached_image_url,cached_image_path,display_image_url,content_html,fetched_at,guid,raw_json,language,source_lang,translated_title,translated_body';
 const NEWS_TABLE_FALLBACK_SELECT = 'id,source_key,title,title_et,title_et_v2,body,body_et,body_et_v2,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,source_id,source_slug,permalink_url,content_html,created_at,cached_image_url,image_cached_url,language,source_lang,guid,raw_json,fetched_at';
@@ -257,12 +257,10 @@ function stripNewsBoilerplate(value: string | null | undefined): string {
 }
 
 function cleanupNewsText(value: string | null | undefined): string {
-  // Remove the whole "(Feed generated with FetchRSS)" parenthetical (parens +
-  // surrounding whitespace) up front — must run before stripNewsBoilerplate,
-  // which otherwise deletes the inner phrase and leaves an empty "( )" behind.
-  return stripNewsBoilerplate(
-    String(value ?? '').replace(/\s*\(\s*Feed\s+generated\s+with\s+FetchRSS\s*\)\s*/gi, ' '),
-  )
+  // Remove the whole FetchRSS footer parenthetical (any language) up front
+  // -- must run before stripNewsBoilerplate, which otherwise deletes the
+  // inner phrase and leaves an empty "( )" behind.
+  return stripNewsBoilerplate(stripFeedFooterText(value))
     .replace(/\r/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
@@ -287,54 +285,33 @@ function isGeneratedFallbackTitle(value: string | null | undefined): boolean {
 }
 
 function buildSourceFallbackTitle(sourceName: string): string {
-  const source = normalizeDisplayText(sourceName || '').trim() || 'Linnuuudised';
-  if (/birding estonia/i.test(source)) return 'Birding Estonia linnuuudised';
-  if (/birding latvia/i.test(source)) return 'Birding Latvia linnuuudised';
-  if (/birding poland/i.test(source)) return 'Birding Poland linnuuudised';
-  if (/birding belgium/i.test(source)) return 'Birding Belgium linnuuudised';
-  return `${source} linnuuudised`;
+  const source = normalizeDisplayText(sourceName || '').trim() || 'Linnu-uudised';
+  if (/birding estonia/i.test(source)) return 'Birding Estonia linnu-uudised';
+  if (/birding latvia/i.test(source)) return 'Birding Latvia linnu-uudised';
+  if (/birding poland/i.test(source)) return 'Birding Poland linnu-uudised';
+  if (/birding belgium/i.test(source)) return 'Birding Belgium linnu-uudised';
+  return `${source} linnu-uudised`;
 }
 
-function getDisplayTitleForSource(sourceName: string, title: string | null | undefined): string {
+function getDisplayTitleForSource(
+  sourceName: string,
+  title: string | null | undefined,
+  bodyCandidates: ReadonlyArray<string | null | undefined> = [],
+): string {
   const cleanedTitle = cleanupNewsText(title);
-  return capitalizeFirst(
-    isGeneratedFallbackTitle(cleanedTitle) ? buildSourceFallbackTitle(sourceName) : cleanedTitle,
-  );
-}
-
-function getCanonicalSourceValue(source: Partial<NewsSource> | NewsItem): string {
-  const sourceKey = String((source as NewsItem).source_key || (source as NewsSource).source_key || '').trim().toLowerCase();
-  const slug = String((source as NewsItem).source_slug || (source as NewsSource).slug || '').trim().toLowerCase();
-  const name = String((source as NewsItem).source_name || (source as NewsSource).name || '').trim().toLowerCase();
-  return sourceKey || slug || name;
-}
-
-function readLastNewsRefreshAt(): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(NEWS_LAST_REFRESH_KEY);
-}
-
-function writeLastNewsRefreshAt(value: string): void {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(NEWS_LAST_REFRESH_KEY, value);
-}
-
-function formatNewsRefreshTimestamp(value: string | null): string {
-  if (!value) return 'Pole veel värskendatud';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return 'Pole veel värskendatud';
-  return date.toLocaleString('et-EE', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  if (isGeneratedFallbackTitle(cleanedTitle)) {
+    for (const candidate of bodyCandidates) {
+      const sentence = firstSentence(toPlainText(cleanupNewsText(candidate)));
+      if (sentence) return capitalizeFirst(sentence);
+    }
+    return capitalizeFirst(buildSourceFallbackTitle(sourceName));
+  }
+  return capitalizeFirst(cleanedTitle);
 }
 
 function cleanupNewsHtml(html: string | null | undefined): string | null {
   if (!html) return null;
-  const cleaned = stripNewsBoilerplate(html)
+  const cleaned = stripNewsBoilerplate(stripFeedFooterHtml(html))
     .replace(/<p>\s*<\/p>/gi, '')
     .replace(/<div>\s*<\/div>/gi, '')
     .trim();
@@ -733,7 +710,6 @@ export default function NewsTab() {
   const [resolvedProxyBase, setResolvedProxyBase] = useState(() => getProxyBase());
   const [activeProxyName, setActiveProxyName] = useState(() => getProxyMode(getProxyBase()));
   const [lastNewsFetchErrorShort, setLastNewsFetchErrorShort] = useState('');
-  const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(() => readLastNewsRefreshAt());
   const utf8Probe = 'Kõik allikad õäöü';
 
   const persistListState = useCallback((overrides: Partial<NewsListState> = {}) => {
@@ -970,27 +946,6 @@ export default function NewsTab() {
   useEffect(() => {
     loadPage('initial');
   }, [loadPage]);
-  // Reflect ACTUAL data freshness from loaded items (server-side ingestion won't touch localStorage).
-  useEffect(() => {
-    if (newsItems.length === 0) return;
-    let maxMs = 0;
-    let maxIso: string | null = null;
-    for (const item of newsItems) {
-      const candidate = item.fetched_at || item.created_at || null;
-      if (!candidate) continue;
-      const ms = new Date(candidate).getTime();
-      if (Number.isFinite(ms) && ms > maxMs) {
-        maxMs = ms;
-        maxIso = candidate;
-      }
-    }
-    if (!maxIso) return;
-    setLastRefreshAt((prev) => {
-      const prevMs = prev ? new Date(prev).getTime() : 0;
-      return Number.isFinite(prevMs) && prevMs > maxMs ? prev : maxIso;
-    });
-  }, [newsItems]);
-
   const allItems = useMemo(() => {
     const filteredBySource = newsItems.filter((item) => {
       if (sourceFilter === 'all') return true;
@@ -1001,9 +956,16 @@ export default function NewsTab() {
       ? filteredBySource.filter((item) => item.is_archived || isWithinNewsMaxAge(item.published_at || item.created_at || item.fetched_at || null))
       : filteredBySource;
 
-    const filteredBySearch = search.trim()
-      ? ageFiltered.filter((item) =>
-        (item.title || '').toLowerCase().includes(search.trim().toLowerCase()))
+    const needle = search.trim().toLowerCase().normalize('NFC');
+    const filteredBySearch = needle
+      ? ageFiltered.filter((item) => {
+        const haystack = [
+          getTranslatedTitle(item),
+          item.title,
+          toPlainText(getTranslatedBody(item) || item.body || item.summary),
+        ].join(' ').toLowerCase().normalize('NFC');
+        return haystack.includes(needle);
+      })
       : ageFiltered;
 
     return filteredBySearch;
@@ -1032,52 +994,6 @@ export default function NewsTab() {
     setLastNewsFetchErrorShort(shortReason.slice(0, 120));
     toast.error('Uudiste laadimine ebaõnnestus (fetch): ' + shortReason.slice(0, 120) + ' [' + getErrorHostLabel() + ']');
   }, [isError, newsQueryError]);
-
-  // Pull / refresh
-  const pullMutation = useMutation({
-    mutationFn: async () => {
-      const fnName = 'news-refresh';
-      const { data, error } = await supabase.functions.invoke(fnName, {
-        method: 'POST',
-        body: {
-          reason: 'manual',
-          cache_images: true,
-          cache_limit: 10,
-          translateForeignNews: true,
-        },
-      });
-      if (error) throw new Error(error.message || `${fnName}: ${formatErrorReason(error)}`);
-      return data;
-    },
-    onSuccess: async (data) => {
-      loadPage('initial');
-      const total = Number(
-        data?.itemsUpserted
-        ?? ((Number(data?.totalInserted || 0) + Number(data?.totalUpdated || 0)) || 0)
-        ?? data?.upserts
-        ?? data?.inserted
-        ?? 0,
-      ) || 0;
-      const errors = Array.isArray(data?.errors) ? data.errors : [];
-      if (errors.length > 0) {
-        const reason = String(errors[0]?.error || 'Viga').slice(0, 120);
-        setLastNewsFetchErrorShort(reason);
-        toast.warning(`${errors.length} allika viga (${String(errors[0]?.source || 'allikas')}: ${reason})`);
-      } else {
-        setLastNewsFetchErrorShort('');
-      }
-      const refreshedAt = new Date().toISOString();
-      writeLastNewsRefreshAt(refreshedAt);
-      setLastRefreshAt(refreshedAt);
-      if (total > 0) toast.success(`${total} uudist uuendatud`);
-      else toast.info('Uusi uudiseid pole');
-    },
-    onError: (error) => {
-      const reason = formatErrorReason(error) || JSON.stringify(error, Object.getOwnPropertyNames(error as object));
-      setLastNewsFetchErrorShort(reason.slice(0, 120));
-      toast.error('Refresh failed: news-refresh - ' + reason.slice(0, 160));
-    },
-  });
 
   // Save/restore scroll
   const openArticle = (item: NewsItem) => {
@@ -1132,37 +1048,6 @@ export default function NewsTab() {
   );
 
   const titleEl = <h2 className="font-semibold text-foreground text-lg">Uudised</h2>;
-
-  const refreshButtonIcon = pullMutation.isPending
-    ? <Loader2 className="w-4 h-4 animate-spin" />
-    : <RefreshCw className="w-4 h-4" />;
-
-  const refreshControls = isDesktop ? (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={() => pullMutation.mutate()}
-      disabled={pullMutation.isPending}
-      title={`Värskenda · ${formatNewsRefreshTimestamp(lastRefreshAt)}`}
-    >
-      {refreshButtonIcon}
-    </Button>
-  ) : (
-    <>
-      <span className="text-xs text-muted-foreground whitespace-nowrap">
-        {formatNewsRefreshTimestamp(lastRefreshAt)}
-      </span>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => pullMutation.mutate()}
-        disabled={pullMutation.isPending}
-        title="Värskenda"
-      >
-        {refreshButtonIcon}
-      </Button>
-    </>
-  );
 
   const segmentButtonClass = (active: boolean) => cn(
     isDesktop ? 'px-3' : 'flex-1',
@@ -1249,7 +1134,6 @@ export default function NewsTab() {
           {chipsEl ?? <div className="flex-1" />}
           <div className="flex items-center gap-3 shrink-0">
             {searchEl}
-            {refreshControls}
           </div>
         </div>
         {proxyDebugEl}
@@ -1260,9 +1144,6 @@ export default function NewsTab() {
       {utf8ProbeEl}
       <div className="flex items-center justify-between">
         {titleEl}
-        <div className="flex items-center gap-3">
-          {refreshControls}
-        </div>
       </div>
 
       {/* Tabs */}
@@ -1402,9 +1283,9 @@ function useNewsCardModel(item: NewsItem, sources: NewsSource[], showEtContent: 
   const isPending = showEtContent && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
   const displayTitle = useMemo(() => (
     useEtDisplay
-      ? getDisplayTitleForSource(sourceName, translatedTitle || item.title || '')
-      : getDisplayTitleForSource(sourceName, item.title ?? '')
-  ), [useEtDisplay, sourceName, translatedTitle, item.title]);
+      ? getDisplayTitleForSource(sourceName, translatedTitle || item.title || '', [translatedBody, item.body || item.summary])
+      : getDisplayTitleForSource(sourceName, item.title ?? '', [item.body || item.summary])
+  ), [useEtDisplay, sourceName, translatedTitle, translatedBody, item.title, item.body, item.summary]);
   const snippet = useMemo(() => {
     const snippetSource = useEtDisplay
       ? (translatedBody || item.body || item.summary || '')
@@ -1689,9 +1570,9 @@ function ArticleView({ item, sources, showEtContent, onBack }: {
 
   const displayTitle = useMemo(() => (
     showTranslated
-      ? getDisplayTitleForSource(sourceName, translatedTitle || currentItem.title || '')
-      : getDisplayTitleForSource(sourceName, currentItem.title || '')
-  ), [showTranslated, sourceName, translatedTitle, currentItem.title]);
+      ? getDisplayTitleForSource(sourceName, translatedTitle || currentItem.title || '', [translatedBody, currentItem.body || currentItem.summary])
+      : getDisplayTitleForSource(sourceName, currentItem.title || '', [currentItem.body || currentItem.summary])
+  ), [showTranslated, sourceName, translatedTitle, translatedBody, currentItem.title, currentItem.body, currentItem.summary]);
   const mergedBody = useMemo(() => cleanupNewsText(currentItem.body || currentItem.summary), [currentItem.body, currentItem.summary]);
   const cleanedContentHtml = useMemo(() => cleanupNewsHtml(contentHtml), [contentHtml]);
   const bodyText = useMemo(() => toPlainText(cleanedContentHtml || mergedBody), [cleanedContentHtml, mergedBody]);
@@ -1722,6 +1603,19 @@ function ArticleView({ item, sources, showEtContent, onBack }: {
     [bodyHtmlWithoutDuplicateHero],
   );
   const hasTranslatedInlineMedia = showTranslated && preservedMediaBlocks.length > 0 && translatedParagraphs.length > 0;
+  const galleryImages = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { imageUrl: string; src: string }[] = [];
+    for (const imageUrl of articleImages) {
+      const src = getProxiedImageUrl(imageUrl, proxyBase) || imageUrl;
+      if (heroSrc && (src === heroSrc || imageUrl === heroSrc)) continue;
+      if (seen.has(src) || seen.has(imageUrl)) continue;
+      seen.add(src);
+      seen.add(imageUrl);
+      out.push({ imageUrl, src });
+    }
+    return out;
+  }, [articleImages, heroSrc, proxyBase]);
   const originalUrl = currentItem.permalink_url || currentItem.url || '#';
 
   useEffect(() => {
@@ -1743,7 +1637,7 @@ function ArticleView({ item, sources, showEtContent, onBack }: {
   }, [heroImageUrl, item.id]);
 
   return (
-    <div className={cn('flex flex-col h-full', isDesktop && 'mx-auto w-full max-w-[680px]')}>
+    <div className={cn('flex flex-col h-full', isDesktop && 'mx-auto w-full max-w-[820px]')}>
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card">
         <Button variant="ghost" size="icon" onClick={onBack}>
           <ChevronLeft className="w-5 h-5" />
@@ -1755,7 +1649,7 @@ function ArticleView({ item, sources, showEtContent, onBack }: {
           <img
             src={heroSrc}
             alt=""
-            className={cn('object-cover bg-muted', isDesktop ? 'w-full aspect-video rounded-xl' : 'aspect-[4/3] -mx-4 w-[calc(100%+2rem)] max-w-none rounded-none')}
+            className={cn('object-cover bg-muted', isDesktop ? 'w-full aspect-video max-h-[440px] rounded-xl' : 'aspect-[4/3] -mx-4 w-[calc(100%+2rem)] max-w-none rounded-none')}
             referrerPolicy="no-referrer"
             crossOrigin="anonymous"
             onError={() => {
@@ -1772,7 +1666,7 @@ function ArticleView({ item, sources, showEtContent, onBack }: {
             }}
           />
         ) : (
-          <div className={cn('bg-muted flex items-center justify-center', isDesktop ? 'w-full aspect-video rounded-xl' : 'aspect-[4/3] -mx-4 w-[calc(100%+2rem)] max-w-none rounded-none')}>
+          <div className={cn('bg-muted flex items-center justify-center', isDesktop ? 'w-full aspect-video max-h-[440px] rounded-xl' : 'aspect-[4/3] -mx-4 w-[calc(100%+2rem)] max-w-none rounded-none')}>
             <Newspaper className="w-12 h-12 text-muted-foreground/30" />
           </div>
         )}
@@ -1856,24 +1750,19 @@ function ArticleView({ item, sources, showEtContent, onBack }: {
           </div>
         ) : null}
 
-        {showTranslated && !hasTranslatedInlineMedia && articleImages.length > 0 ? (
-          <div className="space-y-3">
-            {articleImages.map((imageUrl, index) => {
-              const src = getProxiedImageUrl(imageUrl, proxyBase) || imageUrl;
-              const matchesHero = heroSrc && (src === heroSrc || imageUrl === heroSrc);
-              if (matchesHero) return null;
-              return (
-                <img
-                  key={`${imageUrl}-${index}`}
-                  src={src}
-                  alt=""
-                  className="w-full rounded-xl object-cover bg-muted"
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                  crossOrigin="anonymous"
-                />
-              );
-            })}
+        {showTranslated && !hasTranslatedInlineMedia && galleryImages.length > 0 ? (
+          <div className={cn('grid gap-2', isDesktop ? 'grid-cols-2' : 'grid-cols-1')}>
+            {galleryImages.map(({ imageUrl, src }, index) => (
+              <img
+                key={`${imageUrl}-${index}`}
+                src={src}
+                alt=""
+                className={cn('w-full aspect-[4/3] object-cover rounded-xl bg-muted', isDesktop && galleryImages.length === 1 && 'col-span-2')}
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                crossOrigin="anonymous"
+              />
+            ))}
           </div>
         ) : null}
 
@@ -1895,7 +1784,7 @@ function EmptyState({ tab }: { tab: string }) {
     <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-3">
       <Newspaper className="w-14 h-14 text-muted-foreground/40" />
       <p className="text-sm text-muted-foreground">
-        {tab === 'archive' ? 'Arhiivis pole ühtegi uudist.' : 'Uudiseid pole veel. Vajuta värskendamisnuppu.'}
+        {tab === 'archive' ? 'Arhiivis pole ühtegi uudist.' : 'Uudiseid pole.'}
       </p>
     </div>
   );

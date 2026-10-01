@@ -88,23 +88,58 @@ describe("stripFeedFooterHtml", () => {
 });
 
 describe("firstSentence", () => {
-  it("cuts at the first period", () => {
-    expect(firstSentence("Esimene lause. Teine lause.")).toBe("Esimene lause.");
+  it("appends the next sentence when the first is shorter than 25 chars", () => {
+    expect(firstSentence("Esimene lause. Teine lause.")).toBe("Esimene lause. Teine lause.");
   });
 
-  it("cuts at the first question mark", () => {
-    expect(firstSentence("Kas nägid? Jah.")).toBe("Kas nägid?");
+  it("appends after a short question until the text ends", () => {
+    expect(firstSentence("Kas nägid? Jah.")).toBe("Kas nägid? Jah.");
   });
 
   it("does not cut inside a URL", () => {
     expect(firstSentence("Vaata https://birdlife.fi/x lisaks. Teine.")).toBe("Vaata https://birdlife.fi/x lisaks.");
   });
 
-  it("caps long text without punctuation at 110 chars plus an ellipsis", () => {
+  it("caps long text without punctuation at the last word boundary within 110 chars plus an ellipsis", () => {
+    // Index 110 falls inside the 9th word, so the cut backs off to the space after the 8th word.
     const long = "linnuvaatlus ".repeat(20).trim();
     const out = firstSentence(long);
-    expect(out.length).toBe(111);
+    expect(out).toBe(`${"linnuvaatlus ".repeat(8).trim()}…`);
+    expect(out.length).toBe(104);
+    expect(out.length).toBeLessThanOrEqual(111);
     expect(out.endsWith("…")).toBe(true);
+  });
+
+  it("falls back to a hard 110-char cut when the slice has no whitespace", () => {
+    const out = firstSentence("x".repeat(200));
+    expect(out).toBe(`${"x".repeat(110)}…`);
+    expect(out.length).toBe(111);
+  });
+
+  it("extends a very short first sentence and caps at a word boundary", () => {
+    const input =
+      "MEGA! Tõenäoliselt Poola kuuenda leiuna nägid eile Mokra (opolskie vojevoodkond) piirkonnas liiki kuldtsiitsitaja, " +
+      "kes toitus põllu servas koos talvikestega. Lind püsis kohal kogu pärastlõuna.";
+    const out = firstSentence(input);
+    expect(out).toBe(
+      "MEGA! Tõenäoliselt Poola kuuenda leiuna nägid eile Mokra (opolskie vojevoodkond) piirkonnas liiki…",
+    );
+    expect(out.length).toBeLessThanOrEqual(111);
+    expect(out.endsWith("…")).toBe(true);
+  });
+
+  it("does not end a sentence at an ordinal date range", () => {
+    expect(
+      firstSentence("Kas tuled kaasa Euroopa suurimale linnuüritusele 3.–4. oktoobril? EuroBirdwatch toimub üle Euroopa."),
+    ).toBe("Kas tuled kaasa Euroopa suurimale linnuüritusele 3.–4. oktoobril?");
+  });
+
+  it("does not end a sentence at an ordinal day", () => {
+    expect(firstSentence("Lind nähti 28. septembril Tartus. Teine lause.")).toBe("Lind nähti 28. septembril Tartus.");
+  });
+
+  it("keeps a single short sentence with nothing after it", () => {
+    expect(firstSentence("Õnnitlused!")).toBe("Õnnitlused!");
   });
 
   it("returns empty string for empty and null", () => {

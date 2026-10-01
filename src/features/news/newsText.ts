@@ -54,13 +54,34 @@ export function getCanonicalSourceValue(source: SourceLike): string {
 }
 
 const DEFAULT_SENTENCE_MAX = 110;
+const MIN_SENTENCE = 25;
 
-/* First sentence of a plain text (punctuation kept), capped at `max` chars with an ellipsis. */
+// A sentence ends at . ! or ? followed by whitespace or end of text, but not
+// after a digit, so Estonian ordinals ("28. septembril", "3.\u20134.") do not cut.
+const SENTENCE_END_RE = /(?<!\d)[.!?](?=\s|$)/g;
+
+/* Cap at `max` chars with an ellipsis, backing off to the last whitespace when a word would be cut. */
+function capWithEllipsis(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const slice = text.slice(0, max);
+  const cutsWord = !/\s/.test(text.charAt(max));
+  const lastSpace = slice.search(/\s\S*$/);
+  const head = cutsWord && lastSpace > 0 ? slice.slice(0, lastSpace) : slice;
+  return head.trimEnd() + '\u2026';
+}
+
+/* First sentence of a plain text (punctuation kept), extended with whole following sentences
+   until at least MIN_SENTENCE chars, then capped at `max` chars with an ellipsis. */
 export function firstSentence(text: string | null | undefined, max = DEFAULT_SENTENCE_MAX): string {
   const collapsed = String(text ?? '').replace(/\s+/g, ' ').trim();
   if (!collapsed) return '';
-  const match = collapsed.match(/^.*?[.!?](?=\s|$)/);
-  const sentence = match ? match[0] : collapsed;
-  if (sentence.length > max) return sentence.slice(0, max).trimEnd() + '\u2026';
-  return sentence;
+  let end = collapsed.length;
+  for (const match of collapsed.matchAll(SENTENCE_END_RE)) {
+    const candidate = (match.index ?? 0) + 1;
+    if (candidate >= MIN_SENTENCE || candidate >= collapsed.length) {
+      end = candidate;
+      break;
+    }
+  }
+  return capWithEllipsis(collapsed.slice(0, end), max);
 }

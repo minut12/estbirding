@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-01 - P86d0 drop temperature from callClaude (rejected by claude-sonnet-5-5)
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 import { fixBirdNamesInText } from "./bird-names-et.ts";
@@ -30,7 +31,6 @@ export async function callClaude(
     body: JSON.stringify({
       model: config.model,
       max_tokens: maxTokens,
-      temperature: 0.1,
       system,
       messages: [{ role: "user", content: userMessage }],
     }),

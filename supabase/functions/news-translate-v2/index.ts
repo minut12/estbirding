@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-01 - P86d0 drop temperature (rejected by claude-sonnet-5-5); P75/P85i model lines unchanged
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 // news-translate-v2
@@ -469,7 +470,6 @@ async function callSonnet(
   const areq = {
     model,
     max_tokens: maxTokens,
-    temperature: 0.1,
     // The prompt is ~700 tokens, below Sonnet's 1024-token cache minimum, so
     // creation/read will read 0. Kept because it is free and pays off if the
     // prompt grows; nothing gates on the figures.

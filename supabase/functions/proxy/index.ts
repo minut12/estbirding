@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-01 - P86d0 drop temperature on the Claude path (rejected by claude-sonnet-5-5)
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 // Redeploy marker spatula-fix 2026-04-30T15:30 — force re-bundle for spatula discors Map entry
@@ -178,7 +179,6 @@ Return ONLY the translation. No commentary, no quotes around the result, no mark
           body: JSON.stringify({
             model,
             max_tokens: 2048,
-            temperature: 0.2,
             system: sysPrompt,
             messages: [{ role: "user", content: userMsg }],
           }),

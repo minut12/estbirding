@@ -29,19 +29,32 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  collectBinomials,
   deCyrillic,
   fixItemBirdNames,
+  type GlossaryEntry,
+  type ItemText,
   type LatinToEt,
   parseLinnud,
 } from "../_shared/bird-names.ts";
+import {
+  acceptGlossaryOutput,
+  buildGlossaryUserMsg,
+} from "../_shared/news-glossary.ts";
 import { withRetryPrefix } from "../_shared/retry-prefix.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 
 // Worst case: the budget check passes at 74.9 s, then one Sonnet call runs the
 // full 50 s -> 125 s, plus the write. Under the 150 s gateway cutoff.
+// P86e: the glossary pass (<= 30 s) only starts at <= 50 s elapsed, so it ends
+// by ~80 s and never extends that worst case.
 const BUDGET_MS = 75_000;
 const SONNET_TIMEOUT_MS = 50_000;
+// P86e glossary pass: its own shorter timeout, and it is only started while at
+// least GLOSSARY_BUDGET_RESERVE_MS of BUDGET_MS is left.
+const GLOSSARY_TIMEOUT_MS = 30_000;
+const GLOSSARY_BUDGET_RESERVE_MS = 25_000;
 // n8n's Ingest node allowed 300 s. Only reachable via {skipIngest:false} on a
 // manual run -- under cron this EF never ingests. A slow ingest WILL get the
 // isolate killed by the gateway; that is the documented cost of the manual path.
@@ -110,6 +123,40 @@ if (/[^\x00-\x7F]/.test(SYSTEM_PROMPT)) {
 if (SYSTEM_PROMPT.length !== 2633) {
   throw new Error(
     "SYSTEM_PROMPT length " + SYSTEM_PROMPT.length + " != 2633 (line endings?)",
+  );
+}
+
+// P86e glossary pass. ASCII-folded Estonian on purpose (same v13 convention as SYSTEM_PROMPT) -- do not 'fix' the spelling. 1670 chars, sha256 671949a3db33a8263a0f71de632e2fba21c526a89ab2d634ed252eede9539c37.
+const GLOSSARY_PROMPT =
+  `Oled eesti linnu-uudiste toimetaja. Sulle antakse lahtekeelne algtekst, selle eestikeelne tolge ja LIIGISONASTIK (ladina binoom = EOU eestikeelne nimi). Toimeta olemasolevat tolget - ara tolgi uuesti.
+
+REEGLID:
+
+1) LIIGINIMED - kasuta iga sonastikus oleva liigi kohta pealkirjas ja sisus TAPSELT sonastiku eestikeelset nime. Kaana nime loomulikult vastavalt lausele (nt "stepi-loorkulli sisseranne", "tutt-tiiru vaatlusi", "vahemere pistrikuga"). Ara kasuta liigi kohta muid nimesid, sunonuume ega kalke. Liitnime kirjapilt (sidekriips, kokku- voi lahkukirjutus) jaab TAPSELT selliseks nagu sonastikus.
+
+2) LADINA BINOOMID - ara muuda, lisa ega eemalda uhtegi ladinakeelset binoomi. Iga tolkes olev binoom jaab samale kohale, nimetavasse, sulgudes nime jarele. Sonastikus puuduvaid liike ara puutu.
+
+3) SUURTAHT - lause alguses olev liiginimi algab suure tahega (nt "Kuldtsiitsitaja (Emberiza aureola) on ..."), lause keskel vaikese tahega. Kohanimed ja isikunimed jaavad muutmata.
+
+4) KEEL - paranda kohmakad, sona-sonalt tolgitud voi ebaloomulikud laused sujuvaks eesti linnu-uudiste keeleks (standardsed verbivormid: "nahti", "leiti", "jaadvustati"). Kui tahendus on ebaselge, vordle algtekstiga.
+
+5) TRUUDUS - ara lisa ega jata valja uhtegi fakti, arvu, kuupaeva, nime ega lauset. Ara luhenda.
+
+6) PEALKIRI - kui pealkiri on vaid viide postitusele voi fotodele (nt "Fotod X postitusest", "Photos from X's post"), asenda see luhikese sisulise pealkirjaga sisu esimese lause pohjal. Sisu ennast seejuures ara muuda.
+
+VALJUND: vasta TAPSELT jargmises vormis, ilma muu teksti, kommentaaride ega markdownita:
+###TITLE###
+(toimetatud pealkiri)
+###BODY###
+(toimetatud sisu)`;
+
+// Same module-load guards as SYSTEM_PROMPT (ASCII + CRLF-sensitive length).
+if (/[^\x00-\x7F]/.test(GLOSSARY_PROMPT)) {
+  throw new Error("GLOSSARY_PROMPT contains non-ASCII characters");
+}
+if (GLOSSARY_PROMPT.length !== 1670) {
+  throw new Error(
+    "GLOSSARY_PROMPT length " + GLOSSARY_PROMPT.length + " != 1670 (line endings?)",
   );
 }
 
@@ -225,6 +272,19 @@ function splitTitleBody(txt: string): { title: string; body: string } | null {
     : { title: r.slice(0, nl).trim(), body: r.slice(nl + 1).trim() };
 }
 
+function extractText(resp: AnthropicResponse): string {
+  // Join every text block; content[0] may be a non-text block. Untyped
+  // responses fall back to content[0].text as before.
+  const blocks = (resp && resp.content) ? resp.content : [];
+  const typed = blocks.some((b) => Boolean(b) && typeof b.type === "string");
+  return typed
+    ? blocks
+      .filter((b) => Boolean(b) && b.type === "text" && typeof b.text === "string")
+      .map((b) => String(b.text))
+      .join("\n")
+    : ((blocks[0] && blocks[0].text) ? blocks[0].text : "");
+}
+
 // ---------------------------------------------------------------------------
 // n8n node: Parse Sonnet  (ported verbatim -- every failure path ends in
 // _error, which the corrector turns into a written 'error' patch, NOT a skip)
@@ -249,20 +309,12 @@ function parseSonnet(src: PendingItem, resp: AnthropicResponse): ParsedItem {
     if (resp && resp.stop_reason === "max_tokens") {
       throw new Error("max_tokens hit");
     }
-    // Join every text block; content[0] may be a non-text block. Untyped
-    // responses fall back to content[0].text as before.
-    const blocks = (resp && resp.content) ? resp.content : [];
-    const typed = blocks.some((b) => Boolean(b) && typeof b.type === "string");
-    const txt = typed
-      ? blocks
-        .filter((b) => Boolean(b) && b.type === "text" && typeof b.text === "string")
-        .map((b) => String(b.text))
-        .join("\n")
-      : ((blocks[0] && blocks[0].text) ? blocks[0].text : "");
+    const txt = extractText(resp);
     const split = splitTitleBody(stripCodeFence(txt));
     if (!split) {
       // Set directly (no throw) so the raw head is not cut by the 300-char
       // slice in the catch below.
+      const blocks = (resp && resp.content) ? resp.content : [];
       const types = blocks.map((b) => (b && b.type) ? b.type : "?").join(",");
       out._error = "sonnet: missing delimiters; types=[" + types + "]; head=" +
         JSON.stringify(txt.slice(0, 400));
@@ -277,32 +329,119 @@ function parseSonnet(src: PendingItem, resp: AnthropicResponse): ParsedItem {
   return out;
 }
 
+// P86e glossary pass: same error/delimiter guards as Parse Sonnet, no item.
+function parseGlossary(
+  resp: AnthropicResponse,
+): { title: string; body: string } | { error: string } {
+  if (resp.error) return { error: resp.error.message || "anthropic error" };
+  if (resp.stop_reason === "max_tokens") return { error: "max_tokens hit" };
+  const split = splitTitleBody(stripCodeFence(extractText(resp)));
+  if (!split) return { error: "missing delimiters" };
+  return split;
+}
+
 // n8n node: Correct + patch (the per-item half; dictionary load is hoisted)
-function buildPatch(it: ParsedItem, latinToEt: LatinToEt): Patch {
-  if (it._error || (!it.title_raw && !it.body_raw)) {
-    return {
-      translation_v2_status: "error",
-      translation_v2_error: withRetryPrefix(
-        it.prev_error,
-        String(it._error || "empty translation"),
-      ),
-    };
-  }
-  const fixed = fixItemBirdNames(
+function correctParsed(it: ParsedItem, latinToEt: LatinToEt): ItemText {
+  return fixItemBirdNames(
     {
       title: deCyrillic(String(it.title_raw || "")),
       body: deCyrillic(String(it.body_raw || "")),
     },
     latinToEt,
   );
+}
+
+function buildErrorPatch(it: ParsedItem): Patch {
   return {
-    title_et_v2: fixed.title || null,
-    body_et_v2: fixed.body || null,
-    translation_engine: it.translation_engine || null,
+    translation_v2_status: "error",
+    translation_v2_error: withRetryPrefix(
+      it.prev_error,
+      String(it._error || "empty translation"),
+    ),
+  };
+}
+
+function buildDonePatch(
+  final: ItemText,
+  engine: "sonnet" | "sonnet+glossary",
+  glossary: readonly GlossaryEntry[] | null,
+): Patch {
+  const patch: Patch = {
+    title_et_v2: final.title || null,
+    body_et_v2: final.body || null,
+    translation_engine: engine,
     translation_v2_status: "done",
     translation_v2_error: null,
     translated_v2_at: new Date().toISOString(),
   };
+  return glossary !== null ? { ...patch, species_glossary: glossary } : patch;
+}
+
+type AnthropicUsage = NonNullable<AnthropicResponse["usage"]>;
+
+type GlossaryOutcome =
+  | { kind: "skipped"; reason: "empty_glossary" | "budget" }
+  | {
+    kind: "failed" | "rejected";
+    reason: string;
+    glossary: GlossaryEntry[];
+    usage?: AnthropicUsage;
+  }
+  | {
+    kind: "accepted";
+    item: ItemText;
+    glossary: GlossaryEntry[];
+    usage?: AnthropicUsage;
+  };
+
+// P86e: second Sonnet call that edits the corrected translation against the
+// EOU glossary. Never fatal -- any failure keeps the corrected first pass.
+async function runGlossaryPass(
+  src: PendingItem,
+  corrected: ItemText,
+  latinToEt: LatinToEt,
+  model: string,
+  maxTokens: number,
+  started: number,
+): Promise<GlossaryOutcome> {
+  const source: ItemText = {
+    title: String(src.title || ""),
+    body: String(src.body || ""),
+  };
+  const glossary = collectBinomials(
+    [source.title, source.body, corrected.title, corrected.body],
+    latinToEt,
+  );
+  if (glossary.length === 0) return { kind: "skipped", reason: "empty_glossary" };
+  if (Date.now() - started > BUDGET_MS - GLOSSARY_BUDGET_RESERVE_MS) {
+    return { kind: "skipped", reason: "budget" };
+  }
+  const resp = await callAnthropic(
+    GLOSSARY_PROMPT,
+    buildGlossaryUserMsg(source, corrected, glossary),
+    model,
+    maxTokens,
+    GLOSSARY_TIMEOUT_MS,
+  );
+  const usage = resp.usage;
+  const parsed = parseGlossary(resp);
+  if ("error" in parsed) {
+    return {
+      kind: "failed",
+      reason: ("glossary: " + parsed.error).slice(0, 300),
+      glossary,
+      usage,
+    };
+  }
+  const verdict = acceptGlossaryOutput(
+    corrected,
+    { title: parsed.title, body: parsed.body },
+    glossary,
+  );
+  if (!verdict.ok) {
+    return { kind: "rejected", reason: verdict.reason, glossary, usage };
+  }
+  return { kind: "accepted", item: verdict.item, glossary, usage };
 }
 
 // ---------------------------------------------------------------------------
@@ -378,19 +517,16 @@ async function getPending(limit: number): Promise<PendingItem[]> {
 // n8n node: Sonnet call. A non-2xx is not thrown: n8n's onError
 // continueRegularOutput fed the error body straight into Parse Sonnet, so the
 // item still gets an 'error' patch written and leaves `pending`.
-async function callSonnet(
-  item: PendingItem,
+// The P86e glossary pass goes through the same function with GLOSSARY_PROMPT.
+async function callAnthropic(
+  system: string,
+  userMsg: string,
   model: string,
   maxTokens: number,
+  timeoutMs: number = SONNET_TIMEOUT_MS,
 ): Promise<AnthropicResponse> {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY")?.trim();
   if (!apiKey) throw new Error("missing_env:ANTHROPIC_API_KEY");
-
-  // n8n node: Build Sonnet request -- user message verbatim, String(x || '')
-  // included so null/undefined become '' and not "null".
-  const userMsg =
-    "Tolgi jargnev uudis eesti keelde. Vasta TAPSELT vormis ###TITLE### ja ###BODY###, ilma muu tekstita.\n\nPEALKIRI:\n" +
-    String(item.title || "") + "\n\nSISU:\n" + String(item.body || "");
 
   const areq = {
     model,
@@ -401,7 +537,7 @@ async function callSonnet(
     system: [
       {
         type: "text",
-        text: SYSTEM_PROMPT,
+        text: system,
         cache_control: { type: "ephemeral" },
       },
     ],
@@ -409,7 +545,7 @@ async function callSonnet(
   };
 
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), SONNET_TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(ANTHROPIC_URL, {
       method: "POST",
@@ -433,12 +569,19 @@ async function callSonnet(
     // error response rather than a throw, so Parse Sonnet writes the 'error'
     // patch -- n8n's onError: continueRegularOutput did exactly this.
     const detail = (e instanceof Error && e.name === "AbortError")
-      ? "timeout after " + SONNET_TIMEOUT_MS + " ms"
+      ? "timeout after " + timeoutMs + " ms"
       : errMsg(e);
     return { error: { message: detail.slice(0, 300) } };
   } finally {
     clearTimeout(timer);
   }
+}
+
+// n8n node: Build Sonnet request -- user message verbatim, String(x || '')
+// included so null/undefined become '' and not "null".
+function buildTranslateUserMsg(item: PendingItem): string {
+  return "Tolgi jargnev uudis eesti keelde. Vasta TAPSELT vormis ###TITLE### ja ###BODY###, ilma muu tekstita.\n\nPEALKIRI:\n" +
+    String(item.title || "") + "\n\nSISU:\n" + String(item.body || "");
 }
 
 // n8n node: Write v2
@@ -560,6 +703,7 @@ Deno.serve(async (req) => {
   const skipped: Array<{ id: string; reason: string }> = [];
   const errors: Array<Record<string, unknown>> = [];
   const cache = { creation_tokens: 0, read_tokens: 0 };
+  const glossaryTally = { accepted: 0, rejected: 0, failed: 0, skipped: 0 };
   let fatal: string | null = null;
 
   try {
@@ -598,7 +742,12 @@ Deno.serve(async (req) => {
         break;
       }
 
-      const resp = await callSonnet(item, model, maxTokens);
+      const resp = await callAnthropic(
+        SYSTEM_PROMPT,
+        buildTranslateUserMsg(item),
+        model,
+        maxTokens,
+      );
       calls++;
       cache.creation_tokens += Number(
         resp.usage?.cache_creation_input_tokens ?? 0,
@@ -606,7 +755,43 @@ Deno.serve(async (req) => {
       cache.read_tokens += Number(resp.usage?.cache_read_input_tokens ?? 0);
 
       const parsed = parseSonnet(item, resp);
-      const patch = buildPatch(parsed, latinToEt);
+      let patch: Patch;
+      if (parsed._error || (!parsed.title_raw && !parsed.body_raw)) {
+        patch = buildErrorPatch(parsed);
+      } else {
+        const corrected = correctParsed(parsed, latinToEt);
+        // --- P86e glossary pass (non-fatal; runs in dry runs too) ----------
+        const outcome = await runGlossaryPass(
+          item,
+          corrected,
+          latinToEt,
+          model,
+          maxTokens,
+          started,
+        );
+        glossaryTally[outcome.kind]++;
+        if (outcome.kind !== "skipped") {
+          calls++;
+          cache.creation_tokens += Number(
+            outcome.usage?.cache_creation_input_tokens ?? 0,
+          );
+          cache.read_tokens += Number(
+            outcome.usage?.cache_read_input_tokens ?? 0,
+          );
+        }
+        const accepted = outcome.kind === "accepted";
+        const final = outcome.kind === "accepted"
+          ? fixItemBirdNames(outcome.item, latinToEt)
+          : corrected;
+        patch = buildDonePatch(
+          final,
+          accepted ? "sonnet+glossary" : "sonnet",
+          outcome.kind === "skipped" ? null : outcome.glossary,
+        );
+        if (outcome.kind === "failed" || outcome.kind === "rejected") {
+          errors.push({ id: item.id, stage: "glossary", error: outcome.reason });
+        }
+      }
 
       if (!dryRun) {
         try {
@@ -653,6 +838,7 @@ Deno.serve(async (req) => {
     model,
     dry_run: dryRun,
     cache,
+    glossary: glossaryTally,
     took_ms: Date.now() - started,
     error: fatal,
   };

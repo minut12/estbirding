@@ -40,6 +40,11 @@ export interface ItemText {
   readonly body: string;
 }
 
+export interface GlossaryEntry {
+  readonly latin: string;
+  readonly et: string;
+}
+
 const SUFFIX_MAX = 6;
 const HEAD_LEN_DIFF_MAX = 4;
 const MIN_SHARED_PREFIX = 4;
@@ -57,6 +62,8 @@ const BARE_LATIN_RE = new RegExp(
   "g",
 );
 const LATIN_PAREN_RE = new RegExp("\\s*\\((" + LATIN_BINOMIAL + ")\\)", "g");
+// Bare and parenthesised binomials alike (collectBinomials).
+const ANY_LATIN_RE = new RegExp("\\b(" + LATIN_BINOMIAL + ")\\b", "g");
 const ANCHOR_LOOKAHEAD = "(?!\\s*\\(" + LATIN_BINOMIAL + "\\))";
 // Start of string, end of a sentence, or a new line (optionally after a
 // markdown heading/list/quote marker). A colon is deliberately NOT a boundary.
@@ -434,6 +441,29 @@ export function dedupeLatin(text: string, latinToEt: LatinToEt): string {
       return m;
     },
   );
+}
+
+/** Every dictionary binomial in the texts, in first-seen order, deduped by lowercase Latin. */
+export function collectBinomials(
+  texts: readonly string[],
+  latinToEt: LatinToEt,
+): GlossaryEntry[] {
+  const out: GlossaryEntry[] = [];
+  const seen: Record<string, boolean> = {};
+  for (let i = 0; i < texts.length; i++) {
+    const text = String(texts[i] || "");
+    if (!text) continue;
+    const matches = text.matchAll(ANY_LATIN_RE);
+    for (const m of matches) {
+      const latin = m[1].replace(/\s+/g, " ");
+      const key = latin.toLowerCase();
+      const et = latinToEt[key];
+      if (!et || seen[key]) continue;
+      seen[key] = true;
+      out.push({ latin, et });
+    }
+  }
+  return out;
 }
 
 /** Single-field corrector (propagation uses only the field's own replacements). */

@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildHeadWords,
+  collectBinomials,
   deCyrillic,
   fixBirdNames,
   fixItemBirdNames,
@@ -313,5 +314,51 @@ describe("withRetryPrefix (RT1-RT3)", () => {
     const out = withRetryPrefix(null, "m".repeat(900));
     expect(out).toHaveLength(800);
     expect(out.startsWith("[retry 1] ")).toBe(true);
+  });
+});
+
+describe("collectBinomials (CB1-CB5)", () => {
+  it("CB1 collects from source and corrected draft, drops unknown binomials and place parentheticals", () => {
+    const source = "Eleonora's Falcon (Falco eleonorae) and Testus fakeus seen.";
+    const draft = "vahemere pistrik (Falco eleonorae) ja kuldtsiitsitaja (Emberiza aureola) Tartus (Tartu maakond).";
+    expect(collectBinomials([source, draft], DICT)).toEqual([
+      { latin: "Falco eleonorae", et: "vahemere pistrik" },
+      { latin: "Emberiza aureola", et: "kuldtsiitsitaja" },
+    ]);
+  });
+  it("CB2 dedupes case-insensitively in first-seen order (source before draft)", () => {
+    const source = "Sturnus vulgaris and Calidris falcinellus";
+    const draft = "plütt (Calidris  falcinellus) ja kuldnokk (Sturnus vulgaris); Emberiza aureola";
+    expect(collectBinomials([source, draft], DICT)).toEqual([
+      { latin: "Sturnus vulgaris", et: "kuldnokk" },
+      { latin: "Calidris falcinellus", et: "plütt" },
+      { latin: "Emberiza aureola", et: "kuldtsiitsitaja" },
+    ]);
+  });
+  it("CB3 collects a bare binomial in the source", () => {
+    expect(collectBinomials(["A Circus macrourus flew over", ""], DICT)).toEqual([
+      { latin: "Circus macrourus", et: "stepi-loorkull" },
+    ]);
+  });
+  it("CB4 keeps synonyms as separate entries", () => {
+    expect(collectBinomials(
+      ["Sandwich Tern (Sterna sandvicensis)", "tutt-tiir (Thalasseus sandvicensis)"],
+      DICT,
+    )).toEqual([
+      { latin: "Sterna sandvicensis", et: "tutt-tiir" },
+      { latin: "Thalasseus sandvicensis", et: "tutt-tiir" },
+    ]);
+  });
+  it("CB5 returns [] for no hits and empty strings", () => {
+    expect(collectBinomials(["", "Lind nähti Tartus (Tartu maakond)."], DICT)).toEqual([]);
+    expect(collectBinomials([], DICT)).toEqual([]);
+  });
+});
+
+describe("corrector on glossary-pass output (RC1)", () => {
+  it("RC1 is idempotent and keeps an inflected multi-word name", () => {
+    const once = fixBirdNames("vahemere pistrikku (Falco eleonorae) nähti", DICT);
+    expect(once).toBe("vahemere pistrikku (Falco eleonorae) nähti");
+    expect(fixBirdNames(once, DICT)).toBe(once);
   });
 });

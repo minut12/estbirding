@@ -12,6 +12,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+// P86e: species_glossary (jsonb) -- redeploy marker.
 const ALLOWED_KEYS = new Set([
   'title_et_v2',
   'body_et_v2',
@@ -19,6 +20,7 @@ const ALLOWED_KEYS = new Set([
   'translation_v2_status',
   'translation_v2_error',
   'translated_v2_at',
+  'species_glossary',
 ]);
 
 function jsonResponse(status: number, payload: unknown) {

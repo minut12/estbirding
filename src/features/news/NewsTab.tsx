@@ -1,4 +1,4 @@
-﻿import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+﻿import { Fragment, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/config/supabaseClient';
 import {
@@ -113,6 +113,106 @@ function stripLeadingTitle(text: string, title: string): string {
     j += 1;
   }
   return text.slice(i).replace(/^[\s:.\-|]+/, '');
+}
+
+const DESKTOP_NEWS_QUERY = '(min-width: 901px)';
+const TALLINN_TZ = 'Europe/Tallinn';
+const SNIPPET_PREFIX_MATCH_LEN = 60;
+const DAY_MS = 86400000;
+
+function useIsDesktopNews(): boolean {
+  const [isDesktop, setIsDesktop] = useState<boolean>(() => (
+    typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia(DESKTOP_NEWS_QUERY).matches
+  ));
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mql = window.matchMedia(DESKTOP_NEWS_QUERY);
+    const onChange = () => setIsDesktop(mql.matches);
+    onChange();
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+  return isDesktop;
+}
+
+/* Remove a trailing truncation marker (ellipsis char, "...", " ...more") from a title. */
+function stripTitleSuffix(title: string): string {
+  return title.replace(/(\s*\.\.\.more|…|\.\.\.)\s*$/i, '').replace(/\s+$/, '');
+}
+
+function normalizeForCompare(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/* Strip the (possibly truncated) title from the start of a snippet. */
+function stripTitleFromSnippet(plain: string, title: string): string {
+  const t = stripTitleSuffix(title);
+  const normTitle = normalizeForCompare(t);
+  if (!normTitle) return plain;
+  const normPlain = normalizeForCompare(plain);
+  if (normPlain.startsWith(normTitle)) return stripLeadingTitle(plain, t);
+  if (
+    normTitle.length >= SNIPPET_PREFIX_MATCH_LEN
+    && normPlain.length >= SNIPPET_PREFIX_MATCH_LEN
+    && normTitle.slice(0, SNIPPET_PREFIX_MATCH_LEN) === normPlain.slice(0, SNIPPET_PREFIX_MATCH_LEN)
+  ) {
+    const rest = plain.slice(t.length);
+    const ws = rest.search(/\s/);
+    return ws === -1 ? '' : rest.slice(ws).trimStart();
+  }
+  return plain;
+}
+
+/* 'YYYY-MM-DD' of a timestamp in Europe/Tallinn; '' when invalid/empty. */
+function newsDayKey(value: string): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: TALLINN_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(d);
+}
+
+function newsDayLabel(key: string, todayKey: string, yesterdayKey: string): string {
+  if (!key) return '';
+  if (key === todayKey) return 'Täna';
+  if (key === yesterdayKey) return 'Eile';
+  const d = new Date(`${key}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return '';
+  const base = new Intl.DateTimeFormat('et-EE', { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(d);
+  const year = key.slice(0, 4);
+  return year !== todayKey.slice(0, 4) ? `${base} ${year}` : base;
+}
+
+type NewsDayGroup = { key: string; label: string; items: NewsItem[] };
+
+function previousDayKey(dayKey: string): string {
+  const [y, m, d] = dayKey.split('-').map(Number);
+  if (!y || !m || !d) return '';
+  const prev = new Date(Date.UTC(y, m - 1, d, 12) - DAY_MS);
+  const mm = String(prev.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(prev.getUTCDate()).padStart(2, '0');
+  return `${prev.getUTCFullYear()}-${mm}-${dd}`;
+}
+
+/* Group consecutive items by Tallinn day (never reorders). */
+function groupByDay(items: NewsItem[]): NewsDayGroup[] {
+  const todayKey = newsDayKey(new Date().toISOString());
+  const yesterdayKey = previousDayKey(todayKey);
+  const runs: { key: string; items: NewsItem[] }[] = [];
+  items.forEach((item) => {
+    const key = newsDayKey(item.published_at || item.created_at || item.fetched_at || '');
+    const last = runs[runs.length - 1];
+    if (last && last.key === key) last.items.push(item);
+    else runs.push({ key, items: [item] });
+  });
+  return runs.map((run) => ({
+    key: run.key,
+    label: newsDayLabel(run.key, todayKey, yesterdayKey),
+    items: run.items,
+  }));
 }
 
 /* Format date */
@@ -740,6 +840,19 @@ export default function NewsTab() {
     });
   }, [sources]);
 
+  const isDesktop = useIsDesktopNews();
+
+  const chipSources = useMemo(() => {
+    const chipLabel = (s: NewsSource) => sourceChipLabel(s.slug || s.source_key, normalizeDisplayText(s.name));
+    return [...filterSources].sort((a, b) => {
+      const la = chipLabel(a);
+      const lb = chipLabel(b);
+      if (la === 'EOÜ' && lb !== 'EOÜ') return -1;
+      if (lb === 'EOÜ' && la !== 'EOÜ') return 1;
+      return la.localeCompare(lb, 'et-EE');
+    });
+  }, [filterSources]);
+
 // Pagination state
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
   const cursorRef = useRef<{ published_at: string; id: string } | null>(null);
@@ -901,6 +1014,8 @@ export default function NewsTab() {
     return filteredBySearch;
   }, [newsItems, sourceFilter, search, tab]);
 
+  const dayGroups = useMemo(() => groupByDay(allItems), [allItems]);
+
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const bp = newsItems.find((item) => String(item.source_name || '').trim() === 'Birding Poland');
@@ -1043,134 +1158,234 @@ export default function NewsTab() {
     );
   }
 
+  const utf8ProbeEl = import.meta.env.DEV && (
+    <span data-utf8-probe="news-tab" className="sr-only">{utf8Probe}</span>
+  );
+
+  const titleEl = <h2 className="font-semibold text-foreground text-lg">Uudised</h2>;
+
+  const refreshControls = (
+    <>
+      <span className="text-xs text-muted-foreground whitespace-nowrap">
+        {formatNewsRefreshTimestamp(lastRefreshAt)}
+      </span>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => pullMutation.mutate()}
+        disabled={pullMutation.isPending}
+        title="Värskenda"
+      >
+        {pullMutation.isPending
+          ? <Loader2 className="w-4 h-4 animate-spin" />
+          : <RefreshCw className="w-4 h-4" />}
+      </Button>
+    </>
+  );
+
+  const segmentButtonClass = (active: boolean) => cn(
+    isDesktop ? 'px-3' : 'flex-1',
+    'py-1.5 text-sm font-medium rounded-md transition-colors',
+    active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
+  );
+
+  const segmentEl = (
+    <div className={isDesktop ? 'flex gap-1 bg-muted rounded-lg p-1 shrink-0' : 'flex gap-1 bg-muted rounded-lg p-1'}>
+      <button
+        onClick={() => setTab('latest')}
+        className={segmentButtonClass(tab === 'latest')}
+      >
+        Viimased
+      </button>
+      <button
+        onClick={() => setTab('archive')}
+        className={segmentButtonClass(tab === 'archive')}
+      >
+        Arhiiv
+      </button>
+    </div>
+  );
+
+  const searchEl = (
+    <div className={isDesktop ? 'relative w-56' : 'relative flex-1'}>
+      <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
+      <Input
+        placeholder="Otsi uudiseid…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="pl-9 h-9"
+      />
+    </div>
+  );
+
+  const chipsEl = filterSources.length > 1 ? (
+    <div
+      className={isDesktop
+        ? 'flex-1 min-w-0 flex gap-1.5 overflow-x-auto [scrollbar-width:none]'
+        : 'flex gap-1.5 overflow-x-auto [scrollbar-width:none] -mx-4 px-4'}
+    >
+      <button
+        type="button"
+        onClick={() => setSourceFilter('all')}
+        className={cn(CHIP_BASE, sourceFilter === 'all' ? CHIP_ACTIVE : CHIP_INACTIVE)}
+      >
+        Kõik
+      </button>
+      {chipSources.map((s) => {
+        const canonical = getCanonicalSourceValue(s);
+        const slug = s.slug || s.source_key;
+        const code = sourceCountry(slug);
+        return (
+          <button
+            key={canonical}
+            type="button"
+            onClick={() => setSourceFilter(canonical)}
+            className={cn(CHIP_BASE, sourceFilter === canonical ? CHIP_ACTIVE : CHIP_INACTIVE)}
+          >
+            {code && hasCountryFlag(code) && <CountryFlag code={code} />}
+            {sourceChipLabel(slug, normalizeDisplayText(s.name))}
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+
+  const proxyDebugEl = import.meta.env.DEV && (
+    <p className="text-xs text-muted-foreground">
+      proxy={activeProxyName} base={resolvedProxyBase || '(empty)'} lastError={lastNewsFetchErrorShort || '(none)'}
+    </p>
+  );
+
+  const header = isDesktop ? (
+    <div className="border-b border-border bg-card">
+      <div className="mx-auto max-w-[1180px] px-5 py-3">
+        {utf8ProbeEl}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 shrink-0">
+            {titleEl}
+            {segmentEl}
+          </div>
+          {chipsEl ?? <div className="flex-1" />}
+          <div className="flex items-center gap-3 shrink-0">
+            {searchEl}
+            {refreshControls}
+          </div>
+        </div>
+        {proxyDebugEl}
+      </div>
+    </div>
+  ) : (
+    <div className="px-4 py-3 border-b border-border bg-card space-y-3">
+      {utf8ProbeEl}
+      <div className="flex items-center justify-between">
+        {titleEl}
+        <div className="flex items-center gap-3">
+          {refreshControls}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      {segmentEl}
+
+      {/* Filters */}
+      <div className="flex">
+        {searchEl}
+      </div>
+      {chipsEl}
+      {proxyDebugEl}
+    </div>
+  );
+
+  const skeletonEl = isDesktop ? (
+    <div className="mx-auto max-w-[1180px] px-5 py-4 grid grid-cols-3 gap-4">
+      <div className="col-span-2 row-span-2 rounded-2xl border border-border overflow-hidden">
+        <Skeleton className="min-h-[220px] w-full" />
+        <div className="p-3.5 space-y-2">
+          <Skeleton className="h-3 w-1/3" />
+          <Skeleton className="h-5 w-full" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
+      </div>
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="rounded-2xl border border-border overflow-hidden">
+          <Skeleton className="aspect-video w-full" />
+          <div className="p-3.5 space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-3 w-2/3" />
+          </div>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <div className="p-4 space-y-3">
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="flex gap-3 px-4 py-3">
+          <Skeleton className="w-20 h-20 rounded-lg shrink-0" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-3 w-2/3" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const listEl = isDesktop ? (
+    <div className="mx-auto max-w-[1180px] px-5 py-4 grid grid-cols-3 gap-4 auto-rows-auto">
+      {allItems.map((item, index) => (
+        <NewsGridCard
+          key={item.id}
+          item={item}
+          sources={sources}
+          proxyBase={resolvedProxyBase}
+          showEtContent={showEtContent}
+          featured={index === 0}
+          className={index === 0 ? 'col-span-2 row-span-2' : undefined}
+          onOpen={() => openArticle(item)}
+        />
+      ))}
+    </div>
+  ) : (
+    dayGroups.map((group, groupIndex) => (
+      <Fragment key={`${group.key || 'nodate'}-${groupIndex}`}>
+        {group.label && (
+          <div className="sticky top-0 z-10 bg-muted px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {group.label}
+          </div>
+        )}
+        <div className="divide-y divide-border">
+          {group.items.map((item) => (
+            <NewsCard
+              key={item.id}
+              item={item}
+              sources={sources}
+              proxyBase={resolvedProxyBase}
+              showEtContent={showEtContent}
+              onOpen={() => openArticle(item)}
+            />
+          ))}
+        </div>
+      </Fragment>
+    ))
+  );
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-border bg-card space-y-3">
-        {import.meta.env.DEV && (
-          <span data-utf8-probe="news-tab" className="sr-only">{utf8Probe}</span>
-        )}
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-foreground text-lg">Uudised</h2>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">
-              {formatNewsRefreshTimestamp(lastRefreshAt)}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => pullMutation.mutate()}
-              disabled={pullMutation.isPending}
-              title="Värskenda"
-            >
-              {pullMutation.isPending
-                ? <Loader2 className="w-4 h-4 animate-spin" />
-                : <RefreshCw className="w-4 h-4" />}
-            </Button>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex gap-1 bg-muted rounded-lg p-1">
-          <button
-            onClick={() => setTab('latest')}
-            className={cn(
-              'flex-1 py-1.5 text-sm font-medium rounded-md transition-colors',
-              tab === 'latest' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
-            )}
-          >
-            Viimased
-          </button>
-          <button
-            onClick={() => setTab('archive')}
-            className={cn(
-              'flex-1 py-1.5 text-sm font-medium rounded-md transition-colors',
-              tab === 'archive' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
-            )}
-          >
-            Arhiiv
-          </button>
-        </div>
-
-        {/* Filters */}
-        <div className="flex">
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Otsi uudiseid…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9"
-            />
-          </div>
-        </div>
-        {filterSources.length > 1 && (
-          <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] -mx-4 px-4">
-            <button
-              type="button"
-              onClick={() => setSourceFilter('all')}
-              className={cn(CHIP_BASE, sourceFilter === 'all' ? CHIP_ACTIVE : CHIP_INACTIVE)}
-            >
-              Kõik
-            </button>
-            {filterSources.map((s) => {
-              const canonical = getCanonicalSourceValue(s);
-              const slug = s.slug || s.source_key;
-              const code = sourceCountry(slug);
-              return (
-                <button
-                  key={canonical}
-                  type="button"
-                  onClick={() => setSourceFilter(canonical)}
-                  className={cn(CHIP_BASE, sourceFilter === canonical ? CHIP_ACTIVE : CHIP_INACTIVE)}
-                >
-                  {code && hasCountryFlag(code) && <CountryFlag code={code} />}
-                  {sourceChipLabel(slug, normalizeDisplayText(s.name))}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        {import.meta.env.DEV && (
-          <p className="text-xs text-muted-foreground">
-            proxy={activeProxyName} base={resolvedProxyBase || '(empty)'} lastError={lastNewsFetchErrorShort || '(none)'}
-          </p>
-        )}
-      </div>
+      {header}
 
       {/* List */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {isLoading ? (
-          <div className="p-4 space-y-3">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="flex gap-3 px-4 py-3">
-                <Skeleton className="w-20 h-20 rounded-lg shrink-0" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-3 w-2/3" />
-                  <Skeleton className="h-3 w-1/2" />
-                </div>
-              </div>
-            ))}
-          </div>
+          skeletonEl
         ) : isError ? (
           <EmptyState tab={tab} />
         ) : allItems.length === 0 ? (
           <EmptyState tab={tab} />
         ) : (
           <>
-          <div className="divide-y divide-border">
-            {allItems.map((item) => (
-              <NewsCard
-                key={item.id}
-                item={item}
-                sources={sources}
-                proxyBase={resolvedProxyBase}
-                showEtContent={showEtContent}
-                onOpen={() => openArticle(item)}
-              />
-            ))}
-          </div>
+          {listEl}
           {hasMore && allItems.length > 0 && (
             <div className="flex justify-center py-4">
               <button
@@ -1194,19 +1409,10 @@ export default function NewsTab() {
   );
 }
 
-/* News Card */
-function NewsCard({ item, sources, proxyBase, showEtContent, onOpen }: {
-  item: NewsItem;
-  sources: NewsSource[];
-  proxyBase: string;
-  showEtContent: boolean;
-  onOpen: () => void;
-}) {
-  const [imageFailed, setImageFailed] = useState(false);
+/* News card view-model (shared by list row and grid card) */
+function useNewsCardModel(item: NewsItem, sources: NewsSource[], showEtContent: boolean) {
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName === 'Birding Poland';
-  const primaryThumb = getNewsImageSrc(item, proxyBase);
-  const [thumbSrc, setThumbSrc] = useState<string | null>(primaryThumb);
   const isNonEtSource = normalizeLocale(item.source_lang || item.language || '') !== 'et';
   const translatedTitle = useMemo(() => getTranslatedTitle(item), [item]);
   const translatedBody = useMemo(() => getTranslatedBody(item), [item]);
@@ -1223,9 +1429,7 @@ function NewsCard({ item, sources, proxyBase, showEtContent, onOpen }: {
       ? (translatedBody || item.body || item.summary || '')
       : (item.body ?? item.summary ?? item.excerpt ?? '');
     const plain = toPlainText(snippetSource).trimStart();
-    const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
-    const titleNorm = norm(displayTitle);
-    const body = titleNorm && norm(plain).startsWith(titleNorm) ? stripLeadingTitle(plain, displayTitle) : plain;
+    const body = stripTitleFromSnippet(plain, displayTitle);
     return body.slice(0, 150);
   }, [useEtDisplay, translatedBody, item.body, item.summary, item.excerpt, displayTitle]);
   const code = sourceCountry(item.source_slug || item.source_key);
@@ -1234,11 +1438,116 @@ function NewsCard({ item, sources, proxyBase, showEtContent, onOpen }: {
     [item.published_at, item.created_at, item.fetched_at],
   );
   const isVideo = /<(iframe|video)\b/i.test(item.content_html ?? '');
+  return { sourceName, isBirdingPoland, useEtDisplay, isPending, displayTitle, snippet, code, shortDate, isVideo };
+}
+
+export type NewsCardModel = ReturnType<typeof useNewsCardModel>;
+
+/* Meta line: flag, source, date, translation glyph */
+function NewsMeta({ model, className }: { model: NewsCardModel; className?: string }) {
+  const { code, sourceName, shortDate, useEtDisplay, isPending } = model;
+  return (
+    <div className={cn('flex items-center gap-1.5 text-xs text-muted-foreground min-w-0', className)}>
+      {code && hasCountryFlag(code) && <CountryFlag code={code} />}
+      <span className="font-medium text-foreground/80 truncate">{sourceName}</span>
+      {shortDate && (
+        <>
+          <span aria-hidden="true" className="opacity-60">&middot;</span>
+          <span className="whitespace-nowrap">{shortDate}</span>
+        </>
+      )}
+      {useEtDisplay ? (
+        <span title="Tõlgitud" className="shrink-0 w-[18px] h-[18px] rounded inline-flex items-center justify-center bg-primary/10 text-primary">
+          <Languages className="w-3 h-3" />
+        </span>
+      ) : isPending ? (
+        <span title="Tõlkimisel" className="shrink-0 w-[18px] h-[18px] rounded inline-flex items-center justify-center bg-amber-100 text-amber-700">
+          <Loader2 className="w-3 h-3 animate-spin" />
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/* Thumbnail with proxy/placeholder fallback chain */
+function NewsThumb({ item, proxyBase, isVideo, isBirdingPoland, className, iconClassName = 'w-8 h-8' }: {
+  item: NewsItem;
+  proxyBase: string;
+  isVideo: boolean;
+  isBirdingPoland: boolean;
+  className?: string;
+  iconClassName?: string;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const primaryThumb = getNewsImageSrc(item, proxyBase);
+  const [thumbSrc, setThumbSrc] = useState<string | null>(primaryThumb);
 
   useEffect(() => {
     setImageFailed(false);
     setThumbSrc(primaryThumb);
   }, [primaryThumb, item.id]);
+
+  return (
+    <>
+      <div className={cn('relative shrink-0 bg-muted overflow-hidden', className)} data-card-trigger="true">
+        {thumbSrc && !imageFailed ? (
+          <img
+            src={thumbSrc}
+            alt={item.title ?? 'news image'}
+            className="w-full h-full object-cover"
+            referrerPolicy="no-referrer"
+            crossOrigin="anonymous"
+            loading="lazy"
+            decoding="async"
+            onError={(e) => {
+              if (import.meta.env.DEV && isBirdingPoland) {
+                const maybeStatus = (e as any)?.nativeEvent?.target?.status ?? (e.currentTarget as any)?.naturalWidth ?? null;
+                console.warn('[news-image] birding-poland load failed', { thumbSrc, image_url: item.image_url, cached_image_url: item.cached_image_url, status: maybeStatus });
+              }
+              const current = (e.currentTarget as HTMLImageElement).src || '';
+              const proxiedFallback = getProxiedImageUrl(item.image_url, proxyBase);
+              if (!isProxiedImageUrl(current, proxyBase) && proxiedFallback && proxiedFallback !== current) {
+                setThumbSrc(proxiedFallback);
+                return;
+              }
+              if (current !== IMAGE_PLACEHOLDER_LOCAL) {
+                setThumbSrc(IMAGE_PLACEHOLDER_LOCAL);
+                return;
+              }
+              setImageFailed(true);
+            }}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Newspaper className={cn(iconClassName, 'text-muted-foreground/30')} />
+          </div>
+        )}
+        {isVideo && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="w-7 h-7 rounded-full bg-white/90 flex items-center justify-center shadow-sm">
+              <Play className="w-3.5 h-3.5 fill-current text-foreground" />
+            </span>
+          </div>
+        )}
+      </div>
+      {DEBUG_NEWS_IMAGE && (
+        <p className="text-[10px] text-muted-foreground break-all mt-1">
+          img: {(thumbSrc || '(empty)').slice(0, 80)} | source: {item.source_slug || 'unknown'}
+        </p>
+      )}
+    </>
+  );
+}
+
+/* News Card */
+function NewsCard({ item, sources, proxyBase, showEtContent, onOpen }: {
+  item: NewsItem;
+  sources: NewsSource[];
+  proxyBase: string;
+  showEtContent: boolean;
+  onOpen: () => void;
+}) {
+  const model = useNewsCardModel(item, sources, showEtContent);
 
   const handleCardClick = useCallback((e: React.MouseEvent) => {
     // Don't open article if user clicked an interactive element (button, link)
@@ -1254,77 +1563,74 @@ function NewsCard({ item, sources, proxyBase, showEtContent, onOpen }: {
       role="article"
     >
       <div className="flex gap-3">
-        <div className="relative w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden" data-card-trigger="true">
-          {thumbSrc && !imageFailed ? (
-            <img
-              src={thumbSrc}
-              alt={item.title ?? 'news image'}
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-              crossOrigin="anonymous"
-              loading="lazy"
-              decoding="async"
-              onError={(e) => {
-                if (import.meta.env.DEV && isBirdingPoland) {
-                  const maybeStatus = (e as any)?.nativeEvent?.target?.status ?? (e.currentTarget as any)?.naturalWidth ?? null;
-                  console.warn('[news-image] birding-poland load failed', { thumbSrc, image_url: item.image_url, cached_image_url: item.cached_image_url, status: maybeStatus });
-                }
-                const current = (e.currentTarget as HTMLImageElement).src || '';
-                const proxiedFallback = getProxiedImageUrl(item.image_url, proxyBase);
-                if (!isProxiedImageUrl(current, proxyBase) && proxiedFallback && proxiedFallback !== current) {
-                  setThumbSrc(proxiedFallback);
-                  return;
-                }
-                if (current !== IMAGE_PLACEHOLDER_LOCAL) {
-                  setThumbSrc(IMAGE_PLACEHOLDER_LOCAL);
-                  return;
-                }
-                setImageFailed(true);
-              }}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <Newspaper className="w-8 h-8 text-muted-foreground/30" />
-            </div>
-          )}
-          {isVideo && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <span className="w-7 h-7 rounded-full bg-white/90 flex items-center justify-center shadow-sm">
-                <Play className="w-3.5 h-3.5 fill-current text-foreground" />
-              </span>
-            </div>
-          )}
-        </div>
-        {DEBUG_NEWS_IMAGE && (
-          <p className="text-[10px] text-muted-foreground break-all mt-1">
-            img: {(thumbSrc || '(empty)').slice(0, 80)} | source: {item.source_slug || 'unknown'}
-          </p>
-        )}
+        <NewsThumb
+          item={item}
+          proxyBase={proxyBase}
+          isVideo={model.isVideo}
+          isBirdingPoland={model.isBirdingPoland}
+          className="w-20 h-20 rounded-lg"
+        />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
-            {code && hasCountryFlag(code) && <CountryFlag code={code} />}
-            <span className="font-medium text-foreground/80 truncate">{sourceName}</span>
-            {shortDate && (
-              <>
-                <span aria-hidden="true" className="opacity-60">&middot;</span>
-                <span className="whitespace-nowrap">{shortDate}</span>
-              </>
-            )}
-            {useEtDisplay ? (
-              <span title="Tõlgitud" className="shrink-0 w-[18px] h-[18px] rounded inline-flex items-center justify-center bg-primary/10 text-primary">
-                <Languages className="w-3 h-3" />
-              </span>
-            ) : isPending ? (
-              <span title="Tõlkimisel" className="shrink-0 w-[18px] h-[18px] rounded inline-flex items-center justify-center bg-amber-100 text-amber-700">
-                <Loader2 className="w-3 h-3 animate-spin" />
-              </span>
-            ) : null}
-          </div>
-          <p className="font-semibold text-[15px] leading-snug text-foreground line-clamp-2 mt-0.5">{displayTitle}</p>
-          {snippet && (
-            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{snippet}</p>
+          <NewsMeta model={model} />
+          <p className="font-semibold text-[15px] leading-snug text-foreground line-clamp-2 mt-0.5">{model.displayTitle}</p>
+          {model.snippet && (
+            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{model.snippet}</p>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* Desktop grid card */
+function NewsGridCard({ item, sources, proxyBase, showEtContent, featured = false, onOpen, className }: {
+  item: NewsItem;
+  sources: NewsSource[];
+  proxyBase: string;
+  showEtContent: boolean;
+  featured?: boolean;
+  onOpen: () => void;
+  className?: string;
+}) {
+  const model = useNewsCardModel(item, sources, showEtContent);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    onOpen();
+  }, [onOpen]);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={handleKeyDown}
+      className={cn(
+        'rounded-2xl border border-border bg-card overflow-hidden flex flex-col cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        className,
+      )}
+    >
+      <NewsThumb
+        item={item}
+        proxyBase={proxyBase}
+        isVideo={model.isVideo}
+        isBirdingPoland={model.isBirdingPoland}
+        className={featured ? 'w-full flex-1 min-h-[220px]' : 'w-full aspect-video'}
+        iconClassName={featured ? 'w-12 h-12' : 'w-10 h-10'}
+      />
+      <div className="p-3.5">
+        <NewsMeta model={model} />
+        <p
+          className={featured
+            ? 'font-semibold text-xl leading-snug text-foreground line-clamp-3 mt-1'
+            : 'font-semibold text-[15px] leading-snug text-foreground line-clamp-2 mt-1'}
+        >
+          {model.displayTitle}
+        </p>
+        {featured && model.snippet && (
+          <p className="text-sm text-muted-foreground line-clamp-3 mt-1.5">{model.snippet}</p>
+        )}
       </div>
     </div>
   );

@@ -3,13 +3,14 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/config/supabaseClient';
 import {
   Newspaper, ChevronLeft, ExternalLink,
-  Search, Loader2, Languages, Play,
+  Search, Loader2, Languages, Play, X,
 } from 'lucide-react';
 import { CountryFlag, hasCountryFlag, sourceCountry, sourceChipLabel } from '@/components/icons/CountryFlag';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/locale';
 import { toast } from 'sonner';
 import { getProxyMode } from '@/config/proxyEndpoint';
@@ -333,6 +334,7 @@ type PreservedMediaBlock = {
 };
 
 const ARTICLE_MEDIA_PROSE_CLASS = 'prose prose-sm max-w-none overflow-x-hidden text-foreground [&_a]:text-primary [&>*]:my-0 [&_p]:my-0 [&_div]:my-0 [&_figure]:my-3 [&_figcaption]:mt-2 [&_figcaption]:mb-0 [&_blockquote]:my-0 [&_iframe]:block [&_iframe]:w-full [&_iframe]:max-w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_iframe]:border-0 [&_video]:block [&_video]:w-full [&_video]:max-w-full [&_video]:h-auto [&_video]:rounded-xl [&_embed]:block [&_embed]:w-full [&_embed]:max-w-full [&_embed]:rounded-xl [&_object]:block [&_object]:w-full [&_object]:max-w-full [&_object]:rounded-xl [&_img]:max-w-full [&_figure_img]:w-full [&_figure_img]:rounded-xl [&_figure]:max-w-full [&_.instagram-media]:max-w-full [&_.twitter-tweet]:max-w-full';
+const INLINE_LIGHTBOX_MIN_PX = 80;
 
 function isSocialEmbedBlock(node: Element): boolean {
   if (node.tagName.toLowerCase() !== 'blockquote') return false;
@@ -1499,6 +1501,37 @@ function NewsGridCard({ item, sources, proxyBase, showEtContent, featured = fals
   );
 }
 
+function ImageLightbox({ src, onClose }: { src: string | null; onClose: () => void }) {
+  return (
+    <DialogPrimitive.Root open={src !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-[100] bg-black/90" />
+        <DialogPrimitive.Content
+          aria-describedby={undefined}
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 outline-none"
+          onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+        >
+          <DialogPrimitive.Title className="sr-only">Pilt</DialogPrimitive.Title>
+          {src ? (
+            <img
+              src={src}
+              alt=""
+              className="max-w-full max-h-[92vh] object-contain rounded-md"
+              referrerPolicy="no-referrer"
+            />
+          ) : null}
+          <DialogPrimitive.Close
+            aria-label="Sulge"
+            className="absolute top-2 right-2 flex h-11 w-11 items-center justify-center rounded-full text-white/80 hover:text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+          >
+            <X className="h-6 w-6" />
+          </DialogPrimitive.Close>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  );
+}
+
 /* Article View (lazy-loads content) */
 function ArticleView({ item, sources, showEtContent, onBack }: {
   item: NewsItem;
@@ -1508,10 +1541,11 @@ function ArticleView({ item, sources, showEtContent, onBack }: {
 }) {
   const [currentItem, setCurrentItem] = useState<NewsItem>(item);
   const isDesktop = useIsDesktopNews();
+  const [lightbox, setLightbox] = useState<string | null>(null);
   const model = useNewsCardModel(currentItem, sources, showEtContent);
 
   // Keep currentItem in sync when the parent passes a different article
-  useEffect(() => { setCurrentItem(item); }, [item.id]);
+  useEffect(() => { setCurrentItem(item); setLightbox(null); }, [item.id]);
 
   const [contentHtml, setContentHtml] = useState<string | null>(currentItem.content_html);
   const [loadingContent, setLoadingContent] = useState(!currentItem.content_html && currentItem.source_slug === 'eoy');
@@ -1636,20 +1670,36 @@ function ArticleView({ item, sources, showEtContent, onBack }: {
     setHeroFailed(false);
   }, [heroImageUrl, item.id]);
 
+  const heroZoomable = Boolean(heroSrc) && !heroFailed && heroSrc !== IMAGE_PLACEHOLDER_LOCAL;
+
+  const handleInlineImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target;
+    if (!(target instanceof HTMLImageElement)) return;
+    if (!target.closest('.prose')) return;
+    const rect = target.getBoundingClientRect();
+    if (rect.width < INLINE_LIGHTBOX_MIN_PX || rect.height < INLINE_LIGHTBOX_MIN_PX) return;
+    if (target.closest('a')) e.preventDefault();
+    setLightbox(target.currentSrc || target.src);
+  };
+
   return (
     <div className={cn('flex flex-col h-full', isDesktop && 'mx-auto w-full max-w-[820px]')}>
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card">
-        <Button variant="ghost" size="icon" onClick={onBack}>
-          <ChevronLeft className="w-5 h-5" />
-        </Button>
-        <span className="font-medium truncate text-sm flex-1">Uudis</span>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {!isDesktop && (
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card">
+          <Button variant="ghost" size="icon" onClick={onBack}>
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
+          <span className="font-medium truncate text-sm flex-1">Uudis</span>
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4" onClick={handleInlineImageClick}>
+        {isDesktop && (<button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground -ml-1"><ChevronLeft className="w-4 h-4" />Uudised</button>)}
         {heroSrc && !heroFailed ? (
           <img
             src={heroSrc}
             alt=""
-            className={cn('object-cover bg-muted', isDesktop ? 'w-full aspect-video max-h-[440px] rounded-xl' : 'aspect-[4/3] -mx-4 w-[calc(100%+2rem)] max-w-none rounded-none')}
+            className={cn('object-cover bg-muted', isDesktop ? 'w-full aspect-video max-h-[440px] rounded-xl' : 'aspect-[4/3] -mx-4 w-[calc(100%+2rem)] max-w-none rounded-none', heroZoomable && 'cursor-zoom-in')}
+            onClick={heroZoomable ? () => setLightbox(heroSrc) : undefined}
             referrerPolicy="no-referrer"
             crossOrigin="anonymous"
             onError={() => {
@@ -1757,7 +1807,8 @@ function ArticleView({ item, sources, showEtContent, onBack }: {
                 key={`${imageUrl}-${index}`}
                 src={src}
                 alt=""
-                className={cn('w-full aspect-[4/3] object-cover rounded-xl bg-muted', isDesktop && galleryImages.length === 1 && 'col-span-2')}
+                className={cn('w-full aspect-[4/3] object-cover rounded-xl bg-muted cursor-zoom-in', isDesktop && galleryImages.length === 1 && 'col-span-2')}
+                onClick={() => setLightbox(src)}
                 loading="lazy"
                 referrerPolicy="no-referrer"
                 crossOrigin="anonymous"
@@ -1774,6 +1825,7 @@ function ArticleView({ item, sources, showEtContent, onBack }: {
           </a>
         </div>
       </div>
+      <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} />
     </div>
   );
 }

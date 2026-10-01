@@ -1,8 +1,10 @@
+// redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-5-20250929 -> claude-sonnet-5 (env override unchanged)
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
+import { anthropicMessages, llmConfigured } from '../_shared/llm.ts';
 
 const EDGE_FUNCTION_VERSION = 'species-prediction-2026-03-17-async';
 const DEFAULT_TIMEOUT_MS = 120000;
@@ -70,8 +72,6 @@ RULES (follow precisely):
 const PROMPT_PREFIX_LEN = 3201;
 const PROMPT_PREFIX_SHA256 = '39ddfdd405e531e5ddfd9ecd489953abaaff4be9ab4edc11368cbf778a176837';
 
-const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const ANTHROPIC_VERSION = '2023-06-01';
 // n8n's model node ran claude-sonnet-4-5-20250929 (cred w3NzgYQmhVki1UQ3).
 // Flipping the model is its own gate, so it comes from the environment.
 const DEFAULT_SONNET_MODEL = 'claude-sonnet-5-5';
@@ -91,10 +91,6 @@ const SONNET_BUDGET_FLOOR_MS = 60_000;
 
 function sonnetModel(): string {
   return (Deno.env.get(MODEL_ENV_KEY) || '').trim() || DEFAULT_SONNET_MODEL;
-}
-
-function anthropicKey(): string {
-  return (Deno.env.get('ANTHROPIC_API_KEY') || '').trim();
 }
 
 async function sha256Hex(text: string): Promise<string> {
@@ -597,7 +593,7 @@ serve(async (req) => {
     // `webhookConfigured` / `webhookHost` are kept as aliases because the client
     // still reads them; the settings page is fixed in M7.6d.
     if (req.method === 'GET' && url.searchParams.get('mode') === 'config') {
-      const configAiConfigured = !!anthropicKey();
+      const configAiConfigured = llmConfigured();
       console.info(`${LOG_PREFIX} config check`, {
         aiConfigured: configAiConfigured,
         model: sonnetModel(),
@@ -1236,7 +1232,7 @@ async function buildMapFirstPredictionResult(opts: {
     // M7.6: the availability of the secondary AI summary is now the Anthropic
     // key, not the (deliberately unset) n8n webhook. `webhookConfigured` from
     // the request is left untouched for the other diagnostics.
-    webhookConfigured: !!anthropicKey(),
+    webhookConfigured: llmConfigured(),
     estoniaHistorySourceUsed: elurikkusHistoryPoints.length && gbifHistoryPoints.length
       ? 'mixed'
       : (elurikkusHistoryPoints.length ? 'EELURIKKUS' : (estoniaHistoryPoints.length ? 'GBIF' : estoniaHistorySource)),
@@ -1264,7 +1260,7 @@ async function buildMapFirstPredictionResult(opts: {
   // enableOpenAISummary / enableN8nResearch); only the analyst behind them
   // moved from n8n into this function.
   const requiresAiSummary = settings.enableOpenAISummary === true || settings.enableN8nResearch === true;
-  const aiConfigured = !!anthropicKey();
+  const aiConfigured = llmConfigured();
   const aiDecisionData = {
     aiConfigured,
     model: sonnetModel(),
@@ -3119,25 +3115,15 @@ type AnthropicResponse = {
 // node "Anthropic Chat Model" + "Analyst Chain": one user message, no system
 // prompt, no temperature (n8n set none).
 async function callSonnet(userMessage: string, maxTokens: number, timeoutMs: number): Promise<AnthropicResponse> {
-  const apiKey = anthropicKey();
-  if (!apiKey) throw new Error('missing_env:ANTHROPIC_API_KEY');
+  if (!llmConfigured()) throw new Error('missing_env:ANTHROPIC_API_KEY');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(ANTHROPIC_URL, {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': ANTHROPIC_VERSION,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: sonnetModel(),
-        max_tokens: maxTokens,
-        messages: [{ role: 'user', content: userMessage }],
-      }),
-      signal: controller.signal,
-    });
+    const res = await anthropicMessages({
+      model: sonnetModel(),
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content: userMessage }],
+    }, controller.signal);
     const text = await res.text();
     if (!res.ok) throw new Error(`anthropic HTTP ${res.status}: ${text.slice(0, 300)}`);
     return JSON.parse(text) as AnthropicResponse;
@@ -3315,7 +3301,7 @@ function sonnetFallback(
 // Record) carries the narrative into the canonical response unchanged.
 async function fetchSonnetSummary(input: SonnetSummaryInput): Promise<NormalizedUpstreamResponse> {
   // Decision 5: a missing key is a real configuration error, not a fallback.
-  if (!anthropicKey()) throw new Error('missing_env:ANTHROPIC_API_KEY');
+  if (!llmConfigured()) throw new Error('missing_env:ANTHROPIC_API_KEY');
   // No prompt reaches Anthropic without the byte-for-byte hash check.
   await assertPromptPrefix();
 

@@ -1,8 +1,10 @@
+// redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
 // redeploy-marker: 2026-10-01 - P86d0 drop temperature on the Claude path (rejected by claude-sonnet-5-5)
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 // Redeploy marker spatula-fix 2026-04-30T15:30 — force re-bundle for spatula discors Map entry
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { anthropicMessages, llmConfigured } from "../_shared/llm.ts";
 // Add more domains here as needed.
 const ALLOWED_DOMAINS = [
   "eoy.ee",
@@ -165,23 +167,14 @@ Return ONLY the translation. No commentary, no quotes around the result, no mark
       : `Text:\n${text}`;
 
     // Prefer Claude
-    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY")?.trim();
-    if (anthropicKey) {
+    if (llmConfigured()) {
       try {
         const model = Deno.env.get("ANTHROPIC_TRANSLATION_MODEL") || "claude-sonnet-5-5";
-        const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            model,
-            max_tokens: 2048,
-            system: sysPrompt,
-            messages: [{ role: "user", content: userMsg }],
-          }),
+        const claudeRes = await anthropicMessages({
+          model,
+          max_tokens: 2048,
+          system: sysPrompt,
+          messages: [{ role: "user", content: userMsg }],
         });
         if (claudeRes.ok) {
           const claudeData = await claudeRes.json();

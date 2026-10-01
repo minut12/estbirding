@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
 // redeploy: P86d 2026-10-01 - corrector moved to _shared/bird-names.ts (part-wise sameSpecies, multi-word dict names, title/body stem propagation), [retry N] error prefix
 // redeploy-marker: 2026-10-01 - P86d1 tolerant TITLE/BODY delimiters + raw head on parse failure
 // redeploy-marker: 2026-10-01 - P86d0 drop temperature (rejected by claude-sonnet-5-5); P75/P85i model lines unchanged
@@ -42,6 +43,7 @@ import {
   buildGlossaryUserMsg,
 } from "../_shared/news-glossary.ts";
 import { withRetryPrefix } from "../_shared/retry-prefix.ts";
+import { anthropicMessages, llmConfigured } from "../_shared/llm.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 
@@ -60,8 +62,6 @@ const GLOSSARY_BUDGET_RESERVE_MS = 25_000;
 // isolate killed by the gateway; that is the documented cost of the manual path.
 const INGEST_TIMEOUT_MS = 300_000;
 
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_VERSION = "2023-06-01";
 const LINNUD_URL =
   "https://rfjhrosxbaihyrnbmmbl.supabase.co/storage/v1/object/public/bird-avatars/meta/Linnud.txt";
 
@@ -525,8 +525,7 @@ async function callAnthropic(
   maxTokens: number,
   timeoutMs: number = SONNET_TIMEOUT_MS,
 ): Promise<AnthropicResponse> {
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY")?.trim();
-  if (!apiKey) throw new Error("missing_env:ANTHROPIC_API_KEY");
+  if (!llmConfigured()) throw new Error("missing_env:ANTHROPIC_API_KEY");
 
   const areq = {
     model,
@@ -547,16 +546,7 @@ async function callAnthropic(
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(ANTHROPIC_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": ANTHROPIC_VERSION,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(areq),
-      signal: ctrl.signal,
-    });
+    const res = await anthropicMessages(areq, ctrl.signal);
     const text = await res.text();
     if (!res.ok) {
       return {

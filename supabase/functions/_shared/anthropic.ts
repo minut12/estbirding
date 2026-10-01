@@ -1,7 +1,9 @@
+// redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
 // redeploy-marker: 2026-10-01 - P86d0 drop temperature from callClaude (rejected by claude-sonnet-5-5)
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 import { fixBirdNamesInText } from "./bird-names-et.ts";
+import { anthropicMessages, llmConfigured } from "./llm.ts";
 
 export interface AnthropicConfig {
   apiKey: string;
@@ -10,7 +12,8 @@ export interface AnthropicConfig {
 
 export function getAnthropicConfig(): AnthropicConfig | null {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY")?.trim() || "";
-  if (!apiKey) return null;
+  // P89: an empty Anthropic key is fine when GEMINI_API_KEY is set; llm.ts routes.
+  if (!llmConfigured()) return null;
   const model = Deno.env.get("ANTHROPIC_TRANSLATION_MODEL") || "claude-sonnet-5-5";
   return { apiKey, model };
 }
@@ -21,19 +24,11 @@ export async function callClaude(
   userMessage: string,
   maxTokens = 2048,
 ): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": config.apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: config.model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: "user", content: userMessage }],
-    }),
+  const res = await anthropicMessages({
+    model: config.model,
+    max_tokens: maxTokens,
+    system,
+    messages: [{ role: "user", content: userMessage }],
   });
 
   if (!res.ok) {

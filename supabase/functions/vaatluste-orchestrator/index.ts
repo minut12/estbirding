@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
 // vaatluste-orchestrator
@@ -31,6 +32,7 @@
 //       insert-vaatluste-raport reads that one, not the inbound one).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { anthropicMessages, llmConfigured } from "../_shared/llm.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_FN_BASE = SUPABASE_URL + "/functions/v1";
@@ -41,8 +43,6 @@ const SPECIES_META_URL = SUPABASE_URL +
 const EBIRD_RELAY_URL = Deno.env.get("EBIRD_RELAY_URL") ||
   "https://estbirds.netlify.app/api/ebird-relay";
 
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_VERSION = "2023-06-01";
 const DEFAULT_MODEL = "claude-sonnet-5-5";
 const MAX_TOKENS = 65536;
 
@@ -1433,29 +1433,19 @@ async function callSonnet(
   maxTokens: number,
   timeoutMs: number,
 ): Promise<AnthropicResponse> {
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) throw new Error("missing_env:ANTHROPIC_API_KEY");
+  if (!llmConfigured()) throw new Error("missing_env:ANTHROPIC_API_KEY");
   const model = Deno.env.get("ANTHROPIC_MODEL_VAATLUSTE_RAPORT") ||
     DEFAULT_MODEL;
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(ANTHROPIC_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": ANTHROPIC_VERSION,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userMessage }],
-      }),
-      signal: ctrl.signal,
-    });
+    const res = await anthropicMessages({
+      model,
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+    }, ctrl.signal);
     const text = await res.text();
     if (!res.ok) {
       // n8n's node had no onError override, so a non-2xx failed the run.

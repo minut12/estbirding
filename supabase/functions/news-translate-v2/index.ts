@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-01 - P86d1 tolerant TITLE/BODY delimiters + raw head on parse failure
 // redeploy-marker: 2026-10-01 - P86d0 drop temperature (rejected by claude-sonnet-5-5); P75/P85i model lines unchanged
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
@@ -314,11 +315,55 @@ type Patch = Record<string, unknown>;
 interface AnthropicResponse {
   error?: { message?: string };
   stop_reason?: string;
-  content?: Array<{ text?: string }>;
+  content?: Array<{ type?: string; text?: string }>;
   usage?: {
     cache_creation_input_tokens?: number;
     cache_read_input_tokens?: number;
   };
+}
+
+// Sonnet 5.5 does not always echo the ###TITLE###/###BODY### delimiters
+// byte-for-byte (spacing, bold, "TITLE:", code fences). A marker on its own
+// line is matched by these patterns; inline "###TITLE### text" keeps indexOf.
+const TITLE_RE =
+  /^[ \t]*(?:\*\*|__)?\s*#{0,3}\s*TITLE\s*#{0,3}\s*(?:\*\*|__)?[ \t]*:?[ \t]*$/im;
+const BODY_RE =
+  /^[ \t]*(?:\*\*|__)?\s*#{0,3}\s*BODY\s*#{0,3}\s*(?:\*\*|__)?[ \t]*:?[ \t]*$/im;
+
+function stripCodeFence(s: string): string {
+  return s
+    .replace(/\r\n?/g, "\n")
+    .trim()
+    .replace(/^```[^\n]*\n/, "")
+    .replace(/\n?```$/, "")
+    .trim();
+}
+
+function splitTitleBody(txt: string): { title: string; body: string } | null {
+  const T = "###TITLE###", B = "###BODY###";
+  const ti = txt.indexOf(T), bi = txt.indexOf(B);
+  if (ti >= 0 && bi > ti && !TITLE_RE.test(txt)) {
+    return {
+      title: txt.slice(ti + T.length, bi).trim(),
+      body: txt.slice(bi + B.length).trim(),
+    };
+  }
+  const tm = TITLE_RE.exec(txt);
+  if (!tm) return null;
+  const rest = txt.slice(tm.index + tm[0].length);
+  const bm = BODY_RE.exec(rest);
+  if (bm) {
+    return {
+      title: rest.slice(0, bm.index).trim(),
+      body: rest.slice(bm.index + bm[0].length).trim(),
+    };
+  }
+  // TITLE without BODY: first line is the title, the rest is the body.
+  const r = rest.trim();
+  const nl = r.indexOf("\n");
+  return nl < 0
+    ? { title: r, body: "" }
+    : { title: r.slice(0, nl).trim(), body: r.slice(nl + 1).trim() };
 }
 
 // ---------------------------------------------------------------------------
@@ -344,15 +389,27 @@ function parseSonnet(src: PendingItem, resp: AnthropicResponse): ParsedItem {
     if (resp && resp.stop_reason === "max_tokens") {
       throw new Error("max_tokens hit");
     }
-    const block = (resp && resp.content && resp.content[0])
-      ? resp.content[0]
-      : null;
-    const txt = (block && block.text) ? block.text : "";
-    const T = "###TITLE###", B = "###BODY###";
-    const ti = txt.indexOf(T), bi = txt.indexOf(B);
-    if (ti < 0 || bi < 0) throw new Error("missing delimiters in response");
-    out.title_raw = txt.slice(ti + T.length, bi).trim();
-    out.body_raw = txt.slice(bi + B.length).trim();
+    // Join every text block; content[0] may be a non-text block. Untyped
+    // responses fall back to content[0].text as before.
+    const blocks = (resp && resp.content) ? resp.content : [];
+    const typed = blocks.some((b) => Boolean(b) && typeof b.type === "string");
+    const txt = typed
+      ? blocks
+        .filter((b) => Boolean(b) && b.type === "text" && typeof b.text === "string")
+        .map((b) => String(b.text))
+        .join("\n")
+      : ((blocks[0] && blocks[0].text) ? blocks[0].text : "");
+    const split = splitTitleBody(stripCodeFence(txt));
+    if (!split) {
+      // Set directly (no throw) so the raw head is not cut by the 300-char
+      // slice in the catch below.
+      const types = blocks.map((b) => (b && b.type) ? b.type : "?").join(",");
+      out._error = "sonnet: missing delimiters; types=[" + types + "]; head=" +
+        JSON.stringify(txt.slice(0, 400));
+      return out;
+    }
+    out.title_raw = split.title;
+    out.body_raw = split.body;
     out.translation_engine = "sonnet";
   } catch (e) {
     out._error = "sonnet: " + errMsg(e).slice(0, 300);
@@ -365,7 +422,7 @@ function buildPatch(it: ParsedItem, latinToEt: Record<string, string>): Patch {
   if (it._error || (!it.title_raw && !it.body_raw)) {
     return {
       translation_v2_status: "error",
-      translation_v2_error: String(it._error || "empty translation").slice(0, 500),
+      translation_v2_error: String(it._error || "empty translation").slice(0, 800),
     };
   }
   return {

@@ -175,9 +175,6 @@ verify_jwt = false
 [functions.linnuliigid-control]
 verify_jwt = false
 
-[functions.mcp]
-verify_jwt = false
-
 [functions.trigger-toenaosus-refresh]
 verify_jwt = false
 

@@ -3,8 +3,9 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/config/supabaseClient';
 import {
   Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink,
-  Search, RefreshCw, Loader2, Languages,
+  Search, RefreshCw, Loader2, Languages, Play,
 } from 'lucide-react';
+import { CountryFlag, hasCountryFlag, sourceCountry, sourceChipLabel } from '@/components/icons/CountryFlag';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -78,9 +79,42 @@ const NEWS_HASH_ARTICLE = '#news-article';
 const NEWS_LAST_REFRESH_KEY = 'estbirding.news.lastRefreshAt.v1';
 
 const NEWS_VIEW_SELECT = 'id,source_key,title,title_et,title_et_v2,body,body_et,body_et_v2,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,created_at,external_id,source_id,source_slug,source_name,cached_image_url,cached_image_path,display_image_url,content_html,fetched_at,guid,raw_json,language,source_lang,translated_title,translated_body';
-const ALL_SOURCES_LABEL = normalizeDisplayText("Kõik allikad");
 const NEWS_TABLE_FALLBACK_SELECT = 'id,source_key,title,title_et,title_et_v2,body,body_et,body_et_v2,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,source_id,source_slug,permalink_url,content_html,created_at,cached_image_url,image_cached_url,language,source_lang,guid,raw_json,fetched_at';
 const NEWS_MIN_SELECT = 'id,source_key,title,body,summary,published_at,url,image_url,archived,source_id,source_slug,created_at,cached_image_url,content_html,fetched_at,guid,raw_json,language,source_lang';
+
+const CHIP_BASE = 'shrink-0 inline-flex items-center gap-1 h-7 px-2.5 rounded-full border text-xs font-medium transition-colors';
+const CHIP_ACTIVE = 'bg-foreground text-background border-foreground';
+const CHIP_INACTIVE = 'border-border bg-card text-foreground/80';
+
+function formatShortNewsDate(value: string): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const base = new Intl.DateTimeFormat('et-EE', { day: 'numeric', month: 'short' }).format(d);
+  return d.getFullYear() !== new Date().getFullYear() ? `${base} ${d.getFullYear()}` : base;
+}
+
+/* Strip a leading copy of the title from text (case-insensitive, any whitespace run == one space). */
+function stripLeadingTitle(text: string, title: string): string {
+  const target = title.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!target) return text;
+  let i = 0;
+  let j = 0;
+  while (i < text.length && /\s/.test(text[i])) i += 1;
+  while (j < target.length) {
+    if (i >= text.length) return text;
+    if (target[j] === ' ') {
+      if (!/\s/.test(text[i])) return text;
+      while (i < text.length && /\s/.test(text[i])) i += 1;
+      j += 1;
+      continue;
+    }
+    if (text[i].toLowerCase() !== target[j]) return text;
+    i += 1;
+    j += 1;
+  }
+  return text.slice(i).replace(/^[\s:.\-|]+/, '');
+}
 
 /* Format date */
 const ET_MONTHS = ['jaanuar','veebruar','märts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
@@ -961,25 +995,6 @@ export default function NewsTab() {
     },
   });
 
-  const retranslateMutation = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke('translate-missing-news-et', {
-        method: 'POST',
-        body: { force: true, limit: 100 },
-      });
-      if (error) throw new Error(error.message || 'Tõlkimise viga');
-      return data;
-    },
-    onSuccess: (data) => {
-      loadPage('initial');
-      const count = Number(data?.updated ?? 0);
-      toast.success(`Tõlgitud: ${count} uudist`);
-    },
-    onError: (error) => {
-      toast.error('Tõlkimise viga: ' + formatErrorReason(error).slice(0, 160));
-    },
-  });
-
   // Save/restore scroll
   const openArticle = (item: NewsItem) => {
     scrollPosRef.current = scrollRef.current?.scrollTop ?? 0;
@@ -1047,17 +1062,6 @@ export default function NewsTab() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => retranslateMutation.mutate()}
-              disabled={retranslateMutation.isPending}
-              title="Tõlgi uuesti"
-            >
-              {retranslateMutation.isPending
-                ? <Loader2 className="w-4 h-4 animate-spin" />
-                : <Languages className="w-4 h-4" />}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
               onClick={() => pullMutation.mutate()}
               disabled={pullMutation.isPending}
               title="Värskenda"
@@ -1092,20 +1096,7 @@ export default function NewsTab() {
         </div>
 
         {/* Filters */}
-        <div className="flex gap-2">
-          {filterSources.length > 1 && (
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="all">{ALL_SOURCES_LABEL}</option>
-              {filterSources.map((s) => {
-                const canonical = getCanonicalSourceValue(s);
-                return <option key={canonical} value={canonical}>{normalizeDisplayText(s.name)}</option>;
-              })}
-            </select>
-          )}
+        <div className="flex">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
             <Input
@@ -1116,6 +1107,33 @@ export default function NewsTab() {
             />
           </div>
         </div>
+        {filterSources.length > 1 && (
+          <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] -mx-4 px-4">
+            <button
+              type="button"
+              onClick={() => setSourceFilter('all')}
+              className={cn(CHIP_BASE, sourceFilter === 'all' ? CHIP_ACTIVE : CHIP_INACTIVE)}
+            >
+              Kõik
+            </button>
+            {filterSources.map((s) => {
+              const canonical = getCanonicalSourceValue(s);
+              const slug = s.slug || s.source_key;
+              const code = sourceCountry(slug);
+              return (
+                <button
+                  key={canonical}
+                  type="button"
+                  onClick={() => setSourceFilter(canonical)}
+                  className={cn(CHIP_BASE, sourceFilter === canonical ? CHIP_ACTIVE : CHIP_INACTIVE)}
+                >
+                  {code && hasCountryFlag(code) && <CountryFlag code={code} />}
+                  {sourceChipLabel(slug, normalizeDisplayText(s.name))}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {import.meta.env.DEV && (
           <p className="text-xs text-muted-foreground">
             proxy={activeProxyName} base={resolvedProxyBase || '(empty)'} lastError={lastNewsFetchErrorShort || '(none)'}
@@ -1153,9 +1171,7 @@ export default function NewsTab() {
                 proxyBase={resolvedProxyBase}
                 showEtContent={showEtContent}
                 autoTranslateEnabled={autoTranslateEnabled}
-                canArchiveNews={canArchiveNews}
                 onOpen={() => openArticle(item)}
-                onToggleArchive={() => toggleArchive(item.id, item.is_archived)}
               />
             ))}
           </div>
@@ -1183,15 +1199,13 @@ export default function NewsTab() {
 }
 
 /* News Card */
-function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnabled, canArchiveNews, onOpen, onToggleArchive }: {
+function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnabled, onOpen }: {
   item: NewsItem;
   sources: NewsSource[];
   proxyBase: string;
   showEtContent: boolean;
   autoTranslateEnabled: boolean;
-  canArchiveNews: boolean;
   onOpen: () => void;
-  onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const sourceName = sourceLabel(item, sources);
@@ -1213,9 +1227,18 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
     const snippetSource = useEtDisplay
       ? (translatedBody || item.body || item.summary || '')
       : (item.body ?? item.summary ?? item.excerpt ?? '');
-    return toPlainText(snippetSource).slice(0, 150);
-  }, [useEtDisplay, translatedBody, item.body, item.summary, item.excerpt]);
-  const originalUrl = item.permalink_url || item.url || '#';
+    const plain = toPlainText(snippetSource).trimStart();
+    const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+    const titleNorm = norm(displayTitle);
+    const body = titleNorm && norm(plain).startsWith(titleNorm) ? stripLeadingTitle(plain, displayTitle) : plain;
+    return body.slice(0, 150);
+  }, [useEtDisplay, translatedBody, item.body, item.summary, item.excerpt, displayTitle]);
+  const code = sourceCountry(item.source_slug || item.source_key);
+  const shortDate = useMemo(
+    () => formatShortNewsDate(item.published_at || item.created_at || item.fetched_at || ''),
+    [item.published_at, item.created_at, item.fetched_at],
+  );
+  const isVideo = /<(iframe|video)\b/i.test(item.content_html ?? '');
 
   useEffect(() => {
     setImageFailed(false);
@@ -1236,7 +1259,7 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
       role="article"
     >
       <div className="flex gap-3">
-        <div className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden" data-card-trigger="true">
+        <div className="relative w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden" data-card-trigger="true">
           {thumbSrc && !imageFailed ? (
             <img
               src={thumbSrc}
@@ -1269,6 +1292,13 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
               <Newspaper className="w-8 h-8 text-muted-foreground/30" />
             </div>
           )}
+          {isVideo && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <span className="w-7 h-7 rounded-full bg-white/90 flex items-center justify-center shadow-sm">
+                <Play className="w-3.5 h-3.5 fill-current text-foreground" />
+              </span>
+            </div>
+          )}
         </div>
         {DEBUG_NEWS_IMAGE && (
           <p className="text-[10px] text-muted-foreground break-all mt-1">
@@ -1276,38 +1306,29 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
           </p>
         )}
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-sm text-foreground line-clamp-2">{displayTitle}</p>
-          <div className="flex items-center gap-2 mt-1">
-            <Badge variant="secondary" className="text-xs px-1.5 py-0">
-              {sourceLabel(item, sources)}
-            </Badge>
-            {isPending && (
-              <Badge variant="outline" className="text-xs px-1.5 py-0 text-amber-600 border-amber-300">
-                Tõlkimisel…
-              </Badge>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+            {code && hasCountryFlag(code) && <CountryFlag code={code} />}
+            <span className="font-medium text-foreground/80 truncate">{sourceName}</span>
+            {shortDate && (
+              <>
+                <span aria-hidden="true" className="opacity-60">&middot;</span>
+                <span className="whitespace-nowrap">{shortDate}</span>
+              </>
             )}
-            {useEtDisplay && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
-            <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
+            {useEtDisplay ? (
+              <span title="Tõlgitud" className="shrink-0 w-[18px] h-[18px] rounded inline-flex items-center justify-center bg-primary/10 text-primary">
+                <Languages className="w-3 h-3" />
+              </span>
+            ) : isPending ? (
+              <span title="Tõlkimisel" className="shrink-0 w-[18px] h-[18px] rounded inline-flex items-center justify-center bg-amber-100 text-amber-700">
+                <Loader2 className="w-3 h-3 animate-spin" />
+              </span>
+            ) : null}
           </div>
+          <p className="font-semibold text-[15px] leading-snug text-foreground line-clamp-2 mt-0.5">{displayTitle}</p>
           {snippet && (
             <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{snippet}</p>
           )}
-          <div className="flex gap-2 mt-2">
-            <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onOpen}>
-              Ava
-            </Button>
-            <a href={originalUrl} target="_blank" rel="noopener noreferrer">
-              <Button variant="ghost" size="sm" className="h-7 text-xs px-2 gap-1">
-                <ExternalLink className="w-3 h-3" /> Originaal
-              </Button>
-            </a>
-            {canArchiveNews && (
-              <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onToggleArchive}>
-                {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5 mr-1" /> : <Archive className="w-3.5 h-3.5 mr-1" />}
-                {item.is_archived ? 'Taasta' : 'Arhiveeri'}
-              </Button>
-            )}
-          </div>
         </div>
       </div>
     </div>

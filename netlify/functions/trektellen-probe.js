@@ -23,7 +23,7 @@ export const handler = async function (event) {
     (k) => k.toLowerCase() === "x-relay-secret",
   );
   const provided = headerKey ? headers[headerKey] : undefined;
-  const secret = process.env.EBIRD_RELAY_SECRET;
+  const secret = process.env.TREKTELLEN_PROBE_SECRET;
   if (!secret || provided !== secret) {
     return json({ ok: false, reason: "unauthorized" }, 401);
   }

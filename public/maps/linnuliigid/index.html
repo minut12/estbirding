@@ -208,6 +208,17 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
 .bm-sc--elu{--sc:#2c7fb8;--sc-soft:#e6f1f9;--sc-ink:#1d5c88}
 .bm-sc--ebird{--sc:#0e7490;--sc-soft:#e0f2f5;--sc-ink:#155e75}
 .bm-sc--gbif{--sc:#4f46e5;--sc-soft:#eceafd;--sc-ink:#3730a3}
+/* P91: Trektellen link-only layer (count sites, no data) */
+.bm-sc--tt{--sc:#b45309;--sc-soft:#fdf1e4;--sc-ink:#7c3a07}
+.bm-pin.is-tt .bm-pin-head{background-color:#b45309;background-image:none;display:flex;align-items:center;justify-content:center}
+.bm-pin.is-tt .bm-pin-head svg{width:20px;height:20px;fill:#fff}
+.bm-pin.is-tt .bm-pin-src{background:#b45309}
+.bm-pin.is-tt.is-old .bm-pin-shape{border-style:dashed;border-color:#9aa9a0;background:#f4f6f5}
+.bm-pin.is-tt.is-old .bm-pin-head{filter:saturate(.35);opacity:.8}
+.bm-pin.is-tt.is-old .bm-pin-src{background:#6c7f74}
+.bm-sc--tt .bm-sc-av{display:flex;align-items:center;justify-content:center;background:#b45309}
+.bm-sc--tt .bm-sc-av svg{width:30px;height:30px;fill:#fff}
+.bm-sc .bm-sc-btn.is-sec,.bm-sc a.bm-sc-btn.is-sec,.bm-sc a.bm-sc-btn.is-sec:visited,.bm-sc a.bm-sc-btn.is-sec:hover{background:var(--sc-soft);border-color:var(--sc);color:var(--sc-ink)!important}
 .bm-sc-band{position:relative;height:66px;overflow:hidden;background:var(--sc-soft);isolation:isolate}
 .bm-sc-wash{position:absolute;inset:-20px;background-size:cover;background-position:center;
   filter:blur(16px) saturate(1.2);opacity:.5}
@@ -13387,6 +13398,7 @@ document.addEventListener('DOMContentLoaded', function(){
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
   <button id="toggleSpring" class="btn secondary">Kevadränne</button>
   <button id="toggleEbirdEE" class="btn secondary" style="white-space:nowrap">eBird EE</button>
+  <button id="toggleTrektellen" class="btn secondary" style="white-space:nowrap" title="Trektelleni r&auml;ndeloenduskohad">Trektellen</button>
   <button id="ennustusBtn" class="btn secondary" title="Näita liikide tõenäosust praegusel perioodil" onclick="window.__openEnnustus()">Tõenäosus</button>
 
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
@@ -14873,6 +14885,101 @@ var __sharedDefaults = {};
       };
     }
   } catch(e){}
+})();
+</script>
+
+<!-- Trektellen layer (P91): static EE count sites, link-only. No fetch - trektellen.nl
+     sits behind a Cloudflare challenge that blocks every automated client (decisions/2026-10-02-p90-*). -->
+<script>
+(function(){
+  var LS_KEY = 'bm_trektellen_layer';
+  var YEAR = new Date().getFullYear();
+  // [id, name (as on Trektellen), lat, lon, last count seen 2026-10-02]
+  var SITES = [
+    [1480,"S&otilde;rve Observatory / Lighthouse",57.9112,22.0559,"2026-10-01"],
+    [1652,"P&otilde;&otilde;saspea neem",59.2288,23.50932,"2026-10-01"],
+    [1653,"Puise sadam, Matsalu",58.7661,23.45362,"2026-10-01"],
+    [3219,"Mehikoorma",58.23326,27.47671,"2026-09-27"],
+    [2613,"Purekkari neem / Viinistu",59.67532,25.69645,"2026-09-27"],
+    [2184,"Haversi",59.14051,23.53035,"2026-09-26"],
+    [3736,"Kihnu lighthouse",58.09698,23.97115,"2026-09-24"],
+    [1481,"Kabli",58.0141,24.4495,"2026-09-24"],
+    [2367,"Salme, Saaremaa",58.15878,22.24047,"2026-08-30"],
+    [2547,"Undva neem",58.51653,21.91758,"2026-08-29"],
+    [2205,"Pakri neem, Paldiski",59.38954,24.04559,"2026-08-28"],
+    [3410,"Lohusalu poolsaar",59.40529,24.20262,"2026-08-27"],
+    [2071,"Ristna l&otilde;unaneem, Hiiumaa",58.9279,22.0407,"2026-08-26"],
+    [3187,"Tahkuna nina, Hiiumaa",59.09216,22.58425,"2026-08-26"],
+    [2116,"Kuivastu",58.57263,23.39099,"2026-04-06"],
+    [3664,"Vergi sadam, Lahemaa",59.6012,26.10031,"2025-07-27"],
+    [3374,"Osmussaar lighthouse (NW), L&auml;&auml;ne",59.30335,23.36021,"2025-06-01"],
+    [3941,"Rohuneeme, Tallinn",59.55047,24.78445,"2024-05-10"],
+    [3685,"Harjumaa, Maardu j&auml;rv",59.44228,25.01026,"2023-10-15"],
+    [3375,"Osmussaar harbour (SE), L&auml;&auml;ne",59.27522,23.40996,"2023-09-29"],
+    [3153,"Loode Lighthouse",57.97281,21.98371,"2023-08-12"],
+    [3414,"Ristna Nina, Harju",59.27357,23.73161,"2023-07-22"],
+    [3220,"R&auml;pina harbour",58.12776,27.52872,"2022-09-26"],
+    [1403,"Virtsu Lighthouse",58.56722,23.50139,"2022-05-19"],
+    [2401,"Laok&uuml;la",59.31327,24.11302,"2019-06-03"],
+    [2079,"Perjatsi",59.39022,27.80768,"2018-05-01"]
+  ];
+  var BIRD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12c3-1 6-1 8 1l2-5 2 5c2-2 5-2 8-1-3 2-5 4-7 4l1 5-3-2-3 2 1-5c-2 0-4-2-7-4z"/></svg>';
+  var ICO_LINK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>';
+  var ICO_INFO = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>';
+
+  var btn = document.getElementById('toggleTrektellen');
+  if (!btn || typeof L === 'undefined' || !window.map) return;
+  var on = false;
+  try { on = localStorage.getItem(LS_KEY) === '1'; } catch(e){}
+  var group = L.layerGroup();
+
+  // "old" = no count for over a year relative to the snapshot date list above.
+  function isOld(last){
+    var cut = new Date(); cut.setFullYear(cut.getFullYear() - 1);
+    return last < cut.toISOString().slice(0, 10);
+  }
+  function icon(old){
+    var html = '<div class="bm-pin is-tt' + (old ? ' is-old' : '') + '">'
+      + '<div class="bm-pin-shape"></div>'
+      + '<div class="bm-pin-head">' + BIRD + '</div>'
+      + '<div class="bm-pin-src">Trektellen</div>'
+      + '<div class="bm-pin-tip"></div></div>';
+    return L.divIcon({ html: html, className: '', iconSize: [44,56], iconAnchor: [22,56], popupAnchor: [0,-52] });
+  }
+  function card(s){
+    var totals = 'https://trektellen.nl/site/totals/' + s[0] + '/' + YEAR;
+    var info = 'https://trektellen.nl/site/info/' + s[0];
+    return '<div class="bm-sc bm-sc--tt">'
+      + '<div class="bm-sc-band"><span class="bm-sc-tag">Trektellen</span></div>'
+      + '<div class="bm-sc-body">'
+      + '<div class="bm-sc-head"><div class="bm-sc-av">' + BIRD + '</div>'
+      + '<div class="bm-sc-id"><div class="bm-sc-name">' + s[1] + '</div>'
+      + '<div class="bm-sc-sci" style="font-style:normal">R&auml;ndeloenduspunkt &middot; Trektellen</div></div></div>'
+      + '<div class="bm-sc-note">' + ICO_INFO + '<span>Loendusandmed avanevad Trektelleni lehel uues aknas.</span></div>'
+      + '<div class="bm-sc-acts">'
+      + '<a class="bm-sc-btn" href="' + totals + '" target="_blank" rel="noopener">Ava Trektellenis ' + ICO_LINK + '</a>'
+      + '<a class="bm-sc-btn is-sec" href="' + info + '" target="_blank" rel="noopener">Loenduskoha info</a>'
+      + '</div>'
+      + '<div class="bm-sc-ft"><span class="bm-sc-coords">' + s[2].toFixed(5) + ', ' + s[3].toFixed(5) + '</span><span>loenduskoht</span></div>'
+      + '</div></div>';
+  }
+  SITES.forEach(function(s){
+    var m = L.marker([s[2], s[3]], { icon: icon(isOld(s[4])), title: s[1].replace(/&[a-z]+;/g, '') });
+    m.bindPopup(card(s), { autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) });
+    group.addLayer(m);
+  });
+  function sync(){
+    btn.className = on ? 'btn on' : 'btn secondary';
+    btn.textContent = on ? 'Trektellen: ON' : 'Trektellen';
+    btn.style.whiteSpace = 'nowrap';
+    if (on) { group.addTo(window.map); } else { window.map.removeLayer(group); }
+  }
+  btn.addEventListener('click', function(){
+    on = !on;
+    try { localStorage.setItem(LS_KEY, on ? '1' : '0'); } catch(e){}
+    sync();
+  });
+  sync();
 })();
 </script>
 

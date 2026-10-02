@@ -32,6 +32,7 @@
     "Kassikakk",
     "Kodukakk",
     "Kodutuvi",
+    "Koduvarblane",
     "Laanep\u00fc\u00fc",
     "Laaner\u00e4hn",
     "Metsis",

@@ -3677,6 +3677,7 @@ async function autoFetchCoords(key, searchUrl, signal){
     } else {
       _safeEeRefreshUiApply('savePointNoDetail', function(){ save(); });
       _safeEeRefreshUiApply('renderNoDetail', function(){ render(); });
+      _safeEeRefreshUiApply('noticeNoDetail', function(){ evaluateRecentRaritiesNotice(); });   /* P93: notice follows the new p.t */
     }
     return { updated:true, moved:false, detailUrl:'' };
   }
@@ -3846,6 +3847,7 @@ async function refreshAllElurikkusOnce(){
         _logEeRefreshStage({ view: view, jobId: jobId, index: total - 1, species: '', stage: 'finalRenderSidebar' });
         render();
       });
+      _safeEeRefreshUiApply('finalNotice', function(){ evaluateRecentRaritiesNotice(); });   /* P93 */
       try{ _updateServerSnapshotStatus(); }catch(e){}
       const aborted = !!(signal && signal.aborted);
       const doneMsg = aborted
@@ -5261,6 +5263,7 @@ function _applySelectedOccurrenceFromServer(speciesName, json){
   try{ save(); }catch(e){}
   try{ updateMarker(speciesName); }catch(e){}
   try{ render(); }catch(e){}
+  try{ evaluateRecentRaritiesNotice(); }catch(e){}   /* P93 */
   return {
     applied: applied,
     moved: (applied ? moved : false),
@@ -9339,6 +9342,7 @@ async function loadElurikkusPrimary(){
     }
     try{ if(typeof rebuildAllMarkers === 'function') rebuildAllMarkers(); }catch(e){}
     try{ if(typeof render === 'function') render(); }catch(e){}
+    try{ if(typeof evaluateRecentRaritiesNotice === 'function') evaluateRecentRaritiesNotice(); }catch(e){}   /* P93 */
     console.log('[rariliin P4b] applied ' + applied + ' rare species from elurikkus_observations');
   }catch(e){ console.warn('[rariliin P4b] loadElurikkusPrimary error', e && e.message); }
 }

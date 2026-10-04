@@ -207,3 +207,6 @@ verify_jwt = false
 
 [functions.send-test-push]
 verify_jwt = false
+
+[functions.event-from-url]
+verify_jwt = false

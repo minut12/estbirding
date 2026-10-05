@@ -1,6 +1,8 @@
 import { ArrowLeft, CalendarDays, ExternalLink, MapPin } from "lucide-react";
 import { formatEventCountdown, formatEventDate, et } from "@/localization/et";
 import type { EventItem } from "@/data/events";
+import { getProxiedImageUrl } from "@/features/news/newsImage";
+import { resolveProxyBase } from "@/config/proxyEndpoint";
 
 interface EventDetailsScreenProps {
   event: EventItem;
@@ -24,7 +26,7 @@ export default function EventDetailsScreen({ event, onBack }: EventDetailsScreen
 
       <div className="flex-1 overflow-y-auto p-4">
         <img
-          src={event.imageUrl}
+          src={getProxiedImageUrl(event.imageUrl, resolveProxyBase())}
           alt={event.title}
           className="h-52 w-full rounded-2xl object-cover bg-muted"
         />

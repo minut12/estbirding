@@ -2,6 +2,8 @@ import { CalendarDays, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatEventCountdown, formatEventDate, et } from "@/localization/et";
 import type { EventItem } from "@/data/events";
+import { getProxiedImageUrl } from "@/features/news/newsImage";
+import { resolveProxyBase } from "@/config/proxyEndpoint";
 
 type EventCardVariant = "full" | "compact";
 
@@ -77,7 +79,7 @@ export function EventCard({
 
           {event.imageUrl ? (
             <img
-              src={event.imageUrl}
+              src={getProxiedImageUrl(event.imageUrl, resolveProxyBase())}
               alt=""
               loading="lazy"
               className="h-11 w-11 flex-shrink-0 rounded-md object-cover bg-muted"
@@ -140,7 +142,7 @@ export function EventCard({
       <button ref={cardRef} onClick={onPress} className="w-full text-left">
         <div className="flex gap-3">
           <img
-            src={event.imageUrl}
+            src={getProxiedImageUrl(event.imageUrl, resolveProxyBase())}
             alt={event.title}
             loading="lazy"
             className="h-20 w-24 shrink-0 rounded-xl object-cover bg-muted"

@@ -3,6 +3,8 @@ import { Check, Loader2, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { et } from "@/localization/et";
+import { getProxiedImageUrl } from "@/features/news/newsImage";
+import { resolveProxyBase } from "@/config/proxyEndpoint";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -250,6 +252,10 @@ type ImageFieldProps = {
 };
 
 function ImageField({ imageUrl, onPick, onRemove }: ImageFieldProps) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => {
+    setBroken(false);
+  }, [imageUrl]);
   const handleFile = async (file: File | null) => {
     if (!file) return;
     try {
@@ -269,7 +275,16 @@ function ImageField({ imageUrl, onPick, onRemove }: ImageFieldProps) {
       <Label htmlFor="eventLinkImage">{t.fieldImage}</Label>
       {imageUrl ? (
         <div className="space-y-2">
-          <img src={imageUrl} alt={t.imageAlt} className="h-28 w-full rounded-md object-cover" />
+          {broken ? (
+            <p className="text-xs text-muted-foreground">{t.imageAlt}</p>
+          ) : (
+            <img
+              src={imageUrl.startsWith("data:") ? imageUrl : getProxiedImageUrl(imageUrl, resolveProxyBase())}
+              alt={t.imageAlt}
+              className="h-28 w-full rounded-md object-cover"
+              onError={() => setBroken(true)}
+            />
+          )}
           <Button type="button" variant="outline" size="sm" onClick={onRemove}>
             {t.removeImage}
           </Button>

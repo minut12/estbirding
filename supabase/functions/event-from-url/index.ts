@@ -1,5 +1,6 @@
 // redeploy-marker: 2026-10-04 - P92b event-from-url (admin URL -> prefilled event fields)
 // redeploy-marker: 2026-10-04 - P92b2 JWT + events_admin_assert_admin auth, drop temperature; own model env ANTHROPIC_MODEL_EVENT_FROM_URL
+// redeploy-marker: 2026-10-05 - P92c2 Accept-Language et; facebook -> LLM over og fields; organiser -> source_hint
 //
 // Admin pastes a URL (estbirding.ee, eoy.ee, facebook.com, any public https page);
 // this function fetches it and returns prefilled event fields.
@@ -142,6 +143,13 @@ function isFacebookHost(host: string): boolean {
   return lower === "facebook.com" || lower.endsWith(".facebook.com") || lower === "fb.com" || lower.endsWith(".fb.com");
 }
 
+// Organiser named in the page text; only consulted for third-party hosts.
+function organiserHint(text: string): SourceHint | null {
+  if (/ornitoloogia|eoy\.ee|eo\u00dc/i.test(text)) return "eoy";
+  if (/estbirding/i.test(text)) return "estbirding";
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Fetch with timeout + 1.5 MB cap
 // ---------------------------------------------------------------------------
@@ -198,7 +206,11 @@ async function fetchPage(url: string): Promise<FetchResult> {
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
-      headers: { "user-agent": USER_AGENT, accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8" },
+      headers: {
+        "user-agent": USER_AGENT,
+        accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "accept-language": "et-EE,et;q=0.9,en;q=0.8",
+      },
       redirect: "follow",
       signal: controller.signal,
     });
@@ -442,6 +454,7 @@ function llmSystemPrompt(): string {
     "- Output starts_at and ends_at as ISO 8601 with the Europe/Tallinn offset (+02:00 in winter, +03:00 in summer), e.g. 2026-05-09T07:00:00+03:00. If only a date is known use T00:00:00.",
     "- Use null when a value is not on the page. Never invent values.",
     "- location_name is the venue or place name as written, suitable for geocoding inside Estonia.",
+    "- Text like 'Freitag, Oktober 16 2026 in Tallinn' or 'reede, 16. oktoober 2026 Tallinnas' is a date and a location; a city alone is a valid location_name.",
     "- title and description are in the page language; description is plain text, at most 1500 characters.",
   ].join("\n");
 }
@@ -562,26 +575,40 @@ function normalizeDateField(raw: string | null, field: string, warnings: string[
   return normalized;
 }
 
-async function resolveDraft(page: FetchedPage, host: string, warnings: string[]): Promise<{ draft: DraftFields; extraction: Extraction }> {
+function mergeLlmWithOg(fields: DraftFields, meta: PageMeta): DraftFields {
+  const og = fieldsFromOg(meta);
+  return { ...fields, title: fields.title ?? og.title, description: fields.description ?? og.description, image_url: og.image_url };
+}
+
+async function resolveDraft(
+  page: FetchedPage,
+  host: string,
+  warnings: string[],
+): Promise<{ draft: DraftFields; extraction: Extraction; meta: PageMeta }> {
   const meta = parseMeta(page.html);
   const event = extractJsonLdEvent(page.html);
-  if (event) return { draft: fieldsFromJsonLd(event, meta), extraction: "jsonld" };
+  if (event) return { draft: fieldsFromJsonLd(event, meta), extraction: "jsonld", meta };
   if (isFacebookHost(host)) {
-    warnings.push("facebook_og_only");
-    return { draft: fieldsFromOg(meta), extraction: "og-only" };
+    if (!llmConfigured()) {
+      warnings.push("facebook_og_only");
+      return { draft: fieldsFromOg(meta), extraction: "og-only", meta };
+    }
+    // Facebook bodies are login walls; feed the LLM only the og fields.
+    const fbText = [meta.og["og:title"], meta.og["og:description"]].filter(Boolean).join("\n");
+    const fbLlm = await llmExtract(page.finalUrl, meta, fbText);
+    warnings.push(...fbLlm.warnings);
+    warnings.push(fbLlm.fields?.starts_at ? "facebook_og_meta" : "facebook_og_only");
+    if (!fbLlm.fields) return { draft: fieldsFromOg(meta), extraction: "og-only", meta };
+    return { draft: mergeLlmWithOg(fbLlm.fields, meta), extraction: "llm", meta };
   }
   if (!llmConfigured()) {
     warnings.push("llm_not_configured");
-    return { draft: fieldsFromOg(meta), extraction: "og-only" };
+    return { draft: fieldsFromOg(meta), extraction: "og-only", meta };
   }
   const llm = await llmExtract(page.finalUrl, meta, plainText(page.html));
   warnings.push(...llm.warnings);
-  if (!llm.fields) return { draft: fieldsFromOg(meta), extraction: "og-only" };
-  const og = fieldsFromOg(meta);
-  return {
-    draft: { ...llm.fields, title: llm.fields.title ?? og.title, description: llm.fields.description ?? og.description, image_url: og.image_url },
-    extraction: "llm",
-  };
+  if (!llm.fields) return { draft: fieldsFromOg(meta), extraction: "og-only", meta };
+  return { draft: mergeLlmWithOg(llm.fields, meta), extraction: "llm", meta };
 }
 
 // ---------------------------------------------------------------------------
@@ -629,7 +656,11 @@ Deno.serve(async (req) => {
     const page = fetched.page;
     const host = new URL(page.finalUrl).hostname.toLowerCase();
     const warnings: string[] = page.truncated ? ["body_truncated"] : [];
-    const { draft, extraction } = await resolveDraft(page, host, warnings);
+    const { draft, extraction, meta } = await resolveDraft(page, host, warnings);
+    const hint = organiserHint(
+      [meta.og["og:title"], meta.og["og:description"], draft.title, draft.description].filter(Boolean).join(" "),
+    );
+    const hostHint = sourceHintFor(host);
 
     const locationName = draft.location_name;
     const geo: GeoResult = locationName ? await geocode(locationName) : { lat: null, lon: null, warning: null };
@@ -650,7 +681,7 @@ Deno.serve(async (req) => {
       ok: true,
       url: page.finalUrl,
       host,
-      source_hint: sourceHintFor(host),
+      source_hint: hostHint !== "muu" ? hostHint : (hint ?? "muu"),
       extraction,
       fields,
       warnings,

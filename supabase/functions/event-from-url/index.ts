@@ -2,6 +2,7 @@
 // redeploy-marker: 2026-10-04 - P92b2 JWT + events_admin_assert_admin auth, drop temperature; own model env ANTHROPIC_MODEL_EVENT_FROM_URL
 // redeploy-marker: 2026-10-05 - P92c2 Accept-Language et; facebook -> LLM over og fields; organiser -> source_hint
 // redeploy-marker: 2026-10-05 - P92c4 facebook boilerplate description dropped; geocode comma-tail fallback
+// redeploy-marker: 2026-10-05 - P92c5 facebook: Chrome UA + start/end_timestamp/event_place/description parse, no LLM/geocode
 //
 // Admin pastes a URL (estbirding.ee, eoy.ee, facebook.com, any public https page);
 // this function fetches it and returns prefilled event fields.
@@ -16,12 +17,15 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { anthropicMessages, llmConfigured, type AnthropicShapedResponse } from "../_shared/llm.ts";
 
 const USER_AGENT = "Mozilla/5.0 (compatible; EstBirds/1.0; +https://estbirds.netlify.app)";
+// Facebook serves the full event blob (timestamps, place, description) only to a browser UA;
+// the crawler UA above gets a slim og:-only page. Verified 2026-10-05.
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
 const FETCH_TIMEOUT_MS = 10_000;
 const GEOCODE_TIMEOUT_MS = 5_000;
 const GEOCODE_MAX_ATTEMPTS = 3;
 const GEOCODE_RETRY_PAUSE_MS = 1_000;
 const LLM_TIMEOUT_MS = 45_000;
-const MAX_BODY_BYTES = 1_500_000;
+const MAX_BODY_BYTES = 2_500_000; // facebook browser-UA pages are ~0.8-1 MB
 const MAX_TEXT_CHARS = 12_000;
 const MAX_DESCRIPTION_CHARS = 2_000;
 const LLM_MAX_TOKENS = 800;
@@ -30,7 +34,8 @@ const TIME_ZONE = "Europe/Tallinn";
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ee&q=";
 
 type JsonRecord = Record<string, unknown>;
-type Extraction = "jsonld" | "llm" | "og-only";
+type Extraction = "jsonld" | "facebook" | "llm" | "og-only";
+type Coords = { lat: number; lon: number };
 type SourceHint = "estbirding" | "eoy" | "muu";
 
 type DraftFields = {
@@ -211,12 +216,13 @@ function decodeBody(bytes: Uint8Array, contentType: string | null): string {
 }
 
 async function fetchPage(url: string): Promise<FetchResult> {
+  const userAgent = isFacebookHost(new URL(url).hostname) ? BROWSER_UA : USER_AGENT;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
       headers: {
-        "user-agent": USER_AGENT,
+        "user-agent": userAgent,
         accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
         "accept-language": "et-EE,et;q=0.9,en;q=0.8",
       },
@@ -452,6 +458,59 @@ function ogDraftForFacebook(meta: PageMeta): DraftFields {
   return isFacebookBoilerplate(og.description) ? { ...og, description: null } : og;
 }
 
+// Decode a JSON string literal body (the text between the quotes) back to a plain string.
+function decodeJsonString(raw: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse('"' + raw + '"');
+    return typeof parsed === "string" ? nonEmpty(parsed) : null;
+  } catch {
+    return null;
+  }
+}
+
+type FacebookEvent = DraftFields & { coords: Coords | null };
+
+// Facebook event page (browser UA, logged out) embeds the event as JSON inside <script> blobs:
+//   "start_timestamp":1792134000  "end_timestamp":1792159200  (unix seconds; end may be 0/absent)
+//   "event_description":{"text":"..."}  "event_place":{...,"contextual_name":"...","location":{"latitude":..,"longitude":..}}
+// Returns null when no start_timestamp is present (slim/login page or changed markup).
+function parseFacebookEvent(html: string): FacebookEvent | null {
+  const start = /"start_timestamp":(\d+)/.exec(html);
+  if (!start) return null;
+  const startSec = Number(start[1]);
+  if (!Number.isFinite(startSec) || startSec <= 0) return null;
+  const end = /"end_timestamp":(\d+)/.exec(html);
+  const endSec = end ? Number(end[1]) : 0;
+
+  const descMatch = /"event_description":\{"text":"((?:[^"\\]|\\.)*)"/.exec(html);
+  const description = descMatch ? decodeJsonString(descMatch[1]) : null;
+
+  let locationName: string | null = null;
+  let coords: Coords | null = null;
+  const placeIdx = html.indexOf('"event_place":{');
+  if (placeIdx >= 0) {
+    const chunk = html.slice(placeIdx, placeIdx + 1200);
+    const nameMatch = /"contextual_name":"((?:[^"\\]|\\.)*)"/.exec(chunk);
+    locationName = nameMatch ? decodeJsonString(nameMatch[1]) : null;
+    const geoMatch = /"latitude":(-?\d+(?:\.\d+)?),"longitude":(-?\d+(?:\.\d+)?)/.exec(chunk);
+    if (geoMatch) {
+      const lat = Number(geoMatch[1]);
+      const lon = Number(geoMatch[2]);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) coords = { lat, lon };
+    }
+  }
+
+  return {
+    title: null,
+    starts_at: formatTallinnIso(startSec * 1000),
+    ends_at: endSec > 0 ? formatTallinnIso(endSec * 1000) : null,
+    location_name: locationName,
+    description,
+    image_url: null,
+    coords,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // LLM extraction (one call, strict JSON)
 // ---------------------------------------------------------------------------
@@ -614,34 +673,42 @@ async function resolveDraft(
   page: FetchedPage,
   host: string,
   warnings: string[],
-): Promise<{ draft: DraftFields; extraction: Extraction; meta: PageMeta }> {
+): Promise<{ draft: DraftFields; extraction: Extraction; meta: PageMeta; coords: Coords | null }> {
   const meta = parseMeta(page.html);
   const event = extractJsonLdEvent(page.html);
-  if (event) return { draft: fieldsFromJsonLd(event, meta), extraction: "jsonld", meta };
+  if (event) return { draft: fieldsFromJsonLd(event, meta), extraction: "jsonld", meta, coords: null };
   if (isFacebookHost(host)) {
+    const fb = parseFacebookEvent(page.html);
+    if (fb) {
+      const og = fieldsFromOg(meta);
+      const title = og.title ? og.title.replace(/\s*\|\s*Facebook\s*$/i, "") : null;
+      const { coords, ...fbFields } = fb;
+      warnings.push("facebook_full");
+      return { draft: { ...fbFields, title, image_url: og.image_url }, extraction: "facebook", meta, coords };
+    }
     if (!llmConfigured()) {
       warnings.push("facebook_og_only");
-      return { draft: ogDraftForFacebook(meta), extraction: "og-only", meta };
+      return { draft: ogDraftForFacebook(meta), extraction: "og-only", meta, coords: null };
     }
     // Facebook bodies are login walls; feed the LLM only the og fields.
     const fbText = [meta.og["og:title"], meta.og["og:description"]].filter(Boolean).join("\n");
     const fbLlm = await llmExtract(page.finalUrl, meta, fbText);
     warnings.push(...fbLlm.warnings);
     warnings.push(fbLlm.fields?.starts_at ? "facebook_og_meta" : "facebook_og_only");
-    if (!fbLlm.fields) return { draft: ogDraftForFacebook(meta), extraction: "og-only", meta };
+    if (!fbLlm.fields) return { draft: ogDraftForFacebook(meta), extraction: "og-only", meta, coords: null };
     const fbDraft = mergeLlmWithOg(fbLlm.fields, meta);
     const dropDescription =
       isFacebookBoilerplate(meta.og["og:description"] ?? null) || isFacebookBoilerplate(fbDraft.description);
-    return { draft: dropDescription ? { ...fbDraft, description: null } : fbDraft, extraction: "llm", meta };
+    return { draft: dropDescription ? { ...fbDraft, description: null } : fbDraft, extraction: "llm", meta, coords: null };
   }
   if (!llmConfigured()) {
     warnings.push("llm_not_configured");
-    return { draft: fieldsFromOg(meta), extraction: "og-only", meta };
+    return { draft: fieldsFromOg(meta), extraction: "og-only", meta, coords: null };
   }
   const llm = await llmExtract(page.finalUrl, meta, plainText(page.html));
   warnings.push(...llm.warnings);
-  if (!llm.fields) return { draft: fieldsFromOg(meta), extraction: "og-only", meta };
-  return { draft: mergeLlmWithOg(llm.fields, meta), extraction: "llm", meta };
+  if (!llm.fields) return { draft: fieldsFromOg(meta), extraction: "og-only", meta, coords: null };
+  return { draft: mergeLlmWithOg(llm.fields, meta), extraction: "llm", meta, coords: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -689,14 +756,16 @@ Deno.serve(async (req) => {
     const page = fetched.page;
     const host = new URL(page.finalUrl).hostname.toLowerCase();
     const warnings: string[] = page.truncated ? ["body_truncated"] : [];
-    const { draft, extraction, meta } = await resolveDraft(page, host, warnings);
+    const { draft, extraction, meta, coords } = await resolveDraft(page, host, warnings);
     const hint = organiserHint(
       [meta.og["og:title"], meta.og["og:description"], draft.title, draft.description].filter(Boolean).join(" "),
     );
     const hostHint = sourceHintFor(host);
 
     const locationName = draft.location_name;
-    const geo: GeoResult = locationName ? await geocode(locationName) : { lat: null, lon: null, warning: null };
+    const geo: GeoResult = coords
+      ? { lat: coords.lat, lon: coords.lon, warning: null }
+      : locationName ? await geocode(locationName) : { lat: null, lon: null, warning: null };
     if (geo.warning) warnings.push(geo.warning);
 
     const fields = {

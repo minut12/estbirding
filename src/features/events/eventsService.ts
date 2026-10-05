@@ -181,7 +181,7 @@ export async function deleteManualEvent(id: string): Promise<ManualEventRow> {
 // event-from-url Edge Function (admin pastes a URL -> prefilled event fields)
 // ---------------------------------------------------------------------------
 
-export type EventFromUrlExtraction = "jsonld" | "llm" | "og-only";
+export type EventFromUrlExtraction = "jsonld" | "facebook" | "llm" | "og-only";
 export type EventFromUrlSourceHint = "estbirding" | "eoy" | "muu";
 
 export type EventFromUrlFields = {
@@ -215,7 +215,7 @@ export class EventFromUrlError extends Error {
   }
 }
 
-const EXTRACTIONS: readonly EventFromUrlExtraction[] = ["jsonld", "llm", "og-only"];
+const EXTRACTIONS: readonly EventFromUrlExtraction[] = ["jsonld", "facebook", "llm", "og-only"];
 const SOURCE_HINTS: readonly EventFromUrlSourceHint[] = ["estbirding", "eoy", "muu"];
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

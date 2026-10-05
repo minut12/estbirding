@@ -83,6 +83,18 @@ describe("parseEventFromUrlResponse", () => {
     expect(result.warnings).toEqual(["facebook_og_only"]);
   });
 
+  it("accepts the facebook extraction with page coordinates", () => {
+    const result = parseEventFromUrlResponse({
+      ...fullResponse,
+      extraction: "facebook",
+      fields: { ...fullResponse.fields, lat: 59.42003, lon: 24.80479 },
+      warnings: ["facebook_full"],
+    });
+    expect(result.extraction).toBe("facebook");
+    expect(result.fields.lat).toBe(59.42003);
+    expect(result.warnings).toEqual(["facebook_full"]);
+  });
+
   it("drops non-string warnings and defaults a missing warnings array to []", () => {
     expect(parseEventFromUrlResponse({ ...fullResponse, warnings: ["a", 1, null] }).warnings).toEqual(["a"]);
     const { warnings: _omit, ...noWarnings } = fullResponse;

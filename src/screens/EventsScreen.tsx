@@ -1,22 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { et } from "@/localization/et";
-import { type EventItem } from "@/data/events";
-import { EventsMapMapLibre } from "@/components/events/EventsMapMapLibre";
-import { EventCard } from "@/components/events/EventCard";
+import { et, formatEventMonthLabel } from "@/localization/et";
+import { type EventCategory, type EventItem } from "@/data/events";
+import { EventFeaturedCard, EventRow } from "@/components/events/EventCard";
 import {
   deleteManualEvent,
   listPublicEventsManual,
   type ManualEventRow,
+  type ManualEventType,
 } from "@/features/events/eventsService";
 import { useAuth } from "@/features/auth/AuthContext";
 import { EventLinkSheet } from "@/features/events/EventLinkSheet";
 import EventDetailsScreen from "./EventDetailsScreen";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
-type MainTab = "tulevased" | "moodunud" | "muud";
+type MainTab = "tulevased" | "moodunud";
+type ChipKey = "koik" | ManualEventType;
 
 type MonthGroup = {
   key: string;
@@ -24,10 +26,43 @@ type MonthGroup = {
   events: EventItem[];
 };
 
-const ESTONIAN_MONTHS = [
-  "jaanuar", "veebruar", "märts", "aprill", "mai", "juuni",
-  "juuli", "august", "september", "oktoober", "november", "detsember",
+const DESKTOP_EVENTS_QUERY = "(min-width: 901px)";
+const FALLBACK_IMAGE_URL = "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop";
+
+// Copied from NewsTab (do not import across features).
+const CHIP_BASE = "shrink-0 inline-flex items-center gap-1 h-7 px-2.5 rounded-full border text-xs font-medium transition-colors";
+const CHIP_ACTIVE = "bg-foreground text-background border-foreground";
+const CHIP_INACTIVE = "border-border bg-card text-foreground/80";
+
+const CATEGORY_BY_TYPE: Record<ManualEventType, EventCategory> = {
+  estbirding: "EstBirding",
+  eoy: "EOY",
+  muud: "Muud",
+};
+
+const CHIPS: ReadonlyArray<{ key: ChipKey; label: string; dotClass: string | null }> = [
+  { key: "koik", label: et.chips.koik, dotClass: null },
+  { key: "estbirding", label: et.chips.estbirding, dotClass: "bg-primary" },
+  { key: "eoy", label: et.chips.eoy, dotClass: "bg-sky-600" },
+  { key: "muud", label: et.chips.muud, dotClass: "bg-muted-foreground" },
 ];
+
+function useIsDesktopEvents(): boolean {
+  const [isDesktop, setIsDesktop] = useState<boolean>(() => (
+    typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia(DESKTOP_EVENTS_QUERY).matches
+  ));
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const mql = window.matchMedia(DESKTOP_EVENTS_QUERY);
+    const onChange = () => setIsDesktop(mql.matches);
+    onChange();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return isDesktop;
+}
 
 function groupByMonth(events: EventItem[], reverseChronological: boolean): MonthGroup[] {
   const buckets = new Map<string, EventItem[]>();
@@ -35,23 +70,20 @@ function groupByMonth(events: EventItem[], reverseChronological: boolean): Month
     const d = new Date(ev.startAt);
     if (Number.isNaN(d.getTime())) continue;
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    if (!buckets.has(key)) buckets.set(key, []);
-    buckets.get(key)!.push(ev);
+    buckets.set(key, [...(buckets.get(key) ?? []), ev]);
   }
-  for (const list of buckets.values()) {
-    list.sort((a, b) => {
-      const da = new Date(a.startAt).getTime();
-      const db = new Date(b.startAt).getTime();
-      return reverseChronological ? db - da : da - db;
-    });
-  }
+  const byTime = (a: EventItem, b: EventItem): number => {
+    const diff = new Date(a.startAt).getTime() - new Date(b.startAt).getTime();
+    return reverseChronological ? -diff : diff;
+  };
   return Array.from(buckets.entries())
     .map(([key, evs]) => {
       const [yStr, mStr] = key.split("-");
-      const monthIdx = Number(mStr) - 1;
-      const monthName = ESTONIAN_MONTHS[monthIdx] ?? mStr;
-      const label = `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)} ${yStr}`;
-      return { key, label, events: evs };
+      return {
+        key,
+        label: formatEventMonthLabel(Number(yStr), Number(mStr) - 1),
+        events: [...evs].sort(byTime),
+      };
     })
     .sort((a, b) => (reverseChronological ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key)));
 }
@@ -71,13 +103,11 @@ function toEventItem(row: ManualEventRow): EventItem {
     title: row.title,
     startAt: row.starts_at,
     endAt: row.ends_at || undefined,
-    locationName: row.location_name || "Asukoht täpsustamisel",
+    locationName: row.location_name || et.locationPending,
     lat: safeLat,
     lng: safeLon,
-    category: row.type === "muud" ? "Muud" : "EstBirding",
-    imageUrl: validImage
-      ? imageCandidate
-      : "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop",
+    category: CATEGORY_BY_TYPE[row.type] ?? "EstBirding",
+    imageUrl: validImage ? imageCandidate : FALLBACK_IMAGE_URL,
     description: row.description || undefined,
     url: row.url || undefined,
     isPublished: row.status === "active",
@@ -85,23 +115,25 @@ function toEventItem(row: ManualEventRow): EventItem {
 }
 
 function toErrorMessage(err: unknown): string {
-  const e = err as any;
-  return String(e?.message ?? String(err));
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object" && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return String(err);
 }
 
 export default function EventsScreen() {
   const [mainTab, setMainTab] = useState<MainTab>("tulevased");
+  const [chip, setChip] = useState<ChipKey>("koik");
   const [searchValue, setSearchValue] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
   const [openedDetails, setOpenedDetails] = useState<EventItem | null>(null);
   const [rows, setRows] = useState<ManualEventRow[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<ManualEventRow | null>(null);
-  const [mapOpen, setMapOpen] = useState(false);
+  const isDesktop = useIsDesktopEvents();
 
-  const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const todayStart = useMemo(() => {
     const date = new Date();
     date.setHours(0, 0, 0, 0);
@@ -128,50 +160,27 @@ export default function EventsScreen() {
     void loadEvents();
   }, [loadEvents]);
 
-  const events = useMemo(() => rows.map(toEventItem), [rows]);
+  const events = useMemo(
+    () => rows.filter((row) => chip === "koik" || row.type === chip).map(toEventItem),
+    [rows, chip],
+  );
 
   const filteredEvents = useMemo(() => {
     const searchTerm = searchValue.trim().toLowerCase();
     return events.filter((event) => {
-      const eventDate = new Date(event.startAt);
-      const tabMatch =
-        mainTab === "tulevased"
-          ? eventDate >= todayStart
-          : mainTab === "moodunud"
-            ? eventDate < todayStart
-            : event.category === "Muud";
-
+      const isUpcoming = new Date(event.startAt) >= todayStart;
+      const tabMatch = mainTab === "tulevased" ? isUpcoming : !isUpcoming;
       const searchMatch = searchTerm
         ? event.title.toLowerCase().includes(searchTerm) ||
           event.locationName.toLowerCase().includes(searchTerm)
         : true;
-
       return tabMatch && searchMatch;
     });
   }, [events, mainTab, searchValue, todayStart]);
 
-  const reverse = mainTab === "moodunud";
-  const groups = useMemo(() => groupByMonth(filteredEvents, reverse), [filteredEvents, reverse]);
-
-  const mapPoints = useMemo(
-    () =>
-      filteredEvents
-        .filter(
-          (event) =>
-            Number.isFinite(event.lat) &&
-            Number.isFinite(event.lng) &&
-            Math.abs(event.lat) <= 90 &&
-            Math.abs(event.lng) <= 180,
-        )
-        .map((event) => ({ id: event.id, lat: event.lat, lon: event.lng, title: event.title })),
-    [filteredEvents],
-  );
-
-  useEffect(() => {
-    if (filteredEvents.length === 0) {
-      setHighlightedEventId(null);
-    }
-  }, [filteredEvents]);
+  const isPastTab = mainTab === "moodunud";
+  const groups = useMemo(() => groupByMonth(filteredEvents, isPastTab), [filteredEvents, isPastTab]);
+  const nextEventId = isPastTab ? null : groups[0]?.events[0]?.id ?? null;
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -192,11 +201,10 @@ export default function EventsScreen() {
   };
 
   const onDelete = async (eventId: string) => {
-    if (!window.confirm("Kustutan ürituse?")) return;
     try {
       await deleteManualEvent(eventId);
       await loadEvents();
-      toast.success("Üritus kustutatud");
+      toast.success(et.eventDeleted);
     } catch (e) {
       toast.error(toErrorMessage(e));
     }
@@ -206,134 +214,170 @@ export default function EventsScreen() {
     return <EventDetailsScreen event={openedDetails} onBack={() => setOpenedDetails(null)} />;
   }
 
-  return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#F3F5F4]">
-      <div className="space-y-3 px-4 pb-4 pt-3">
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">{et.eventsTitle}</h1>
-          <div className="flex items-center gap-2">
-            {canManage && (
-              <Button size="sm" onClick={openCreate}>
-                Lisa üritus
-              </Button>
+  const titleEl = <h2 className="text-lg font-semibold text-foreground">{et.eventsTitle}</h2>;
+
+  const addButtonEl = canManage ? (
+    <Button size="sm" onClick={openCreate}>
+      {et.eventLink.titleCreate}
+    </Button>
+  ) : null;
+
+  const refreshEl = (
+    <button
+      type="button"
+      onClick={handleRefresh}
+      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-card text-foreground"
+      aria-label={et.refresh}
+    >
+      <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+    </button>
+  );
+
+  const segmentButtonClass = (active: boolean) => cn(
+    isDesktop ? "px-3" : "flex-1",
+    "py-1.5 text-sm font-medium rounded-md transition-colors",
+    active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground",
+  );
+
+  const segmentEl = (
+    <div className={isDesktop ? "flex gap-1 bg-muted rounded-lg p-1 shrink-0" : "flex gap-1 bg-muted rounded-lg p-1"}>
+      <button type="button" onClick={() => setMainTab("tulevased")} className={segmentButtonClass(mainTab === "tulevased")}>
+        {et.tabs.tulevased}
+      </button>
+      <button type="button" onClick={() => setMainTab("moodunud")} className={segmentButtonClass(mainTab === "moodunud")}>
+        {et.tabs.moodunud}
+      </button>
+    </div>
+  );
+
+  const searchEl = (
+    <div className={isDesktop ? "relative w-44" : "relative flex-1"}>
+      <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
+      <Input
+        placeholder={et.searchPlaceholder}
+        value={searchValue}
+        onChange={(e) => setSearchValue(e.target.value)}
+        className="pl-9 h-9"
+      />
+    </div>
+  );
+
+  const chipsEl = (
+    <div
+      className={isDesktop
+        ? "flex-1 min-w-0 flex gap-1.5 overflow-x-auto [scrollbar-width:none]"
+        : "flex gap-1.5 overflow-x-auto [scrollbar-width:none] -mx-4 px-4"}
+    >
+      {CHIPS.map((c) => (
+        <button
+          key={c.key}
+          type="button"
+          onClick={() => setChip(c.key)}
+          className={cn(CHIP_BASE, chip === c.key ? CHIP_ACTIVE : CHIP_INACTIVE)}
+        >
+          {c.dotClass && <span className={cn("h-2 w-2 rounded-full", c.dotClass)} aria-hidden="true" />}
+          {c.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const header = isDesktop ? (
+    <div className="border-b border-border bg-card">
+      <div className="mx-auto max-w-[1180px] px-5 py-3">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 shrink-0">
+            {titleEl}
+            {segmentEl}
+          </div>
+          {chipsEl}
+          <div className="flex items-center gap-3 shrink-0">
+            {searchEl}
+            {addButtonEl}
+            {refreshEl}
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : (
+    <div className="px-4 py-3 border-b border-border bg-card space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        {titleEl}
+        <div className="flex items-center gap-2">
+          {addButtonEl}
+          {refreshEl}
+        </div>
+      </div>
+      {segmentEl}
+      <div className="flex">{searchEl}</div>
+      {chipsEl}
+    </div>
+  );
+
+  const renderRow = (event: EventItem) => (
+    <EventRow
+      key={event.id}
+      event={event}
+      isNext={event.id === nextEventId}
+      isPast={isPastTab}
+      canManage={canManage}
+      onEdit={() => openEdit(event.id)}
+      onDelete={() => void onDelete(event.id)}
+      onPress={() => setOpenedDetails(event)}
+    />
+  );
+
+  const phoneListEl = groups.map((group) => (
+    <Fragment key={group.key}>
+      <div className="sticky top-0 z-10 bg-muted px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {group.label}
+      </div>
+      <div className="divide-y divide-border">{group.events.map(renderRow)}</div>
+    </Fragment>
+  ));
+
+  const desktopListEl = (
+    <div className="mx-auto max-w-[680px] px-5 pb-6">
+      {groups.map((group) => {
+        const featured = group.events.find((ev) => ev.id === nextEventId) ?? null;
+        const rest = featured ? group.events.filter((ev) => ev.id !== featured.id) : group.events;
+        return (
+          <section key={group.key}>
+            <div className="flex items-center justify-between px-1 pb-1.5 pt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <span>{group.label}</span>
+              <span>{et.monthCount(group.events.length)}</span>
+            </div>
+            {featured && (
+              <EventFeaturedCard
+                event={featured}
+                canManage={canManage}
+                onEdit={() => openEdit(featured.id)}
+                onDelete={() => void onDelete(featured.id)}
+                onPress={() => setOpenedDetails(featured)}
+              />
             )}
-            <button
-              onClick={handleRefresh}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/80 bg-white/80 text-foreground"
-              aria-label={et.refresh}
-            >
-              <RefreshCw className={cn("h-4 w-4", isRefreshing ? "animate-spin" : "")} />
-            </button>
-          </div>
-        </div>
+            <div className="divide-y divide-border">{rest.map(renderRow)}</div>
+          </section>
+        );
+      })}
+    </div>
+  );
 
-        <div className="flex gap-1 rounded-2xl bg-[#E7ECE9] p-1">
-          {(
-            [
-              ["tulevased", et.tabs.tulevased],
-              ["moodunud", et.tabs.moodunud],
-              ["muud", et.tabs.muud],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setMainTab(key)}
-              className={cn(
-                "rounded-xl px-4 py-2 text-sm font-medium transition",
-                mainTab === key ? "bg-white text-foreground shadow-sm" : "text-muted-foreground"
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+  return (
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      {header}
 
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={searchValue}
-            onChange={(event) => setSearchValue(event.target.value)}
-            placeholder={et.searchPlaceholder}
-            className="h-11 w-full rounded-xl border border-border/80 bg-white pl-9 pr-3 text-sm outline-none ring-0 placeholder:text-muted-foreground/80 focus:border-primary/45"
-          />
-        </div>
-      </div>
-
-      <div className="px-4">
-        <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-3 py-2">
-          <span className="text-sm text-muted-foreground">
-            {mapPoints.length === 0
-              ? "Asukohaga üritusi pole"
-              : `${mapPoints.length} üritust kaardil`}
-          </span>
-          {mapPoints.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setMapOpen((v) => !v)}
-              className="h-7 px-2 text-xs"
-            >
-              {mapOpen ? "Sulge kaart" : "Ava kaart"}
-            </Button>
-          )}
-        </div>
-
-        {mapOpen && mapPoints.length > 0 && (
-          <div className="mt-2 overflow-hidden rounded-lg border border-border">
-            <EventsMapMapLibre
-              points={mapPoints}
-              selectedId={highlightedEventId || undefined}
-              onMarkerClick={(id) => {
-                setHighlightedEventId(id);
-                const node = cardRefs.current[id];
-                if (node) {
-                  node.scrollIntoView({ behavior: "smooth", block: "center" });
-                }
-                window.setTimeout(() => {
-                  setHighlightedEventId((current) => (current === id ? null : current));
-                }, 2500);
-              }}
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto bg-white">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Laen üritusi...</div>
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{et.loadingEvents}</div>
         ) : groups.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-            Ühtegi üritust ei leitud.
+            {isPastTab ? et.emptyPast : et.emptyUpcoming}
           </p>
+        ) : isDesktop ? (
+          desktopListEl
         ) : (
-          <div className="pb-6">
-            {groups.map((group) => (
-              <section key={group.key}>
-                <header className="bg-muted/50 px-4 py-2">
-                  <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    {group.label}
-                  </h2>
-                </header>
-                <div>
-                  {group.events.map((event) => (
-                    <EventCard
-                      key={event.id}
-                      event={event}
-                      variant="compact"
-                      selected={event.id === highlightedEventId}
-                      canManage={canManage}
-                      onEdit={() => openEdit(event.id)}
-                      onDelete={() => onDelete(event.id)}
-                      onPress={() => setOpenedDetails(event)}
-                      cardRef={(node) => {
-                        cardRefs.current[event.id] = node;
-                      }}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
+          <div className="pb-6">{phoneListEl}</div>
         )}
       </div>
 
@@ -348,7 +392,7 @@ export default function EventsScreen() {
 
       {import.meta.env.DEV && (
         <p className="px-4 pb-4 text-xs text-muted-foreground">
-          Admin režiim: {canManage ? "sees" : "väljas (admin rolli vaja)"}
+          {canManage ? et.adminModeOn : et.adminModeOff}
         </p>
       )}
     </div>

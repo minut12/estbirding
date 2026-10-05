@@ -1,178 +1,200 @@
-import { CalendarDays, MapPin } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatEventCountdown, formatEventDate, et } from "@/localization/et";
+import { et, formatEventCountdown, formatEventMonthAbbr } from "@/localization/et";
 import type { EventItem } from "@/data/events";
 import { getProxiedImageUrl } from "@/features/news/newsImage";
 import { resolveProxyBase } from "@/config/proxyEndpoint";
 
-type EventCardVariant = "full" | "compact";
+const CONFIRM_DELETE_MS = 4000;
 
-interface EventCardProps {
+interface EventRowProps {
   event: EventItem;
-  selected: boolean;
+  /** True for the single next upcoming event (highlighted date block). */
+  isNext: boolean;
+  isPast: boolean;
   onPress: () => void;
-  cardRef?: (node: HTMLButtonElement | null) => void;
   canManage?: boolean;
   onEdit?: () => void;
   onDelete?: () => void;
-  variant?: EventCardVariant;
 }
-
-const ESTONIAN_MONTH_ABBRS = [
-  "jaan", "veebr", "märts", "apr", "mai", "juuni",
-  "juuli", "aug", "sept", "okt", "nov", "dets",
-];
 
 function formatDayNumber(dateStr: string): string {
   const d = new Date(dateStr);
   return Number.isNaN(d.getTime()) ? "?" : String(d.getDate());
 }
 
-function formatMonthAbbr(dateStr: string): string {
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return "";
-  return ESTONIAN_MONTH_ABBRS[d.getMonth()] ?? "";
+function buildMeta(event: EventItem): string {
+  return [formatEventCountdown(event.startAt), event.locationName, et.categoryLabel(event.category)]
+    .filter(Boolean)
+    .join(et.metaSeparator);
 }
 
-function calendarDayDiff(dateStr: string, now = new Date()): number | null {
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return null;
-  const startDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.round((startDay.getTime() - today.getTime()) / 86400000);
+/** Two-step delete: first click arms for CONFIRM_DELETE_MS, second click calls onConfirm. */
+function useConfirmDelete(onConfirm: (() => void) | undefined) {
+  const [isArmed, setIsArmed] = useState(false);
+  const timerRef = useRef<number | null>(null);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearTimer, [clearTimer]);
+
+  const handleClick = useCallback(() => {
+    if (isArmed) {
+      clearTimer();
+      setIsArmed(false);
+      onConfirm?.();
+      return;
+    }
+    setIsArmed(true);
+    clearTimer();
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      setIsArmed(false);
+    }, CONFIRM_DELETE_MS);
+  }, [isArmed, clearTimer, onConfirm]);
+
+  return { isArmed, handleClick };
 }
 
-export function EventCard({
-  event,
-  selected,
-  onPress,
-  cardRef,
-  canManage,
-  onEdit,
-  onDelete,
-  variant = "full",
-}: EventCardProps) {
-  if (variant === "compact") {
-    const dayNum = formatDayNumber(event.startAt);
-    const monthAbbr = formatMonthAbbr(event.startAt);
-    const diff = calendarDayDiff(event.startAt);
-    const countdownLabel =
-      diff == null ? "" : diff < 0 ? `${Math.abs(diff)} päeva tagasi` : `${diff} päeva jäänud`;
-    const subtitleParts = [event.locationName, countdownLabel].filter(Boolean);
+interface AdminActionsProps {
+  onEdit?: () => void;
+  onDelete?: () => void;
+}
 
-    return (
-      <div
+const ADMIN_BUTTON_CLASS =
+  "inline-flex h-8 w-8 items-center justify-center gap-1 rounded-md text-xs transition-colors sm:h-7 sm:w-auto sm:px-2";
+
+function AdminActions({ onEdit, onDelete }: AdminActionsProps) {
+  const { isArmed, handleClick } = useConfirmDelete(onDelete);
+  const deleteLabel = isArmed ? et.confirmDelete : et.delete;
+
+  const handleEdit = (e: MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onEdit?.();
+  };
+
+  const handleDelete = (e: MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    handleClick();
+  };
+
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        onClick={handleEdit}
+        aria-label={et.edit}
+        className={cn(ADMIN_BUTTON_CLASS, "text-muted-foreground hover:bg-muted hover:text-foreground")}
+      >
+        <Pencil className="h-4 w-4 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
+        <span className="hidden sm:inline">{et.edit}</span>
+      </button>
+      <button
+        type="button"
+        onClick={handleDelete}
+        aria-label={deleteLabel}
         className={cn(
-          "group border-b border-border last:border-b-0 transition-colors",
-          selected && "bg-primary/5",
+          ADMIN_BUTTON_CLASS,
+          isArmed
+            ? "text-destructive sm:bg-destructive/10 hover:bg-destructive/15"
+            : "text-muted-foreground hover:bg-muted hover:text-destructive",
         )}
       >
-        <button
-          ref={cardRef}
-          onClick={onPress}
-          className="flex w-full items-center gap-3 px-4 py-3 text-left"
-        >
-          <div className="flex w-12 flex-col items-center justify-center rounded-md border border-border bg-background py-1">
-            <span className="text-base font-semibold leading-none text-foreground">{dayNum}</span>
-            <span className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground">{monthAbbr}</span>
-          </div>
+        <Trash2
+          className={cn("h-4 w-4 sm:h-3.5 sm:w-3.5", isArmed && "text-destructive")}
+          aria-hidden="true"
+        />
+        <span className="hidden sm:inline">{deleteLabel}</span>
+      </button>
+    </div>
+  );
+}
 
-          {event.imageUrl ? (
-            <img
-              src={getProxiedImageUrl(event.imageUrl, resolveProxyBase())}
-              alt=""
-              loading="lazy"
-              className="h-11 w-11 flex-shrink-0 rounded-md object-cover bg-muted"
-            />
-          ) : (
-            <div className="h-11 w-11 flex-shrink-0 rounded-md bg-muted" />
-          )}
+interface ThumbProps {
+  imageUrl: string;
+  className: string;
+}
 
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-foreground">{event.title}</div>
-            {subtitleParts.length > 0 && (
-              <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                {subtitleParts.join(" · ")}
-              </div>
-            )}
-          </div>
+function EventThumb({ imageUrl, className }: ThumbProps) {
+  if (!imageUrl) return <div className={cn("shrink-0 bg-muted", className)} />;
+  return (
+    <img
+      src={getProxiedImageUrl(imageUrl, resolveProxyBase())}
+      alt=""
+      loading="lazy"
+      className={cn("shrink-0 bg-muted object-cover", className)}
+    />
+  );
+}
 
-          <span
-            className={cn(
-              "hidden flex-shrink-0 rounded px-2 py-0.5 text-[11px] sm:inline-flex",
-              event.category === "EstBirding"
-                ? "bg-primary/10 text-primary"
-                : "bg-muted text-muted-foreground",
-            )}
-          >
-            {et.categoryLabel(event.category)}
-          </span>
-        </button>
-
-        {canManage && (
-          <div className="grid grid-cols-2 gap-2 px-4 pb-3">
-            <button
-              onClick={onEdit}
-              className="rounded-lg border border-border px-2 py-1.5 text-xs"
-            >
-              Muuda
-            </button>
-            <button
-              onClick={onDelete}
-              className="rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-700"
-            >
-              Kustuta
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  const countdown = formatEventCountdown(event.startAt);
+function DateBlock({ startAt, isNext }: { startAt: string; isNext: boolean }) {
   return (
     <div
       className={cn(
-        "w-full rounded-2xl border bg-white p-3 text-left shadow-sm transition",
-        selected
-          ? "border-primary/55 bg-primary/[0.04] ring-1 ring-primary/25"
-          : "border-border/70 hover:border-primary/25"
+        "flex w-12 shrink-0 flex-col items-center justify-center rounded-lg py-1.5",
+        isNext ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
       )}
     >
-      <button ref={cardRef} onClick={onPress} className="w-full text-left">
-        <div className="flex gap-3">
-          <img
-            src={getProxiedImageUrl(event.imageUrl, resolveProxyBase())}
-            alt={event.title}
-            loading="lazy"
-            className="h-20 w-24 shrink-0 rounded-xl object-cover bg-muted"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <h4 className="line-clamp-2 text-sm font-semibold text-foreground">{event.title}</h4>
-              <span className="shrink-0 rounded-full bg-[#DDEBE3] px-2.5 py-1 text-xs font-medium text-primary">
-                {et.categoryLabel(event.category)}
-              </span>
-            </div>
-            <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <CalendarDays className="h-3.5 w-3.5" />
-              {formatEventDate(event.startAt)}
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground">{countdown}</span>
-            </p>
-            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <MapPin className="h-3.5 w-3.5" />
-              {event.locationName}
-            </p>
-          </div>
+      <span className="text-lg font-semibold leading-none">{formatDayNumber(startAt)}</span>
+      <span
+        className={cn(
+          "mt-1 text-[10px] uppercase tracking-wide",
+          isNext ? "text-primary-foreground/80" : "text-muted-foreground",
+        )}
+      >
+        {formatEventMonthAbbr(startAt)}
+      </span>
+    </div>
+  );
+}
+
+/** List row (phone + desktop): date block, 48px thumb, title, meta, inline admin actions. */
+export function EventRow({ event, isNext, isPast, onPress, canManage, onEdit, onDelete }: EventRowProps) {
+  return (
+    <div className={cn("flex items-center gap-2 px-4 py-3", isPast && "opacity-60")}>
+      <button type="button" onClick={onPress} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <DateBlock startAt={event.startAt} isNext={isNext} />
+        <EventThumb imageUrl={event.imageUrl} className="h-12 w-12 rounded-md" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-foreground">{event.title}</div>
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">{buildMeta(event)}</div>
         </div>
       </button>
+      {canManage && <AdminActions onEdit={onEdit} onDelete={onDelete} />}
+    </div>
+  );
+}
 
-      {canManage && (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button onClick={onEdit} className="rounded-lg border border-border px-2 py-1.5 text-xs">Muuda</button>
-          <button onClick={onDelete} className="rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-700">Kustuta</button>
+interface EventFeaturedCardProps {
+  event: EventItem;
+  onPress: () => void;
+  canManage?: boolean;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}
+
+/** Desktop next-event card: bordered, 112x76 thumb, 2-line description snippet. */
+export function EventFeaturedCard({ event, onPress, canManage, onEdit, onDelete }: EventFeaturedCardProps) {
+  return (
+    <div className="my-2 flex items-center gap-2 rounded-2xl border border-border bg-card p-3">
+      <button type="button" onClick={onPress} className="flex min-w-0 flex-1 items-center gap-4 text-left">
+        <DateBlock startAt={event.startAt} isNext />
+        <EventThumb imageUrl={event.imageUrl} className="h-[76px] w-[112px] rounded-xl" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-base font-semibold text-foreground">{event.title}</div>
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">{buildMeta(event)}</div>
+          {event.description && (
+            <p className="mt-1.5 line-clamp-2 text-sm text-foreground/80">{event.description}</p>
+          )}
         </div>
-      )}
+      </button>
+      {canManage && <AdminActions onEdit={onEdit} onDelete={onDelete} />}
     </div>
   );
 }

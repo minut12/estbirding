@@ -15,6 +15,13 @@ const MONTHS = [
   "detsember",
 ];
 
+const CHIPS = {
+  koik: "Kõik",
+  estbirding: "EstBirding",
+  eoy: "EOÜ",
+  muud: "Muu",
+};
+
 export const et = {
   eventsTitle: "Üritused",
   refresh: "Värskenda",
@@ -22,19 +29,20 @@ export const et = {
   tabs: {
     tulevased: "Tulevased",
     moodunud: "Möödunud",
-    muud: "Muud",
   },
-  chips: {
-    koik: "Kõik",
-    estbirding: "EstBirding",
-    muud: "Muud",
-    eoy: "EOÜ",
-  },
-  emptyByTab: {
-    tulevased: "Ei leitud tulevasi üritusi.",
-    moodunud: "Ei leitud möödunud üritusi.",
-    muud: "Ei leitud üritusi.",
-  },
+  chips: CHIPS,
+  emptyUpcoming: "Tulevasi üritusi pole.",
+  emptyPast: "Möödunud üritusi pole.",
+  monthCount: (n: number): string => `${n} üritust`,
+  confirmDelete: "Kinnita kustutamine",
+  metaSeparator: " · ",
+  edit: "Muuda",
+  delete: "Kustuta",
+  eventDeleted: "Üritus kustutatud",
+  loadingEvents: "Laen üritusi...",
+  locationPending: "Asukoht täpsustamisel",
+  adminModeOn: "Admin režiim: sees",
+  adminModeOff: "Admin režiim: väljas (admin rolli vaja)",
   detailsTitle: "Ürituse detailid",
   eventLink: {
     titleCreate: "Lisa üritus",
@@ -79,7 +87,9 @@ export const et = {
     saved: "Üritus salvestatud",
   },
   categoryLabel(category: EventCategory): string {
-    return category;
+    if (category === "EOY") return CHIPS.eoy;
+    if (category === "Muud") return CHIPS.muud;
+    return CHIPS.estbirding;
   },
 };
 
@@ -100,7 +110,25 @@ export function formatEventCountdown(startsAtIso: string, now = new Date()): str
 
   if (diffDays === 0) return "Täna";
   if (diffDays === 1) return "Homme";
-  if (diffDays > 1) return `${diffDays} päeva jäänud`;
+  if (diffDays > 1) return `${diffDays} päeva pärast`;
   if (diffDays === -1) return "Eile";
-  return `Toimus ${Math.abs(diffDays)} päeva tagasi`;
+  return `${Math.abs(diffDays)} päeva tagasi`;
+}
+
+const MONTH_ABBRS = [
+  "jaan", "veebr", "märts", "apr", "mai", "juuni",
+  "juuli", "aug", "sept", "okt", "nov", "dets",
+];
+
+/** Short month name for the event date block ("" when the date is invalid). */
+export function formatEventMonthAbbr(startAtIso: string): string {
+  const d = new Date(startAtIso);
+  if (Number.isNaN(d.getTime())) return "";
+  return MONTH_ABBRS[d.getMonth()] ?? "";
+}
+
+/** Month section label, e.g. "Oktoober 2026". monthIndex is 0-based. */
+export function formatEventMonthLabel(year: number, monthIndex: number): string {
+  const name = MONTHS[monthIndex] ?? String(monthIndex + 1);
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${year}`;
 }

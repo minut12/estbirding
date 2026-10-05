@@ -1,4 +1,4 @@
-export type EventCategory = "EstBirding" | "Muud";
+export type EventCategory = "EstBirding" | "EOY" | "Muud";
 
 export interface EventItem {
   id: string;
@@ -95,7 +95,7 @@ export const sampleEvents: EventItem[] = [
     locationName: "Tartu",
     lat: 58.3776,
     lng: 26.7290,
-    category: "Muud",
+    category: "EOY",
     imageUrl: "https://images.unsplash.com/photo-1465101046530-73398c7f28ca?w=360&h=280&fit=crop",
   },
   {

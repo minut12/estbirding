@@ -1,6 +1,7 @@
 // redeploy-marker: 2026-10-04 - P92b event-from-url (admin URL -> prefilled event fields)
 // redeploy-marker: 2026-10-04 - P92b2 JWT + events_admin_assert_admin auth, drop temperature; own model env ANTHROPIC_MODEL_EVENT_FROM_URL
 // redeploy-marker: 2026-10-05 - P92c2 Accept-Language et; facebook -> LLM over og fields; organiser -> source_hint
+// redeploy-marker: 2026-10-05 - P92c4 facebook boilerplate description dropped; geocode comma-tail fallback
 //
 // Admin pastes a URL (estbirding.ee, eoy.ee, facebook.com, any public https page);
 // this function fetches it and returns prefilled event fields.
@@ -17,6 +18,8 @@ import { anthropicMessages, llmConfigured, type AnthropicShapedResponse } from "
 const USER_AGENT = "Mozilla/5.0 (compatible; EstBirds/1.0; +https://estbirds.netlify.app)";
 const FETCH_TIMEOUT_MS = 10_000;
 const GEOCODE_TIMEOUT_MS = 5_000;
+const GEOCODE_MAX_ATTEMPTS = 3;
+const GEOCODE_RETRY_PAUSE_MS = 1_000;
 const LLM_TIMEOUT_MS = 45_000;
 const MAX_BODY_BYTES = 1_500_000;
 const MAX_TEXT_CHARS = 12_000;
@@ -141,6 +144,12 @@ function sourceHintFor(host: string): SourceHint {
 function isFacebookHost(host: string): boolean {
   const lower = host.toLowerCase();
   return lower === "facebook.com" || lower.endsWith(".facebook.com") || lower === "fb.com" || lower.endsWith(".fb.com");
+}
+
+// Facebook og:description is often "N people interested" style boilerplate, not a description.
+function isFacebookBoilerplate(text: string | null): boolean {
+  if (!text) return false;
+  return /people interested|inimest .*huvitatud|Personen interessiert|interested in this event/i.test(text);
 }
 
 // Organiser named in the page text; only consulted for third-party hosts.
@@ -438,6 +447,11 @@ function fieldsFromOg(meta: PageMeta): DraftFields {
   };
 }
 
+function ogDraftForFacebook(meta: PageMeta): DraftFields {
+  const og = fieldsFromOg(meta);
+  return isFacebookBoilerplate(og.description) ? { ...og, description: null } : og;
+}
+
 // ---------------------------------------------------------------------------
 // LLM extraction (one call, strict JSON)
 // ---------------------------------------------------------------------------
@@ -530,7 +544,23 @@ async function llmExtract(pageUrl: string, meta: PageMeta, text: string): Promis
 // Geocoding (Nominatim, Estonia only)
 // ---------------------------------------------------------------------------
 
+// Nominatim usage policy: max 1 request/s; at most 3 attempts per location.
 async function geocode(query: string): Promise<GeoResult> {
+  let attempt = query;
+  let result = await geocodeOnce(attempt);
+  for (let tries = 1; tries < GEOCODE_MAX_ATTEMPTS && result.warning === "geocode_no_hit"; tries++) {
+    const comma = attempt.indexOf(",");
+    if (comma < 0) break;
+    attempt = attempt.slice(comma + 1).trim();
+    if (!attempt) break;
+    await new Promise((resolve) => setTimeout(resolve, GEOCODE_RETRY_PAUSE_MS));
+    result = await geocodeOnce(attempt);
+    if (result.warning === null) return { ...result, warning: "geocode_fallback" };
+  }
+  return result;
+}
+
+async function geocodeOnce(query: string): Promise<GeoResult> {
   const failed: GeoResult = { lat: null, lon: null, warning: "geocode_failed" };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GEOCODE_TIMEOUT_MS);
@@ -591,15 +621,18 @@ async function resolveDraft(
   if (isFacebookHost(host)) {
     if (!llmConfigured()) {
       warnings.push("facebook_og_only");
-      return { draft: fieldsFromOg(meta), extraction: "og-only", meta };
+      return { draft: ogDraftForFacebook(meta), extraction: "og-only", meta };
     }
     // Facebook bodies are login walls; feed the LLM only the og fields.
     const fbText = [meta.og["og:title"], meta.og["og:description"]].filter(Boolean).join("\n");
     const fbLlm = await llmExtract(page.finalUrl, meta, fbText);
     warnings.push(...fbLlm.warnings);
     warnings.push(fbLlm.fields?.starts_at ? "facebook_og_meta" : "facebook_og_only");
-    if (!fbLlm.fields) return { draft: fieldsFromOg(meta), extraction: "og-only", meta };
-    return { draft: mergeLlmWithOg(fbLlm.fields, meta), extraction: "llm", meta };
+    if (!fbLlm.fields) return { draft: ogDraftForFacebook(meta), extraction: "og-only", meta };
+    const fbDraft = mergeLlmWithOg(fbLlm.fields, meta);
+    const dropDescription =
+      isFacebookBoilerplate(meta.og["og:description"] ?? null) || isFacebookBoilerplate(fbDraft.description);
+    return { draft: dropDescription ? { ...fbDraft, description: null } : fbDraft, extraction: "llm", meta };
   }
   if (!llmConfigured()) {
     warnings.push("llm_not_configured");

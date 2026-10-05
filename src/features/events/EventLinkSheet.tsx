@@ -300,11 +300,12 @@ function ImageField({ imageUrl, onPick, onRemove }: ImageFieldProps) {
   );
 }
 
-type WarningFlags = { facebook: boolean; geocode: boolean; llm: boolean };
+type WarningFlags = { facebook: boolean; facebookMeta: boolean; geocode: boolean; llm: boolean };
 
 function warningFlags(warnings: string[]): WarningFlags {
   return {
     facebook: warnings.includes("facebook_og_only"),
+    facebookMeta: warnings.includes("facebook_og_meta"),
     geocode: warnings.includes("geocode_no_hit") || warnings.includes("geocode_failed"),
     llm: warnings.some((w) => w.startsWith("llm_")),
   };
@@ -325,6 +326,9 @@ function EventForm({ form, warnings, setForm, onImagePick, onImageRemove }: Even
     <div className="grid grid-cols-1 gap-3">
       {flags.facebook ? (
         <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{t.noteFacebook}</p>
+      ) : null}
+      {flags.facebookMeta && !flags.facebook ? (
+        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{t.noteFacebookMeta}</p>
       ) : null}
       {flags.llm ? <p className="text-xs text-muted-foreground">{t.hintLlm}</p> : null}
       <div>

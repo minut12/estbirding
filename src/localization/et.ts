@@ -56,6 +56,7 @@ export const et = {
     fieldDescription: "Kirjeldus",
     sourceOther: "Muu",
     noteFacebook: "Facebooki lehelt saime ainult pealkirja ja pildi. Lisa aeg ja koht käsitsi.",
+    noteFacebookMeta: "Facebookist saime pealkirja, kuupäeva ja koha. Lisa kellaaeg, lõpp ja kirjeldus käsitsi.",
     hintGeocode: "Asukohta ei leitud, salvestame nimena",
     hintLlm: "Automaatne lugemine ei õnnestunud, täida käsitsi",
     errForbidden: "Ainult administraator saab üritusi lisada",

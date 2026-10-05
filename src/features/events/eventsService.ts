@@ -1,7 +1,7 @@
 import { getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
 import { supabase } from "@/config/supabaseClient";
 
-export type ManualEventType = "estbirding" | "muud";
+export type ManualEventType = "estbirding" | "eoy" | "muud";
 export type ManualEventStatus = "active" | "archived" | "deleted";
 
 export type ManualEventRow = {
@@ -47,8 +47,11 @@ function sortByStartsAtAsc(list: ManualEventRow[]): ManualEventRow[] {
   return [...list].sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
 }
 
-function normalizeType(value: unknown): ManualEventType {
-  return String(value || "").toLowerCase() === "muud" ? "muud" : "estbirding";
+export function normalizeType(value: unknown): ManualEventType {
+  const lower = String(value || "").toLowerCase();
+  if (lower === "eoy") return "eoy";
+  if (lower === "muud") return "muud";
+  return "estbirding";
 }
 
 function mapRow(raw: any): ManualEventRow {
@@ -172,4 +175,118 @@ export async function updateManualEvent(id: string, patch: ManualEventPatch): Pr
 
 export async function deleteManualEvent(id: string): Promise<ManualEventRow> {
   return callRpcRow("events_admin_delete", { p_id: id });
+}
+
+// ---------------------------------------------------------------------------
+// event-from-url Edge Function (admin pastes a URL -> prefilled event fields)
+// ---------------------------------------------------------------------------
+
+export type EventFromUrlExtraction = "jsonld" | "llm" | "og-only";
+export type EventFromUrlSourceHint = "estbirding" | "eoy" | "muu";
+
+export type EventFromUrlFields = {
+  title: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  location_name: string | null;
+  lat: number | null;
+  lon: number | null;
+  description: string | null;
+  image_url: string | null;
+};
+
+export type EventFromUrlResult = {
+  ok: true;
+  url: string;
+  host: string;
+  source_hint: EventFromUrlSourceHint;
+  extraction: EventFromUrlExtraction;
+  fields: EventFromUrlFields;
+  warnings: string[];
+};
+
+export class EventFromUrlError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "EventFromUrlError";
+    this.status = status;
+  }
+}
+
+const EXTRACTIONS: readonly EventFromUrlExtraction[] = ["jsonld", "llm", "og-only"];
+const SOURCE_HINTS: readonly EventFromUrlSourceHint[] = ["estbirding", "eoy", "muu"];
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function nullableString(value: unknown, field: string): string | null {
+  if (value == null) return null;
+  if (typeof value !== "string") throw new EventFromUrlError(0, `invalid_field:${field}`);
+  return value.trim() ? value : null;
+}
+
+function nullableNumber(value: unknown, field: string): number | null {
+  if (value == null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new EventFromUrlError(0, `invalid_field:${field}`);
+  return value;
+}
+
+function parseFields(raw: unknown): EventFromUrlFields {
+  if (!isPlainRecord(raw)) throw new EventFromUrlError(0, "invalid_field:fields");
+  return {
+    title: nullableString(raw.title, "title"),
+    starts_at: nullableString(raw.starts_at, "starts_at"),
+    ends_at: nullableString(raw.ends_at, "ends_at"),
+    location_name: nullableString(raw.location_name, "location_name"),
+    lat: nullableNumber(raw.lat, "lat"),
+    lon: nullableNumber(raw.lon, "lon"),
+    description: nullableString(raw.description, "description"),
+    image_url: nullableString(raw.image_url, "image_url"),
+  };
+}
+
+/** Pure validator for the event-from-url success payload. Throws EventFromUrlError(status 0) on malformed input. */
+export function parseEventFromUrlResponse(json: unknown): EventFromUrlResult {
+  if (!isPlainRecord(json) || json.ok !== true) throw new EventFromUrlError(0, "malformed_response");
+  const extraction = EXTRACTIONS.find((value) => value === json.extraction);
+  const sourceHint = SOURCE_HINTS.find((value) => value === json.source_hint);
+  if (!extraction) throw new EventFromUrlError(0, "invalid_field:extraction");
+  if (!sourceHint) throw new EventFromUrlError(0, "invalid_field:source_hint");
+  const warnings = Array.isArray(json.warnings) ? json.warnings.filter((w): w is string => typeof w === "string") : [];
+  return {
+    ok: true,
+    url: typeof json.url === "string" ? json.url : "",
+    host: typeof json.host === "string" ? json.host : "",
+    source_hint: sourceHint,
+    extraction,
+    fields: parseFields(json.fields),
+    warnings,
+  };
+}
+
+async function errorFromInvoke(error: unknown): Promise<EventFromUrlError> {
+  const maybe = error as { message?: unknown; context?: unknown } | null;
+  const fallback = typeof maybe?.message === "string" ? maybe.message : "event_from_url_failed";
+  if (!(maybe?.context instanceof Response)) return new EventFromUrlError(0, fallback);
+  const status = maybe.context.status;
+  try {
+    const payload: unknown = await maybe.context.json();
+    const message = isPlainRecord(payload) && typeof payload.error === "string" ? payload.error : fallback;
+    return new EventFromUrlError(status, message);
+  } catch {
+    return new EventFromUrlError(status, fallback);
+  }
+}
+
+/** Calls event-from-url with the signed-in user's JWT (supabase.functions.invoke attaches the session token). */
+export async function fetchEventFromUrl(url: string): Promise<EventFromUrlResult> {
+  const { data, error } = await supabase.functions.invoke("event-from-url", { body: { url } });
+  if (error) throw await errorFromInvoke(error);
+  if (isPlainRecord(data) && data.ok === false) {
+    throw new EventFromUrlError(0, typeof data.error === "string" ? data.error : "event_from_url_failed");
+  }
+  return parseEventFromUrlResponse(data);
 }

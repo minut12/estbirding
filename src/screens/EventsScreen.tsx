@@ -11,7 +11,7 @@ import {
   type ManualEventRow,
 } from "@/features/events/eventsService";
 import { useAuth } from "@/features/auth/AuthContext";
-import { EventEditDialog } from "@/features/events/EventEditDialog";
+import { EventLinkSheet } from "@/features/events/EventLinkSheet";
 import EventDetailsScreen from "./EventDetailsScreen";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -337,7 +337,7 @@ export default function EventsScreen() {
         )}
       </div>
 
-      <EventEditDialog
+      <EventLinkSheet
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         initial={editingRow}

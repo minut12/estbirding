@@ -3,6 +3,7 @@
 // redeploy-marker: 2026-10-05 - P92c2 Accept-Language et; facebook -> LLM over og fields; organiser -> source_hint
 // redeploy-marker: 2026-10-05 - P92c4 facebook boilerplate description dropped; geocode comma-tail fallback
 // redeploy-marker: 2026-10-05 - P92c5 facebook: Chrome UA + start/end_timestamp/event_place/description parse, no LLM/geocode
+// redeploy-marker: 2026-10-05 - P92c6 log upstream failures; facebook browser-UA refusal falls back to crawler UA
 //
 // Admin pastes a URL (estbirding.ee, eoy.ee, facebook.com, any public https page);
 // this function fetches it and returns prefilled event fields.
@@ -215,8 +216,17 @@ function decodeBody(bytes: Uint8Array, contentType: string | null): string {
   }
 }
 
+// Facebook: try the browser UA first (full event blob); if Facebook refuses that from this egress,
+// fall back to the crawler UA, which at least yields the og: page (P92c6, after live 502s on 2026-10-05).
 async function fetchPage(url: string): Promise<FetchResult> {
-  const userAgent = isFacebookHost(new URL(url).hostname) ? BROWSER_UA : USER_AGENT;
+  const facebook = isFacebookHost(new URL(url).hostname);
+  const first = await fetchPageWith(url, facebook ? BROWSER_UA : USER_AGENT);
+  if (first.ok || !facebook) return first;
+  console.log("[event-from-url] facebook browser-UA fetch failed: " + first.error + " -> retry with crawler UA");
+  return fetchPageWith(url, USER_AGENT);
+}
+
+async function fetchPageWith(url: string, userAgent: string): Promise<FetchResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -230,7 +240,8 @@ async function fetchPage(url: string): Promise<FetchResult> {
       signal: controller.signal,
     });
     if (!res.ok) {
-      await res.body?.cancel().catch(() => undefined);
+      const snippet = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
+      console.log("[event-from-url] upstream " + res.status + " for " + url + " ua=" + userAgent.slice(0, 40) + " body=" + snippet);
       return { ok: false, status: 502, error: "upstream_http_" + res.status };
     }
     const finalUrl = res.url || url;
@@ -244,6 +255,7 @@ async function fetchPage(url: string): Promise<FetchResult> {
     return { ok: true, page: { finalUrl, html, truncated } };
   } catch (error) {
     const reason = isAbortError(error) ? "upstream_timeout" : "upstream_fetch_failed: " + errorMessage(error);
+    console.log("[event-from-url] fetch error for " + url + ": " + reason);
     return { ok: false, status: 502, error: reason };
   } finally {
     clearTimeout(timer);

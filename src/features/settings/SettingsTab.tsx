@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadSettings, saveSettings, type AppSettings } from '@/lib/settings';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Separator } from '@/components/ui/separator';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -13,7 +12,10 @@ import {
 import { toast } from 'sonner';
 import { clearAppCaches, fullReset, doSoftReload, doHardReload, type ResetReport } from '@/lib/cache-reset';
 import { APP_VERSION } from '@/lib/version';
-import { Trash2, RotateCcw, LogOut, Users, ShieldCheck } from 'lucide-react';
+import {
+  Trash2, RotateCcw, LogOut, Users, MapPin, Bird, Rss, Activity, LifeBuoy, ChevronRight,
+  type LucideIcon,
+} from 'lucide-react';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
 import AvatarManager from './AvatarManager';
@@ -52,7 +54,76 @@ type SettingsPage = 'home' | 'news' | 'translations' | 'species' | 'rariliin' | 
 const LS_RESOLVED_PROXY_BASE = 'resolved_proxy_base_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
-const SIDEBAR_UI_KEY = 'estbirding.sidebarUi';
+
+const SETTINGS_GROUP_CLASS = 'rounded-[14px] border border-border bg-card overflow-hidden divide-y divide-border';
+const SETTINGS_ROW_CLASS = 'min-h-[58px] px-3.5 py-2.5 flex items-center gap-3 w-full text-left disabled:opacity-50';
+
+type IconTileVariant = 'accent' | 'muted' | 'destructive';
+
+const ICON_TILE_VARIANT_CLASS: Record<IconTileVariant, string> = {
+  accent: 'bg-accent text-primary',
+  muted: 'bg-muted text-muted-foreground',
+  destructive: 'bg-destructive/10 text-destructive',
+};
+
+interface IconTileProps {
+  icon: LucideIcon;
+  variant: IconTileVariant;
+}
+
+function IconTile({ icon: Icon, variant }: IconTileProps) {
+  return (
+    <div className={`w-8 h-8 rounded-[9px] grid place-items-center shrink-0 ${ICON_TILE_VARIANT_CLASS[variant]}`}>
+      <Icon className="w-[18px] h-[18px]" />
+    </div>
+  );
+}
+
+interface RowTextProps {
+  title: ReactNode;
+  sub?: ReactNode;
+  titleClassName?: string;
+}
+
+function RowText({ title, sub, titleClassName }: RowTextProps) {
+  return (
+    <div className="flex-1 min-w-0">
+      <div className={`font-medium${titleClassName ? ` ${titleClassName}` : ''}`}>{title}</div>
+      {sub && <div className="text-[13px] text-muted-foreground">{sub}</div>}
+    </div>
+  );
+}
+
+interface SettingsLinkRowProps {
+  icon: LucideIcon;
+  title: ReactNode;
+  sub: ReactNode;
+  onClick: () => void;
+}
+
+function SettingsLinkRow({ icon, title, sub, onClick }: SettingsLinkRowProps) {
+  return (
+    <button type="button" className={SETTINGS_ROW_CLASS} onClick={onClick}>
+      <IconTile icon={icon} variant="accent" />
+      <RowText title={title} sub={sub} />
+      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+    </button>
+  );
+}
+
+interface SettingsSectionProps {
+  label: ReactNode;
+  children: ReactNode;
+}
+
+function SettingsSection({ label, children }: SettingsSectionProps) {
+  return (
+    <section>
+      <h3 className="text-[13px] font-semibold text-muted-foreground mb-2 ml-1">{label}</h3>
+      {children}
+    </section>
+  );
+}
 
 // --- SAFE proxy translate derivation ---
 // Never throws, always returns '' on failure.
@@ -227,14 +298,6 @@ export default function SettingsTab() {
   const [storedEndpointView, setStoredEndpointView] = useState('');
   const [proxyBaseUrl, setProxyBaseUrl] = useState('');
   const [storedProxyBaseView, setStoredProxyBaseView] = useState('');
-  const [classicSidebar, setClassicSidebar] = useState<boolean>(() => {
-    try { return localStorage.getItem(SIDEBAR_UI_KEY) === 'classic'; } catch { return false; }
-  });
-  const handleClassicSidebarToggle = (checked: boolean) => {
-    setClassicSidebar(checked);
-    try { localStorage.setItem(SIDEBAR_UI_KEY, checked ? 'classic' : 'new'); } catch {}
-    toast.success(checked ? 'Klassikaline külgriba sees' : 'Uus külgriba sees');
-  };
   const envEndpoint = getEnvEndpoint();
   const resolvedEndpoint = resolveEndpoint(translationApiUrl);
   const resolvedProxyTranslateEndpoint = getProxyTranslateEndpointFromSupabaseProxyBase() || getProxyTranslateEndpoint();
@@ -243,6 +306,7 @@ export default function SettingsTab() {
   const proxyMode = getProxyMode(resolvedProxyBase);
   const canManageSettings = isAdminUser || hasPermission(PERMISSIONS.settingsManage);
   const canSeeAdminLinks = isAdminUser || hasPermission(PERMISSIONS.settingsLinksAdmin);
+  const isFree = role === 'user_level_1';
 
   useEffect(() => {
     setForm(loadSettings());
@@ -746,12 +810,12 @@ export default function SettingsTab() {
 
   const showReport = (report: ResetReport) => {
     if (report.errors.length > 0) {
-      toast.warning('Osaline tuhjendus', {
+      toast.warning('Osaline t\u00fchjendus', {
         description: report.errors.join('; '),
         duration: 4000,
       });
     } else {
-      toast.success('Vahemalu tuhjendatud. Laen uuesti...');
+      toast.success('Vahem\u00e4lu t\u00fchjendatud. Laen uuesti...');
     }
   };
 
@@ -915,130 +979,141 @@ export default function SettingsTab() {
   const renderSettingsEventLog = () => <EventLog />;
 
   const renderDebugLite = () => (
-    <div className="space-y-3">
-      {devMode && <DeveloperSettings />}
-      <Separator />
-      <h3 className="font-semibold text-foreground">Torkeotsing</h3>
-      <p className="text-xs text-muted-foreground">
-        Kui rakendus ei laadi uusimat versiooni, tuhjenda vahemalu.
-      </p>
-      <div className="flex flex-col gap-2">
-        <Button
-          variant="outline"
+    <>
+      <div className={SETTINGS_GROUP_CLASS}>
+        <button
+          type="button"
+          className={SETTINGS_ROW_CLASS}
           disabled={resetting}
           onClick={() => setConfirmMode('soft')}
-          className="w-full justify-start gap-2"
         >
-          <RotateCcw className="w-4 h-4" />
-          Tuhjenda vahemalu
-        </Button>
-        <Button
-          variant="destructive"
+          <IconTile icon={RotateCcw} variant="muted" />
+          <RowText
+            title={<>T&uuml;hjenda vahem&auml;lu</>}
+            sub={<>Laeb uusima versiooni, seaded j&auml;&auml;vad alles</>}
+          />
+        </button>
+        <button
+          type="button"
+          className={SETTINGS_ROW_CLASS}
           disabled={resetting}
           onClick={() => setConfirmMode('hard')}
-          className="w-full justify-start gap-2"
         >
-          <Trash2 className="w-4 h-4" />
-          Taielik lahtestus
-        </Button>
+          <IconTile icon={Trash2} variant="destructive" />
+          <RowText
+            title={<>L&auml;htesta rakendus</>}
+            titleClassName="text-destructive"
+            sub={<>Kustutab k&otilde;ik seaded ja vahem&auml;lu</>}
+          />
+        </button>
+        <a
+          href="/reset/"
+          aria-disabled={resetting || undefined}
+          className={`${SETTINGS_ROW_CLASS}${resetting ? ' pointer-events-none opacity-50' : ''}`}
+        >
+          <IconTile icon={LifeBuoy} variant="muted" />
+          <RowText
+            title={<>Taastamisleht</>}
+            sub={<>Kui rakendus on kinni j&auml;&auml;nud ja nupud ei t&ouml;&ouml;ta</>}
+          />
+          <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+        </a>
       </div>
-      {resetting && (
-        <p className="text-sm text-muted-foreground animate-pulse">Tuhjendamine...</p>
-      )}
-
-      <Separator className="my-2" />
-
-      <a
-        href="/reset/"
-        className="inline-flex items-center gap-1.5 text-sm text-primary underline underline-offset-4 hover:text-primary/80"
-      >
-        Ava lahtestusleht &rarr;
-      </a>
-      <p className="text-xs text-muted-foreground">
-        Kasuta seda linki, kui rakendus on taiesti kinni jaanud ja nupud ei toota.
-      </p>
-
-      <Separator className="my-2" />
-
-      <p className="text-xs text-muted-foreground cursor-default select-none" onClick={onVersionTap}>
-        Versioon: {APP_VERSION}
-      </p>
-    </div>
+      {resetting && <p className="text-sm text-muted-foreground animate-pulse ml-1 mt-2">T&uuml;hjendan...</p>}
+    </>
   );
 
+  const roleLabel = role === 'admin' ? 'Admin' : role === 'user_level_2' ? 'Tase 2' : 'Tase 1';
+  const avatarLetter = (user?.email ?? '').charAt(0).toUpperCase();
+
   const renderSettingsHome = () => (
-    <>
-      {/* Account section */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-primary" />
-          <span className="font-medium text-foreground text-sm">{user?.email}</span>
+    <div className="flex flex-col gap-[22px]">
+      <div className="flex items-center gap-3">
+        <div className="w-[52px] h-[52px] rounded-full bg-primary text-primary-foreground grid place-items-center font-semibold text-lg shrink-0">
+          {avatarLetter}
         </div>
-        <p className="text-xs text-muted-foreground">
-          Roll: <span className="font-medium">{role === 'admin' ? 'Admin' : role === 'user_level_2' ? 'Tase 2' : 'Tase 1'}</span>
-        </p>
-        <div className="flex gap-2 flex-wrap">
-          {canSeeAdminLinks && (
-            <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/admin/users')}>
-              <Users className="w-4 h-4" /> Kasutajad
-            </Button>
-          )}
-          <Button variant="outline" size="sm" className="gap-1 text-destructive" onClick={() => signOut()}>
-            <LogOut className="w-4 h-4" /> Logi välja
-          </Button>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold truncate">{user?.email}</div>
+          <span className="inline-flex rounded-full bg-accent text-primary text-xs font-medium px-2 py-0.5 mt-1">
+            {roleLabel}
+          </span>
         </div>
       </div>
 
-      <NotificationSettingsCard />
-
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="gpsEnabled">Luba GPS-asukoht</Label>
-            <p className="text-xs text-muted-foreground">
-              Näita minu asukohta Linnuliigid (EE) kaardil.
-            </p>
+      {!isFree && (
+        <SettingsSection label="Teavitused">
+          <div className={SETTINGS_GROUP_CLASS}>
+            <NotificationSettingsCard variant="row" />
           </div>
-          <Switch id="gpsEnabled" checked={form.gpsEnabled} onCheckedChange={handleGpsToggle} />
-        </div>
-      </div>
+        </SettingsSection>
+      )}
 
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="classicSidebar">Klassikaline külgriba</Label>
-            <p className="text-xs text-muted-foreground">
-              Näita Linnuliigid (EE) kaardil vana külgriba ja nuppe.
-            </p>
+      {!isFree && (
+        <SettingsSection label="Kaart">
+          <div className={SETTINGS_GROUP_CLASS}>
+            <div className={SETTINGS_ROW_CLASS}>
+              <IconTile icon={MapPin} variant="accent" />
+              <RowText title={<>N&auml;ita minu asukohta</>} sub={<>GPS Linnuliigid (EE) kaardil</>} />
+              <Switch
+                checked={form.gpsEnabled}
+                onCheckedChange={handleGpsToggle}
+                aria-label="N&auml;ita minu asukohta"
+              />
+            </div>
           </div>
-          <Switch id="classicSidebar" checked={classicSidebar} onCheckedChange={handleClassicSidebarToggle} />
-        </div>
-      </div>
+        </SettingsSection>
+      )}
 
-      {canManageSettings && <div className="flex flex-col gap-2">
-        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('news')}>
-          Uudised
-        </Button>
-        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('translations')}>
-          Tõlge
-        </Button>
-          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species')}>
-            Linnuliigid
-          </Button>
-          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('rariliin')}>
-            Rariliin
-          </Button>
-          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species_prediction')}>
-            Species Prediction
-          </Button>
-          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('event_log')}>
-            📋 Sündmuste logi
-          </Button>
-      </div>}
-      <div className="mt-2">
+      {canManageSettings && (
+        <SettingsSection label="Haldus">
+          <div className={SETTINGS_GROUP_CLASS}>
+            {canSeeAdminLinks && (
+              <SettingsLinkRow
+                icon={Users}
+                title={<>Kasutajad</>}
+                sub={<>Rollid ja paketid</>}
+                onClick={() => navigate('/admin/users')}
+              />
+            )}
+            <SettingsLinkRow
+              icon={Bird}
+              title={<>Liigid</>}
+              sub={<>Linnuliigid (EE) ja Rariliin</>}
+              onClick={() => setSettingsPage('species')}
+            />
+            <SettingsLinkRow
+              icon={Rss}
+              title={<>Uudiste allikad</>}
+              sub={<>RSS-allikad ja t&otilde;lge</>}
+              onClick={() => setSettingsPage('news')}
+            />
+            <SettingsLinkRow
+              icon={Activity}
+              title={<>Diagnostika</>}
+              sub={<>S&uuml;ndmuste logi, testteavitus, arendaja</>}
+              onClick={() => setSettingsPage('event_log')}
+            />
+          </div>
+        </SettingsSection>
+      )}
+
+      <SettingsSection label={<>T&otilde;rkeotsing</>}>
         {renderDebugLite()}
+      </SettingsSection>
+
+      <div className={SETTINGS_GROUP_CLASS}>
+        <button type="button" className={SETTINGS_ROW_CLASS} onClick={() => signOut()}>
+          <IconTile icon={LogOut} variant="destructive" />
+          <RowText title={<>Logi v&auml;lja</>} titleClassName="text-destructive" />
+        </button>
       </div>
-    </>
+
+      {devMode && <DeveloperSettings />}
+
+      <p className="text-center text-xs text-muted-foreground cursor-default select-none" onClick={onVersionTap}>
+        EstBirds &middot; versioon {APP_VERSION}
+      </p>
+    </div>
   );
 
   const renderSettings = () => {
@@ -1058,7 +1133,7 @@ export default function SettingsTab() {
       <div className="px-4 py-3 border-b border-border bg-card">
         <h2 className="font-semibold text-foreground">Seaded</h2>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-6 max-h-[calc(100dvh-124px)] md:max-h-none pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-muted/40 p-4 space-y-6 max-h-[calc(100dvh-124px)] md:max-h-none pb-[calc(env(safe-area-inset-bottom)+1rem)]">
         {renderSettings()}
       </div>
 
@@ -1066,7 +1141,7 @@ export default function SettingsTab() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmMode === 'hard' ? 'Taielik lahtestus' : 'Vahemalu tuhjendamine'}
+              {confirmMode === 'hard' ? 'L\u00e4htesta rakendus' : 'T\u00fchjenda vahem\u00e4lu'}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmMode === 'hard'
@@ -1075,9 +1150,9 @@ export default function SettingsTab() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Tuhista</AlertDialogCancel>
+            <AlertDialogCancel>T&uuml;hista</AlertDialogCancel>
             <AlertDialogAction onClick={handleReset}>
-              {confirmMode === 'hard' ? 'Lahtesta' : 'Tuhjenda'}
+              {confirmMode === 'hard' ? 'L\u00e4htesta' : 'T\u00fchjenda'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

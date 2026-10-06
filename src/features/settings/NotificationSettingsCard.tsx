@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell, BellOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { getFunctionsBaseUrl, getSupabaseAuthHeaders } from '@/config/supabaseConfig';
 import { log } from '@/lib/eventLog';
@@ -26,7 +27,11 @@ interface TestPushResponse {
   error?: string;
 }
 
-export default function NotificationSettingsCard() {
+export interface NotificationSettingsCardProps {
+  variant?: 'card' | 'row';
+}
+
+export default function NotificationSettingsCard({ variant = 'card' }: NotificationSettingsCardProps = {}) {
   const { state, enable, disable, busy, error } = useNotificationSubscription();
   const [dbStatus, setDbStatus] = useState<DbStatus>('unknown');
   const [endpoint, setEndpoint] = useState<string | null>(null);
@@ -117,6 +122,36 @@ export default function NotificationSettingsCard() {
   const isSubscribed = state.status === 'subscribed';
   const isDenied = state.status === 'denied';
   const isLoading = state.status === 'unknown';
+
+  if (variant === 'row') {
+    return (
+      <div className="min-h-[58px] px-3.5 py-2.5 flex items-center gap-3 w-full">
+        <div className="w-8 h-8 rounded-[9px] grid place-items-center shrink-0 bg-accent text-primary">
+          <Bell className="w-[18px] h-[18px]" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium">Haruldaste lindude teated</div>
+          {isDenied ? (
+            <p className="text-[13px] text-muted-foreground break-words">
+              Brauser on teavitused keelanud. Luba need brauseri seadetest.
+            </p>
+          ) : error ? (
+            <p className="text-[13px] text-destructive break-words">Viga: {error}</p>
+          ) : (
+            <p className="text-[13px] text-muted-foreground">
+              Rare-, super- ja mega-liigid Eesti naabermaades
+            </p>
+          )}
+        </div>
+        <Switch
+          checked={isSubscribed}
+          onCheckedChange={(c) => { void (c ? enable() : disable()); }}
+          disabled={busy || isDenied || isLoading}
+          aria-label="Haruldaste lindude teated"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-3">

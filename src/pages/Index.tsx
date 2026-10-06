@@ -41,6 +41,11 @@ export default function Index() {
   const [active, setActive] = useState<Tab>(() => resolveInitialTab());
   const [selectedMapId, setSelectedMapId] = useState<string>('');
 
+  // P93b: the classic sidebar toggle is gone; migrate anyone still on it.
+  useEffect(() => {
+    try { if (localStorage.getItem('estbirding.sidebarUi') === 'classic') localStorage.setItem('estbirding.sidebarUi', 'new'); } catch {}
+  }, []);
+
   // location.key is in the deps because the tab bar is pure state (setActive) and never navigates:
   // after Ülevaade -> Kaart the pathname is still /ulevaade while active is 'kaart', so the iframe's
   // OPEN_ULEVAADE push to the same path would not re-run this effect and the tab would never switch.

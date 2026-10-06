@@ -247,11 +247,12 @@ function SourceChips({ value, onChange }: SourceChipsProps) {
 
 type ImageFieldProps = {
   imageUrl: string | null;
+  hint: string | null;
   onPick: (dataUrl: string) => void;
   onRemove: () => void;
 };
 
-function ImageField({ imageUrl, onPick, onRemove }: ImageFieldProps) {
+function ImageField({ imageUrl, hint, onPick, onRemove }: ImageFieldProps) {
   const [broken, setBroken] = useState(false);
   useEffect(() => {
     setBroken(false);
@@ -296,16 +297,18 @@ function ImageField({ imageUrl, onPick, onRemove }: ImageFieldProps) {
         accept="image/*"
         onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
       />
+      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }
 
-type WarningFlags = { facebook: boolean; facebookMeta: boolean; geocode: boolean; llm: boolean };
+type WarningFlags = { facebook: boolean; facebookMeta: boolean; facebookNoImage: boolean; geocode: boolean; llm: boolean };
 
 function warningFlags(warnings: string[]): WarningFlags {
   return {
     facebook: warnings.includes("facebook_og_only"),
     facebookMeta: warnings.includes("facebook_og_meta"),
+    facebookNoImage: warnings.includes("facebook_no_image"),
     geocode: warnings.includes("geocode_no_hit") || warnings.includes("geocode_failed"),
     llm: warnings.some((w) => w.startsWith("llm_")),
   };
@@ -360,7 +363,12 @@ function EventForm({ form, warnings, setForm, onImagePick, onImageRemove }: Even
         <Label>{t.fieldSource}</Label>
         <SourceChips value={form.type} onChange={(type) => setForm((p) => ({ ...p, type }))} />
       </div>
-      <ImageField imageUrl={form.image_url} onPick={onImagePick} onRemove={onImageRemove} />
+      <ImageField
+        imageUrl={form.image_url}
+        hint={flags.facebookNoImage ? t.hintFacebookImage : null}
+        onPick={onImagePick}
+        onRemove={onImageRemove}
+      />
       <div>
         <Label htmlFor="eventLinkDescription">{t.fieldDescription}</Label>
         <Textarea

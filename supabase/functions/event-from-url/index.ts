@@ -4,6 +4,7 @@
 // redeploy-marker: 2026-10-05 - P92c4 facebook boilerplate description dropped; geocode comma-tail fallback
 // redeploy-marker: 2026-10-05 - P92c5 facebook: Chrome UA + start/end_timestamp/event_place/description parse, no LLM/geocode
 // redeploy-marker: 2026-10-05 - P92c6 log upstream failures; facebook browser-UA refusal falls back to crawler UA
+// redeploy-marker: 2026-10-06 - P92e3 drop fbsbx lookaside image URLs (crawler-only, redirect to login)
 //
 // Admin pastes a URL (estbirding.ee, eoy.ee, facebook.com, any public https page);
 // this function fetches it and returns prefilled event fields.
@@ -670,6 +671,20 @@ function absoluteUrl(candidate: string | null, base: string): string | null {
   }
 }
 
+// fbsbx lookaside image URLs only serve crawlers and redirect browsers to login (P92e3).
+function dropFacebookLookaside(imageUrl: string | null, warnings: string[]): string | null {
+  if (!imageUrl) return null;
+  let imageHost: string;
+  try {
+    imageHost = new URL(imageUrl).hostname.toLowerCase();
+  } catch {
+    return imageUrl;
+  }
+  if (imageHost !== "lookaside.fbsbx.com" && !imageHost.endsWith(".fbsbx.com")) return imageUrl;
+  if (!warnings.includes("facebook_no_image")) warnings.push("facebook_no_image");
+  return null;
+}
+
 function normalizeDateField(raw: string | null, field: string, warnings: string[]): string | null {
   const normalized = normalizeTallinnDate(raw);
   if (raw && !normalized) warnings.push("date_unparsed:" + field);
@@ -788,7 +803,7 @@ Deno.serve(async (req) => {
       lat: geo.lat,
       lon: geo.lon,
       description: capDescription(draft.description),
-      image_url: absoluteUrl(draft.image_url, page.finalUrl),
+      image_url: dropFacebookLookaside(absoluteUrl(draft.image_url, page.finalUrl), warnings),
     };
 
     return json(200, {

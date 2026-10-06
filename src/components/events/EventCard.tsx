@@ -122,13 +122,15 @@ interface ThumbProps {
 }
 
 function EventThumb({ imageUrl, className }: ThumbProps) {
-  if (!imageUrl) return <div className={cn("shrink-0 bg-muted", className)} />;
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (!imageUrl || failedUrl === imageUrl) return <div className={cn("shrink-0 bg-muted", className)} />;
   return (
     <img
       src={getProxiedImageUrl(imageUrl, resolveProxyBase())}
       alt=""
       loading="lazy"
       className={cn("shrink-0 bg-muted object-cover", className)}
+      onError={() => setFailedUrl(imageUrl)}
     />
   );
 }

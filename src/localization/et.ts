@@ -68,6 +68,7 @@ export const et = {
     noteFacebookMeta: "Facebookist saime pealkirja, kuupäeva ja koha. Lisa kellaaeg, lõpp ja kirjeldus käsitsi.",
     hintGeocode: "Asukohta ei leitud, salvestame nimena",
     hintLlm: "Automaatne lugemine ei õnnestunud, täida käsitsi",
+    hintFacebookImage: "Facebook ei anna pilti välja. Lisa pilt käsitsi.",
     errForbidden: "Ainult administraator saab üritusi lisada",
     errFetchFailed: "Lehte ei õnnestunud laadida",
     errGeneric: "Linki ei õnnestunud lugeda",

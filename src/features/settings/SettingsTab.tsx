@@ -1146,7 +1146,7 @@ export default function SettingsTab() {
   const renderSettings = () => {
     if (settingsPage === 'home') return renderSettingsHome();
     if (!canManageSettings) return renderSettingsHome();
-    if (settingsPage === 'news') return <>{renderSettingsHeader('Uudised')}{renderSettingsNews()}</>;
+    if (settingsPage === 'news') return <>{renderSettingsHeader('Uudiste allikad')}{renderSettingsNews()}</>;
     if (settingsPage === 'translations') return <>{renderSettingsHeader('Tõlge')}{renderSettingsTranslations()}</>;
     if (settingsPage === 'species') return <>{renderSettingsHeader('Liigid')}{renderSettingsSpecies()}</>;
     if (settingsPage === 'species_prediction') return <>{renderSettingsHeader('Species Prediction & Research')}{renderSettingsSpeciesPrediction()}</>;

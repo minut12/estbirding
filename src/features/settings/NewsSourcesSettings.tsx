@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { supabase } from '@/config/supabaseClient';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Loader2, TestTube, Check, X } from 'lucide-react';
+import { Loader2, TestTube, Check, X, Plus, Activity, RotateCcw, ChevronDown, ChevronUp, ExternalLink, type LucideIcon } from 'lucide-react';
+import { isDeveloperModeEnabled } from '@/config/supabaseConfig';
 import { loadNewsSourcesWithOrigin, normalizeSourceUrl, resetNewsSourcesToDefaults, saveNewsSources, type NewsSourcesOrigin } from '@/lib/newsSourcesStorage';
 import type { NewsSourceConfigItem } from '@/config/newsSources';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
@@ -46,6 +46,9 @@ export default function NewsSourcesSettings() {
   const [newSourceName, setNewSourceName] = useState('');
   const [newSourceUrl, setNewSourceUrl] = useState('');
   const [newSourceTranslateToEt, setNewSourceTranslateToEt] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [pendingAddClose, setPendingAddClose] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const mapCloudRowToSource = (row: CloudNewsSourceRow): NewsSource => ({
     id: String(row.slug || row.source_key || row.key || row.id || '').trim(),
@@ -188,70 +191,177 @@ export default function NewsSourcesSettings() {
     })();
   };
 
+  // onAddSource clears name + URL only on its success path; arm a pending flag here
+  // (only when its validation will pass) and close the form once the fields are cleared.
+  const onSubmitAdd = () => {
+    if (newSourceName.trim() && normalizeSourceUrl(newSourceUrl)) setPendingAddClose(true);
+    onAddSource();
+  };
+
+  useEffect(() => {
+    if (pendingAddClose && newSourceName === '' && newSourceUrl === '') {
+      setPendingAddClose(false);
+      setShowAdd(false);
+    }
+  }, [pendingAddClose, newSourceName, newSourceUrl]);
+
+  const onCancelAdd = () => {
+    setPendingAddClose(false);
+    setShowAdd(false);
+    setNewSourceName('');
+    setNewSourceUrl('');
+    setNewSourceTranslateToEt(true);
+  };
+
   const sources = localSources;
+  const enabledCount = sources.filter((source) => source.enabled).length;
 
   if (sources.length === 0) {
     return (
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">{loadingCloud ? 'Laen uudiste allikaid…' : 'Uudiste allikaid pole.'}</p>
         <Button variant="outline" size="sm" onClick={onResetDefaults}>Taasta vaikimisi allikad</Button>
-        <p className="text-xs text-muted-foreground">Allikad: 0 (source: {origin})</p>
+        {isDeveloperModeEnabled() && <p className="text-xs text-muted-foreground">Allikad: 0 (source: {origin})</p>}
       </div>
     );
   }
 
   return (
     <div className="block space-y-4">
-      <h3 className="font-semibold text-foreground">Uudiste allikad</h3>
       {loadingCloud && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Laen allikaid pilvest</span>
+          <span>Laen allikaid pilvest&hellip;</span>
         </div>
       )}
-      <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-        <div className="space-y-1.5">
-          <Label className="text-xs">Uue allika nimi</Label>
-          <Input
-            value={newSourceName}
-            onChange={(event) => setNewSourceName(event.target.value)}
-            placeholder="Näiteks BirdGuides"
-            className="h-9 text-sm"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Uue RSS allika URL</Label>
-          <Input
-            value={newSourceUrl}
-            onChange={(event) => setNewSourceUrl(event.target.value)}
-            placeholder="https://example.com/feed.xml"
-            className="h-9 text-sm"
-          />
-        </div>
-        <div className="flex items-center justify-between rounded-md border border-border p-3">
-          <div className="space-y-1">
-            <Label className="text-sm">Tõlgi eesti keelde</Label>
-            <p className="text-xs text-muted-foreground">Kasuta võõrkeelse RSS allika jaoks.</p>
+      {showAdd ? (
+        <div className="rounded-[14px] border border-border bg-card p-3.5 space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Uue allika nimi</Label>
+            <Input
+              value={newSourceName}
+              onChange={(event) => setNewSourceName(event.target.value)}
+              placeholder={'N\u00e4iteks BirdGuides'}
+              className="h-9 text-sm"
+            />
           </div>
-          <Switch checked={newSourceTranslateToEt} onCheckedChange={setNewSourceTranslateToEt} />
+          <div className="space-y-1.5">
+            <Label className="text-xs">Uue RSS allika URL</Label>
+            <Input
+              value={newSourceUrl}
+              onChange={(event) => setNewSourceUrl(event.target.value)}
+              placeholder="https://example.com/feed.xml"
+              className="h-9 text-sm"
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-md border border-border p-3">
+            <div className="space-y-1">
+              <Label className="text-sm">T&otilde;lgi eesti keelde</Label>
+              <p className="text-xs text-muted-foreground">Kasuta v&otilde;&otilde;rkeelse RSS allika jaoks.</p>
+            </div>
+            <Switch checked={newSourceTranslateToEt} onCheckedChange={setNewSourceTranslateToEt} />
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button onClick={onSubmitAdd} className="w-full sm:w-auto">Lisa</Button>
+            <Button variant="outline" onClick={onCancelAdd} className="w-full sm:w-auto">T&uuml;hista</Button>
+          </div>
         </div>
-        <Button onClick={onAddSource} className="w-full sm:w-auto">Lisa RSS allikas</Button>
-      </div>
-      {sources.map((source) => (
-        <SourceCard
-          key={source.id}
-          source={source}
-          onLocalUpdate={onLocalUpdate}
-          onSaved={loadCloudSources}
-        />
-      ))}
-      <NewsDiagnosticsPanel />
-      <div className="flex items-center justify-between gap-2">
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowAdd(true)}
+          className="flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-border bg-card text-primary font-semibold"
+        >
+          <Plus className="h-4 w-4" />
+          Lisa allikas
+        </button>
+      )}
+
+      <section>
+        <h3 className="text-[13px] font-semibold text-muted-foreground mb-2 ml-1">
+          {sources.length} allikat &middot; {enabledCount} sees
+        </h3>
+        <div className="overflow-hidden rounded-[14px] border border-border bg-card divide-y divide-border">
+          {sources.map((source) => (
+            <SourceCard
+              key={source.id}
+              source={source}
+              onLocalUpdate={onLocalUpdate}
+              onSaved={loadCloudSources}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h3 className="text-[13px] font-semibold text-muted-foreground mb-2 ml-1">Hooldus</h3>
+        <div className="overflow-hidden rounded-[14px] border border-border bg-card divide-y divide-border">
+          <div>
+            <button
+              type="button"
+              aria-expanded={showDiagnostics}
+              onClick={() => setShowDiagnostics((prev) => !prev)}
+              className={MAINTENANCE_ROW_CLASS}
+            >
+              <MaintenanceIconTile icon={Activity} />
+              <MaintenanceRowText
+                title="Uudiste diagnostika"
+                sub={<>Viimase v&auml;rskenduse tulemus allikate kaupa</>}
+              />
+              {showDiagnostics
+                ? <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+                : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
+            </button>
+            {showDiagnostics && <NewsDiagnosticsPanel embedded />}
+          </div>
+          <button type="button" onClick={onResetDefaults} className={MAINTENANCE_ROW_CLASS}>
+            <MaintenanceIconTile icon={RotateCcw} />
+            <MaintenanceRowText title="Taasta vaikimisi allikad" sub="Lisab puuduvad vaikeallikad tagasi" />
+          </button>
+        </div>
+      </section>
+
+      {isDeveloperModeEnabled() && (
         <p className="text-xs text-muted-foreground">Allikad: {sources.length} (source: {origin})</p>
-        <Button variant="ghost" size="sm" onClick={onResetDefaults}>Taasta vaikimisi allikad</Button>
-      </div>
+      )}
     </div>
   );
+}
+
+const MAINTENANCE_ROW_CLASS = 'flex min-h-[60px] w-full items-center gap-3 px-3.5 py-2.5 text-left';
+
+type MaintenanceIconTileProps = {
+  icon: LucideIcon;
+};
+
+function MaintenanceIconTile({ icon: Icon }: MaintenanceIconTileProps) {
+  return (
+    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-muted text-muted-foreground">
+      <Icon className="h-[18px] w-[18px]" />
+    </div>
+  );
+}
+
+type MaintenanceRowTextProps = {
+  title: ReactNode;
+  sub: ReactNode;
+};
+
+function MaintenanceRowText({ title, sub }: MaintenanceRowTextProps) {
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="font-medium text-foreground">{title}</div>
+      <div className="text-[13px] text-muted-foreground">{sub}</div>
+    </div>
+  );
+}
+
+function getSourceHost(url: string): string | null {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return null;
+  }
 }
 
 function SourceCard({
@@ -268,14 +378,16 @@ function SourceCard({
   const [translateToEt, setTranslateToEt] = useState(source.id === 'eoy' ? false : source.translate_to_et === true);
   const [testResult, setTestResult] = useState<{ ok: boolean; count?: number; sampleTitles?: string[]; error?: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const translationLocked = source.name === 'EOÜ' || source.id === 'eoy';
 
-  const saveChanges = async () => {
+  const saveChanges = async (overrides?: { enabled?: boolean }): Promise<boolean> => {
     const normalizedUrl = normalizeSourceUrl(url);
+    const nextEnabled = overrides?.enabled ?? enabled;
     onLocalUpdate({
       ...source,
       url: normalizedUrl,
-      enabled,
+      enabled: nextEnabled,
       translate_to_et: translationLocked ? false : translateToEt,
     });
     try {
@@ -288,7 +400,7 @@ function SourceCard({
           name: source.name,
           type: source.kind,
           feed_url: normalizedUrl,
-          is_enabled: enabled,
+          is_enabled: nextEnabled,
           translate_to_et: translationLocked ? false : translateToEt,
         },
       });
@@ -298,6 +410,7 @@ function SourceCard({
       if (error) throw error;
       await onSaved();
       toast.success(`${source.name} salvestatud`);
+      return true;
     } catch (error: unknown) {
       const maybeErr = error as { message?: string; context?: Response } | null;
       let reason = maybeErr?.message || 'Viga';
@@ -316,7 +429,14 @@ function SourceCard({
         }
       }
       toast.error(`${source.name}: DB salvestus ebaõnnestus (${reason})`);
+      return false;
     }
+  };
+
+  const onToggleEnabled = async (value: boolean) => {
+    setEnabled(value);
+    const ok = await saveChanges({ enabled: value });
+    if (!ok) setEnabled(!value);
   };
 
   const testFeed = async () => {
@@ -362,25 +482,25 @@ function SourceCard({
     }
   };
 
-  return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-      <div className="flex items-start justify-between gap-2 sm:items-center">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="font-medium text-sm text-foreground">{normalizeDisplayText(source.name)}</span>
-          <Badge variant="outline" className="text-xs">{source.kind}</Badge>
-          {source.url && (
-            <a
-              href={source.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm underline"
-            >
-              Ava allikas
-            </a>
-          )}
-        </div>
-        <Switch checked={enabled} onCheckedChange={setEnabled} />
-      </div>
+  const host = getSourceHost(source.url || '');
+  const subParts = [source.kind === 'scrape' ? 'Veebileht' : 'RSS'];
+  if (host) subParts.push(host);
+  if (!enabled) subParts.push('v\u00e4ljas');
+  const subLine = subParts.join(' \u00b7 ');
+
+  const expandedBody = (
+    <div className="space-y-3 bg-muted/30 px-3.5 pb-3.5 pt-3">
+      {source.url && (
+        <a
+          href={source.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-sm underline"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          Ava allikas
+        </a>
+      )}
 
       <div className="space-y-1.5">
         <Label className="text-xs">URL</Label>
@@ -438,12 +558,46 @@ function SourceCard({
         </Button>
         <Button
           size="sm"
-          onClick={saveChanges}
+          onClick={() => void saveChanges()}
           className="w-full sm:w-auto"
         >
           Salvesta
         </Button>
       </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="flex min-h-[60px] items-center gap-3 px-3.5 py-2.5">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((prev) => !prev)}
+          className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left"
+        >
+          <span className="flex w-full min-w-0 items-center gap-2">
+            <span className={`truncate text-[15px] font-medium ${enabled ? 'text-foreground' : 'text-muted-foreground'}`}>
+              {normalizeDisplayText(source.name)}
+            </span>
+            {translationLocked ? (
+              <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Eesti keeles</span>
+            ) : translateToEt ? (
+              <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-primary">T&otilde;lgitakse</span>
+            ) : null}
+          </span>
+          <span className="flex w-full min-w-0 items-center gap-1 text-xs text-muted-foreground">
+            <span className="truncate">{subLine}</span>
+            {expanded
+              ? <ChevronUp className="h-3.5 w-3.5 shrink-0" />
+              : <ChevronDown className="h-3.5 w-3.5 shrink-0" />}
+          </span>
+        </button>
+        <div className="shrink-0" onClick={(event) => event.stopPropagation()}>
+          <Switch checked={enabled} onCheckedChange={(value) => void onToggleEnabled(value)} />
+        </div>
+      </div>
+      {expanded && expandedBody}
     </div>
   );
 }

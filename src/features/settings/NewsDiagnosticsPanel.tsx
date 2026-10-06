@@ -32,7 +32,9 @@ type DiagnosticsReport = {
   perSource?: DiagnosticsSource[];
 };
 
-export default function NewsDiagnosticsPanel() {
+export type NewsDiagnosticsPanelProps = { embedded?: boolean };
+
+export default function NewsDiagnosticsPanel({ embedded = false }: NewsDiagnosticsPanelProps = {}) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<DiagnosticsReport | null>(null);
@@ -71,6 +73,67 @@ export default function NewsDiagnosticsPanel() {
     }
   };
 
+  const body = (
+    <>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Button onClick={runDiagnostics} disabled={loading} className="w-full sm:w-auto">
+          {loading ? 'K\u00e4ivitan\u2026' : 'K\u00e4ivita diagnostika'}
+        </Button>
+        <Button variant="outline" onClick={copyDiagnostics} disabled={!report} className="w-full sm:w-auto">
+          Kopeeri diagnostika
+        </Button>
+      </div>
+
+      {(report?.perSource || []).map((source) => (
+        <div key={source.sourceId} className="rounded-lg border border-border p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-sm">{source.source}</span>
+            <Badge variant={source.fetchStatus === 'success' ? 'secondary' : 'outline'}>
+              {source.fetchStatus || 'unknown'}
+            </Badge>
+          </div>
+
+          <div className="grid gap-1 text-xs text-muted-foreground break-all">
+            <div>source name: {source.source}</div>
+            <div>source slug/key/id: {source.slug} / {source.sourceId}</div>
+            <div>url: {source.rssUrl || '(puudub)'}</div>
+            <div>enabled: {String(source.enabled)}</div>
+            <div>fetch status: {source.fetchStatus || 'unknown'}</div>
+            <div>parsed count: {source.parsedCount ?? 0}</div>
+            <div>inserted count: {source.insertedCount ?? 0}</div>
+            <div>updated count: {source.updatedCount ?? 0}</div>
+            <div>skipped count: {source.skippedCount ?? 0}</div>
+            <div>last error: {source.lastError || '(none)'}</div>
+            <div>visible count in actual News list query: {source.visibleCountInNewsList ?? 0}</div>
+          </div>
+
+          {(source.latestItems || []).length > 0 && (
+            <div className="space-y-2">
+              {(source.latestItems || []).map((item, index) => (
+                <div key={`${source.sourceId}-${index}`} className="rounded-md border border-border p-2 text-xs space-y-1">
+                  <div>title: {item.title || '(pealkiri puudub)'}</div>
+                  <div>published_at: {item.published_at || '(kuup\u00e4ev puudub)'}</div>
+                  <div className="break-all">link: {item.link || '(link puudub)'}</div>
+                  <div>status: {item.status}</div>
+                  <div>skip reason: {item.skip_reason || '(none)'}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="space-y-4 px-3.5 pb-3.5">
+        <p className="text-xs text-muted-foreground">N&auml;itab live uudiste v&auml;rskenduse tulemusi allikate kaupa.</p>
+        {body}
+      </div>
+    );
+  }
+
   return (
     <details
       className="rounded-lg border border-border bg-card p-4"
@@ -85,53 +148,7 @@ export default function NewsDiagnosticsPanel() {
       </summary>
 
       <div className="mt-4 space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button onClick={runDiagnostics} disabled={loading} className="w-full sm:w-auto">
-            {loading ? 'Käivitan…' : 'Käivita diagnostika'}
-          </Button>
-          <Button variant="outline" onClick={copyDiagnostics} disabled={!report} className="w-full sm:w-auto">
-            Kopeeri diagnostika
-          </Button>
-        </div>
-
-        {(report?.perSource || []).map((source) => (
-          <div key={source.sourceId} className="rounded-lg border border-border p-4 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium text-sm">{source.source}</span>
-              <Badge variant={source.fetchStatus === 'success' ? 'secondary' : 'outline'}>
-                {source.fetchStatus || 'unknown'}
-              </Badge>
-            </div>
-
-            <div className="grid gap-1 text-xs text-muted-foreground break-all">
-              <div>source name: {source.source}</div>
-              <div>source slug/key/id: {source.slug} / {source.sourceId}</div>
-              <div>url: {source.rssUrl || '(puudub)'}</div>
-              <div>enabled: {String(source.enabled)}</div>
-              <div>fetch status: {source.fetchStatus || 'unknown'}</div>
-              <div>parsed count: {source.parsedCount ?? 0}</div>
-              <div>inserted count: {source.insertedCount ?? 0}</div>
-              <div>updated count: {source.updatedCount ?? 0}</div>
-              <div>skipped count: {source.skippedCount ?? 0}</div>
-              <div>last error: {source.lastError || '(none)'}</div>
-              <div>visible count in actual News list query: {source.visibleCountInNewsList ?? 0}</div>
-            </div>
-
-            {(source.latestItems || []).length > 0 && (
-              <div className="space-y-2">
-                {(source.latestItems || []).map((item, index) => (
-                  <div key={`${source.sourceId}-${index}`} className="rounded-md border border-border p-2 text-xs space-y-1">
-                    <div>title: {item.title || '(pealkiri puudub)'}</div>
-                    <div>published_at: {item.published_at || '(kuupäev puudub)'}</div>
-                    <div className="break-all">link: {item.link || '(link puudub)'}</div>
-                    <div>status: {item.status}</div>
-                    <div>skip reason: {item.skip_reason || '(none)'}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+        {body}
       </div>
     </details>
   );

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="et">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Event location</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    html, body, #map { margin: 0; height: 100%; }
+    body { background: #f2efe6; }
+    .event-pin { background: none; border: 0; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var latRaw = params.get('lat');
+      var lonRaw = params.get('lon');
+      if (latRaw === null || lonRaw === null || latRaw === '' || lonRaw === '') return;
+      var lat = Number(latRaw);
+      var lon = Number(lonRaw);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
+      if (lat === 0 && lon === 0) return;
+      if (typeof L === 'undefined') return;
+
+      var map = L.map('map', {
+        zoomControl: false,
+        dragging: false,
+        touchZoom: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        keyboard: false,
+        tap: false
+      });
+      map.setView([lat, lon], 14);
+      map.attributionControl.setPrefix(false);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      var pinSvg =
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="28" height="28" aria-hidden="true">' +
+        '<path d="M14 28 C14 28 4.5 18.5 4.5 11 A9.5 9.5 0 0 1 23.5 11 C23.5 18.5 14 28 14 28 Z" ' +
+        'fill="hsl(145 45% 32%)" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>' +
+        '<circle cx="14" cy="11" r="3.5" fill="#fff"/>' +
+        '</svg>';
+
+      L.marker([lat, lon], {
+        icon: L.divIcon({
+          className: 'event-pin',
+          html: pinSvg,
+          iconSize: [28, 28],
+          iconAnchor: [14, 28]
+        }),
+        interactive: false,
+        keyboard: false
+      }).addTo(map);
+
+      setTimeout(function () { map.invalidateSize(); }, 0);
+    })();
+  </script>
+</body>
+</html>

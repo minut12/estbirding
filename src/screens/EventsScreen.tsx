@@ -3,7 +3,7 @@ import { RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { et, formatEventMonthLabel } from "@/localization/et";
 import { type EventCategory, type EventItem } from "@/data/events";
-import { EventFeaturedCard, EventRow } from "@/components/events/EventCard";
+import { EventFeaturedCard, EventFeaturedWide, EventRow, EventRowWide } from "@/components/events/EventCard";
 import {
   deleteManualEvent,
   listPublicEventsManual,
@@ -27,6 +27,7 @@ type MonthGroup = {
 };
 
 const DESKTOP_EVENTS_QUERY = "(min-width: 901px)";
+const WIDE_EVENTS_QUERY = "(min-width: 1200px)";
 
 // Copied from NewsTab (do not import across features).
 const CHIP_BASE = "shrink-0 inline-flex items-center gap-1 h-7 px-2.5 rounded-full border text-xs font-medium transition-colors";
@@ -61,6 +62,23 @@ function useIsDesktopEvents(): boolean {
     return () => mql.removeEventListener("change", onChange);
   }, []);
   return isDesktop;
+}
+
+function useIsWideEvents(): boolean {
+  const [isWide, setIsWide] = useState<boolean>(() => (
+    typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia(WIDE_EVENTS_QUERY).matches
+  ));
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const mql = window.matchMedia(WIDE_EVENTS_QUERY);
+    const onChange = () => setIsWide(mql.matches);
+    onChange();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return isWide;
 }
 
 function groupByMonth(events: EventItem[], reverseChronological: boolean): MonthGroup[] {
@@ -132,6 +150,7 @@ export default function EventsScreen() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<ManualEventRow | null>(null);
   const isDesktop = useIsDesktopEvents();
+  const isWide = useIsWideEvents();
 
   const todayStart = useMemo(() => {
     const date = new Date();
@@ -295,7 +314,7 @@ export default function EventsScreen() {
 
   const header = isDesktop ? (
     <div className="border-b border-border bg-card">
-      <div className="mx-auto max-w-[1180px] px-5 py-3">
+      <div className={isWide ? "mx-auto max-w-[1320px] px-12 py-3" : "mx-auto max-w-[1180px] px-5 py-3"}>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3 shrink-0">
             {titleEl}
@@ -374,6 +393,52 @@ export default function EventsScreen() {
     </div>
   );
 
+  const featuredEvent = !isPastTab && nextEventId
+    ? groups.flatMap((g) => g.events).find((ev) => ev.id === nextEventId) ?? null
+    : null;
+  const wideGroups = groups
+    .map((g) => ({
+      ...g,
+      events: featuredEvent ? g.events.filter((ev) => ev.id !== featuredEvent.id) : g.events,
+    }))
+    .filter((g) => g.events.length > 0);
+
+  const wideListEl = (
+    <div className="mx-auto flex max-w-[1320px] flex-col gap-7 px-12 py-7">
+      {featuredEvent && (
+        <EventFeaturedWide
+          event={featuredEvent}
+          canManage={canManage}
+          onEdit={() => openEdit(featuredEvent.id)}
+          onDelete={() => void onDelete(featuredEvent.id)}
+          onPress={() => setOpenedDetails(featuredEvent)}
+        />
+      )}
+      {wideGroups.map((group) => (
+        <section key={group.key}>
+          <div className="flex items-center justify-between px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <span>{group.label}</span>
+            <span>{et.monthCount(group.events.length)}</span>
+          </div>
+          <div className="overflow-hidden rounded-[18px] border border-border bg-card">
+            {group.events.map((event) => (
+              <EventRowWide
+                key={event.id}
+                event={event}
+                isNext={false}
+                isPast={isPastTab}
+                canManage={canManage}
+                onEdit={() => openEdit(event.id)}
+                onDelete={() => void onDelete(event.id)}
+                onPress={() => setOpenedDetails(event)}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
       {header}
@@ -385,6 +450,8 @@ export default function EventsScreen() {
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
             {isPastTab ? et.emptyPast : et.emptyUpcoming}
           </p>
+        ) : isWide ? (
+          wideListEl
         ) : isDesktop ? (
           desktopListEl
         ) : (

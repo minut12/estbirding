@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { CalendarDays, CalendarPlus, MapPin, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { et, formatEventCountdown, formatEventMonthAbbr } from "@/localization/et";
 import type { EventCategory, EventItem } from "@/data/events";
 import { BirdPlaceholder } from "./BirdPlaceholder";
 import { getProxiedImageUrl } from "@/features/news/newsImage";
 import { resolveProxyBase } from "@/config/proxyEndpoint";
+import { Button } from "@/components/ui/button";
+import { downloadEventIcs } from "@/lib/ics";
+import { buildDateLines } from "@/features/events/eventDates";
 
 const CONFIRM_DELETE_MS = 4000;
 
@@ -138,15 +141,25 @@ function EventThumb({ id, category, imageUrl, className }: ThumbProps) {
   );
 }
 
-function DateBlock({ startAt, isNext }: { startAt: string; isNext: boolean }) {
+interface DateBlockProps {
+  startAt: string;
+  isNext: boolean;
+  size?: "default" | "large";
+}
+
+function DateBlock({ startAt, isNext, size = "default" }: DateBlockProps) {
+  const isLarge = size === "large";
   return (
     <div
       className={cn(
         "flex w-12 shrink-0 flex-col items-center justify-center rounded-lg py-1.5",
         isNext ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
+        isLarge && "w-16",
       )}
     >
-      <span className="text-lg font-semibold leading-none">{formatDayNumber(startAt)}</span>
+      <span className={cn("text-lg font-semibold leading-none", isLarge && "text-[22px]")}>
+        {formatDayNumber(startAt)}
+      </span>
       <span
         className={cn(
           "mt-1 text-[10px] uppercase tracking-wide",
@@ -200,6 +213,108 @@ export function EventFeaturedCard({ event, onPress, canManage, onEdit, onDelete 
         </div>
       </button>
       {canManage && <AdminActions onEdit={onEdit} onDelete={onDelete} />}
+    </div>
+  );
+}
+
+// Same dot colours as CATEGORY_DOT_CLASS in EventDetailsScreen (not imported; that file imports this one).
+const CATEGORY_DOT_CLASS: Record<EventCategory, string> = {
+  EstBirding: "bg-primary",
+  EOY: "bg-sky-600",
+  Muud: "bg-muted-foreground",
+};
+
+/** Wide (>=1200px) next-event card: large image left, details + actions right. */
+export function EventFeaturedWide({ event, onPress, canManage, onEdit, onDelete }: EventFeaturedCardProps) {
+  const dateLines = buildDateLines(event.startAt, event.endAt);
+  return (
+    <div className="grid grid-cols-[520px_minmax(0,1fr)] overflow-hidden rounded-[22px] border border-border bg-card">
+      <button type="button" onClick={onPress} className="block h-full text-left">
+        <EventThumb
+          id={event.id}
+          category={event.category}
+          imageUrl={event.imageUrl}
+          className="h-full min-h-[300px] w-full rounded-none"
+        />
+      </button>
+      <div className="flex flex-col gap-3 p-8">
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+            {`${et.nextEvent}${et.metaSeparator}${formatEventCountdown(event.startAt)}`}
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-foreground/80">
+            <span className={cn("h-2 w-2 rounded-full", CATEGORY_DOT_CLASS[event.category])} aria-hidden="true" />
+            {et.categoryLabel(event.category)}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onPress}
+          className="text-left text-[30px] font-semibold leading-tight tracking-tight text-balance text-foreground"
+        >
+          {event.title}
+        </button>
+        <div className="flex flex-wrap gap-7 text-sm text-foreground/80">
+          {dateLines && (
+            <span className="inline-flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              {`${dateLines.primary}${et.metaSeparator}${dateLines.times}`}
+            </span>
+          )}
+          {event.locationName && (
+            <span className="inline-flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              {event.locationName}
+            </span>
+          )}
+        </div>
+        {event.description && (
+          <p className="line-clamp-3 max-w-[70ch] text-[15px] leading-relaxed text-muted-foreground">
+            {event.description}
+          </p>
+        )}
+        <div className="mt-auto flex items-center gap-2.5">
+          <Button onClick={onPress}>{et.viewEvent}</Button>
+          <Button variant="outline" onClick={() => downloadEventIcs(event)}>
+            <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+            {et.addToCalendar}
+          </Button>
+          {canManage && (
+            <div className="ml-auto">
+              <AdminActions onEdit={onEdit} onDelete={onDelete} />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Wide (>=1200px) agenda row: large date block, 168px thumb, title + snippet, time + place, admin actions. */
+export function EventRowWide({ event, isNext, isPast, onPress, canManage, onEdit, onDelete }: EventRowProps) {
+  const dateLines = buildDateLines(event.startAt, event.endAt);
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-[64px_168px_minmax(0,1fr)_220px_auto] items-center gap-5 border-b border-border px-4 py-4 last:border-b-0",
+        isPast && "opacity-60",
+      )}
+    >
+      <button type="button" onClick={onPress} className="col-span-4 grid grid-cols-subgrid items-center text-left">
+        <DateBlock startAt={event.startAt} isNext={isNext} size="large" />
+        <EventThumb id={event.id} category={event.category} imageUrl={event.imageUrl} className="h-24 w-[168px] rounded-xl" />
+        <div className="min-w-0">
+          <div className="truncate text-base font-semibold text-foreground">{event.title}</div>
+          {event.description && (
+            <div className="mt-0.5 truncate text-[13px] text-muted-foreground">{event.description}</div>
+          )}
+        </div>
+        <div className="min-w-0 text-[13px]">
+          <div className="truncate text-foreground">{dateLines?.times ?? ""}</div>
+          {event.locationName && <div className="truncate text-muted-foreground">{event.locationName}</div>}
+        </div>
+      </button>
+      {canManage ? <AdminActions onEdit={onEdit} onDelete={onDelete} /> : <span />}
     </div>
   );
 }

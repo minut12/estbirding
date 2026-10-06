@@ -43,6 +43,8 @@ export const et = {
   adminModeOn: "Admin režiim: sees",
   adminModeOff: "Admin režiim: väljas (admin rolli vaja)",
   addToCalendar: "Lisa kalendrisse",
+  nextEvent: "Järgmine",
+  viewEvent: "Vaata üritust",
   openOnMap: "Ava kaardil",
   openOriginal: "Ava algallikas",
   eventLink: {

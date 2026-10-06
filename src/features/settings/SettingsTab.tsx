@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { clearAppCaches, fullReset, doSoftReload, doHardReload, type ResetReport } from '@/lib/cache-reset';
 import { APP_VERSION } from '@/lib/version';
 import {
-  Trash2, RotateCcw, LogOut, Users, MapPin, Bird, Rss, Activity, LifeBuoy, ChevronRight,
+  Trash2, RotateCcw, LogOut, Users, MapPin, Bird, Rss, Activity, LifeBuoy, ChevronRight, Wrench,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -46,7 +46,7 @@ import {
   resolveProxyBase,
   setStoredProxyBase,
 } from '@/config/proxyEndpoint';
-import { SUPABASE_KEY, isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
+import { SUPABASE_KEY, getSupabaseConfigSource, isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 import { broadcastGpsConfigToMapIframes } from '@/config/gpsConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
@@ -1003,7 +1003,46 @@ export default function SettingsTab() {
     );
   };
   const renderSettingsSpeciesPrediction = () => <SpeciesPredictionSettings />;
-  const renderSettingsEventLog = () => <EventLog />;
+  const renderSettingsEventLog = () => (
+    <div className="flex flex-col gap-[22px]">
+      <SettingsSection label="Teavitused selles seadmes">
+        <NotificationSettingsCard variant="status" />
+      </SettingsSection>
+
+      <SettingsSection label={'S\u00fcndmuste logi'}>
+        <EventLog />
+      </SettingsSection>
+
+      <SettingsSection label="Arendaja">
+        <div className={SETTINGS_GROUP_CLASS}>
+          <div className={SETTINGS_ROW_CLASS}>
+            <IconTile icon={Wrench} variant="muted" />
+            <RowText
+              title={'Arendaja re\u017eiim'}
+              sub={
+                <>
+                  <div>{'Supabase\'i asendus ja admin-v\u00f5ti'}</div>
+                  {getSupabaseConfigSource() === 'override' && (
+                    <div className="text-amber-700 dark:text-amber-400">{'Supabase\'i asendus on aktiivne'}</div>
+                  )}
+                </>
+              }
+            />
+            <Switch
+              checked={devMode}
+              onCheckedChange={(v) => { setDeveloperModeEnabled(v); setDevMode(v); }}
+              aria-label={'Arendaja re\u017eiim'}
+            />
+          </div>
+        </div>
+        {devMode && (
+          <div className="mt-3">
+            <DeveloperSettings />
+          </div>
+        )}
+      </SettingsSection>
+    </div>
+  );
 
   const renderDebugLite = () => (
     <>
@@ -1135,8 +1174,6 @@ export default function SettingsTab() {
         </button>
       </div>
 
-      {devMode && <DeveloperSettings />}
-
       <p className="text-center text-xs text-muted-foreground cursor-default select-none" onClick={onVersionTap}>
         EstBirds &middot; versioon {APP_VERSION}
       </p>
@@ -1150,7 +1187,7 @@ export default function SettingsTab() {
     if (settingsPage === 'translations') return <>{renderSettingsHeader('Tõlge')}{renderSettingsTranslations()}</>;
     if (settingsPage === 'species') return <>{renderSettingsHeader('Liigid')}{renderSettingsSpecies()}</>;
     if (settingsPage === 'species_prediction') return <>{renderSettingsHeader('Species Prediction & Research')}{renderSettingsSpeciesPrediction()}</>;
-    if (settingsPage === 'event_log') return <>{renderSettingsHeader('Sündmuste logi')}{renderSettingsEventLog()}</>;
+    if (settingsPage === 'event_log') return <>{renderSettingsHeader('Diagnostika')}{renderSettingsEventLog()}</>;
     return renderSettingsHome();
   };
 

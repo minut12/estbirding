@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { getLog, clearLog, log } from '@/lib/eventLog';
 import { Button } from '@/components/ui/button';
+import { RotateCw } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function EventLog() {
   const [text, setText] = useState(getLog());
@@ -9,10 +11,10 @@ export default function EventLog() {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
-      alert('Kopeeritud!');
+      toast.success('Kopeeritud');
     } catch {
       const el = document.getElementById('eventLogText') as HTMLTextAreaElement | null;
-      if (el) { el.select(); document.execCommand('copy'); alert('Kopeeritud!'); }
+      if (el) { el.select(); document.execCommand('copy'); toast.success('Kopeeritud'); }
     }
   };
 
@@ -24,7 +26,7 @@ export default function EventLog() {
 
   const diagnostics = [
     {
-      label: '🔔 Push keys',
+      label: 'Push-v\u00f5tmed',
       action: async () => {
         try {
           if (!('serviceWorker' in navigator)) return log('❌ SW not supported');
@@ -39,7 +41,7 @@ export default function EventLog() {
       },
     },
     {
-      label: '🔕 Notify count',
+      label: 'Teavitatavad liigid',
       action: () => {
         try {
           const bm = JSON.parse(localStorage.getItem('bm_notify_species') || '[]');
@@ -51,7 +53,7 @@ export default function EventLog() {
       },
     },
     {
-      label: '☁️ Cloud notify',
+      label: 'Pilve teavitused',
       action: async () => {
         try {
           const r = await fetch('https://rfjhrosxbaihyrnbmmbl.supabase.co/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json?t=' + Date.now());
@@ -63,7 +65,7 @@ export default function EventLog() {
       },
     },
     {
-      label: '📸 Snapshot status',
+      label: 'Rariliini hetkt\u00f5mmis',
       action: () => {
         try {
           const pts = JSON.parse(localStorage.getItem('bm_rari_points') || '{}');
@@ -75,7 +77,7 @@ export default function EventLog() {
       },
     },
     {
-      label: '🔐 Permission',
+      label: 'Load',
       action: () => {
         try {
           const perm = typeof Notification !== 'undefined' ? Notification.permission : 'unavailable';
@@ -90,7 +92,7 @@ export default function EventLog() {
       },
     },
     {
-      label: '🗄️ DB subscriptions',
+      label: 'DB tellimused',
       action: async () => {
         try {
           const { supabase } = await import('@/config/supabaseClient');
@@ -104,7 +106,7 @@ export default function EventLog() {
       },
     },
     {
-      label: '📋 Insert sub SQL',
+      label: 'Tellimuse SQL',
       action: async () => {
         try {
           if (!('serviceWorker' in navigator)) return log('❌ No SW');
@@ -119,49 +121,45 @@ export default function EventLog() {
         } catch (e: any) { log('❌ ' + (e?.message || e)); }
       },
     },
-    {
-      label: '🧹 Clear log',
-      action: () => {
-        clearLog();
-        log('🧹 Log cleared');
-      },
-    },
   ];
+
+  const clearAll = () => {
+    clearLog();
+    log('Log cleared');
+    refresh();
+  };
 
   return (
     <div className="space-y-3">
-      <h3 className="font-semibold">📋 Sündmuste logi</h3>
-
-      <div className="space-y-2">
-        <h4 className="text-sm font-medium">🔧 Diagnostika</h4>
-        <div className="grid grid-cols-2 gap-2">
-          {diagnostics.map(d => (
-            <Button
-              key={d.label}
-              variant="outline"
-              size="sm"
-              className="text-xs justify-start h-auto min-h-[44px] py-2 px-3"
-              onClick={() => { try { d.action(); } catch {} setTimeout(refresh, 300); }}
-            >
-              {d.label}
-            </Button>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex gap-2 flex-wrap">
-        <Button size="sm" onClick={copy}>Kopeeri</Button>
-        <Button size="sm" variant="outline" onClick={share}>Jaga</Button>
-        <Button size="sm" variant="outline" onClick={refresh}>Värskenda</Button>
+      <div className="flex flex-wrap gap-2">
+        {diagnostics.map(d => (
+          <Button
+            key={d.label}
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => { try { d.action(); } catch {} setTimeout(refresh, 300); }}
+          >
+            {d.label}
+          </Button>
+        ))}
       </div>
 
       <textarea
         id="eventLogText"
         readOnly
         value={text}
-        className="w-full h-64 text-xs font-mono bg-gray-50 border rounded-lg p-2 resize-y"
-        style={{ fontSize: '11px', lineHeight: '1.4' }}
+        className="w-full rounded-[10px] bg-neutral-900 text-neutral-100 font-mono text-[12px] leading-[1.6] h-60 p-3 border-0 resize-y"
       />
+
+      <div className="flex gap-2 flex-wrap items-center">
+        <Button size="sm" onClick={copy}>Kopeeri</Button>
+        <Button size="sm" variant="outline" onClick={share}>Jaga</Button>
+        <Button size="sm" variant="outline" onClick={clearAll}>{'T\u00fchjenda'}</Button>
+        <Button size="sm" variant="outline" className="ml-auto h-8 w-8 p-0" onClick={refresh} aria-label={'V\u00e4rskenda'}>
+          <RotateCw className="h-4 w-4" />
+        </Button>
+      </div>
       <p className="text-xs text-muted-foreground">
         Kopeeri ja kleebi Claude'ile. Viimased 150 sündmust.
       </p>

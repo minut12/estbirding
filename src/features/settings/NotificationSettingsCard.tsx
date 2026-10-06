@@ -27,8 +27,62 @@ interface TestPushResponse {
   error?: string;
 }
 
+type StatusTone = 'ok' | 'bad' | 'warn' | 'muted';
+type SwStatus = 'pending' | 'active' | 'missing';
+
+interface StatusValue {
+  text: string;
+  tone: StatusTone;
+}
+
+const STATUS_TONE_CLASS: Record<StatusTone, string> = {
+  ok: 'text-primary',
+  bad: 'text-destructive',
+  warn: 'text-amber-700 dark:text-amber-400',
+  muted: 'text-muted-foreground',
+};
+
+function permissionStatus(): StatusValue {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return { text: 'Puudub', tone: 'muted' };
+  }
+  if (Notification.permission === 'granted') return { text: 'Antud', tone: 'ok' };
+  if (Notification.permission === 'denied') return { text: 'Keelatud', tone: 'bad' };
+  return { text: 'K\u00fcsimata', tone: 'muted' };
+}
+
+function swStatusValue(status: SwStatus): StatusValue {
+  if (status === 'pending') return { text: 'Kontrollin...', tone: 'muted' };
+  if (status === 'active') return { text: 'T\u00f6\u00f6tab', tone: 'ok' };
+  return { text: 'Puudub', tone: 'bad' };
+}
+
+function dbStatusValue(status: DbStatus): StatusValue {
+  if (status === 'present') return { text: 'Olemas', tone: 'ok' };
+  if (status === 'missing') return { text: 'Puudub', tone: 'bad' };
+  if (status === 'needs-reenable') return { text: 'Vajab uuesti sissel\u00fclitamist', tone: 'warn' };
+  return { text: 'Kontrollin...', tone: 'muted' };
+}
+
+interface StatusRowProps {
+  label: string;
+  value: StatusValue;
+}
+
+function StatusRow({ label, value }: StatusRowProps) {
+  return (
+    <div className="min-h-[44px] px-3.5 py-2 flex items-center justify-between gap-3">
+      <span className="text-sm text-foreground">{label}</span>
+      <span className={`inline-flex items-center gap-1.5 text-sm ${STATUS_TONE_CLASS[value.tone]}`}>
+        <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+        {value.text}
+      </span>
+    </div>
+  );
+}
+
 export interface NotificationSettingsCardProps {
-  variant?: 'card' | 'row';
+  variant?: 'card' | 'row' | 'status';
 }
 
 export default function NotificationSettingsCard({ variant = 'card' }: NotificationSettingsCardProps = {}) {
@@ -37,6 +91,7 @@ export default function NotificationSettingsCard({ variant = 'card' }: Notificat
   const [endpoint, setEndpoint] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [swStatus, setSwStatus] = useState<SwStatus>('pending');
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -45,6 +100,26 @@ export default function NotificationSettingsCard({ variant = 'card' }: Notificat
       mountedRef.current = false;
     };
   }, []);
+
+  // UI-only probe for the 'status' variant: is a service worker registered?
+  useEffect(() => {
+    if (variant !== 'status') return;
+    let active = true;
+    if (!('serviceWorker' in navigator)) {
+      setSwStatus('missing');
+      return;
+    }
+    navigator.serviceWorker.getRegistration()
+      .then((registration) => {
+        if (active) setSwStatus(registration ? 'active' : 'missing');
+      })
+      .catch(() => {
+        if (active) setSwStatus('missing');
+      });
+    return () => {
+      active = false;
+    };
+  }, [variant]);
 
   // Reconcile first, then read back the row — so the status line reports the
   // state we just repaired rather than the one we arrived in.
@@ -122,6 +197,28 @@ export default function NotificationSettingsCard({ variant = 'card' }: Notificat
   const isSubscribed = state.status === 'subscribed';
   const isDenied = state.status === 'denied';
   const isLoading = state.status === 'unknown';
+
+  if (variant === 'status') {
+    return (
+      <div className="rounded-[14px] border border-border bg-card overflow-hidden divide-y divide-border">
+        <StatusRow label="Brauseri luba" value={permissionStatus()} />
+        <StatusRow label="Service worker" value={swStatusValue(swStatus)} />
+        <StatusRow label="Tellimus andmebaasis" value={dbStatusValue(dbStatus)} />
+        <div className="px-3.5 py-3 space-y-2">
+          <Button
+            variant="outline"
+            onClick={sendTestPush}
+            disabled={sending || dbStatus !== 'present'}
+          >
+            {sending ? 'Saadan\u2026' : 'Saada testteavitus'}
+          </Button>
+          {testResult && (
+            <p className="text-sm text-muted-foreground break-words">{testResult}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (variant === 'row') {
     return (

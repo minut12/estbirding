@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ArrowLeft, CalendarDays, CalendarPlus, Link2, MapPin, Pencil, Trash2, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { et, formatEventCountdown } from "@/localization/et";
@@ -95,24 +95,28 @@ function hasUsableCoords(lat: number, lng: number): boolean {
 }
 
 const MIN_WIDTH_901 = "(min-width: 901px)";
+const MIN_WIDTH_1200 = "(min-width: 1200px)";
 
-function subscribeMinWidth901(callback: () => void): () => void {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
-  const mql = window.matchMedia(MIN_WIDTH_901);
-  mql.addEventListener("change", callback);
-  return () => mql.removeEventListener("change", callback);
+function hasMatchMedia(): boolean {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function";
 }
 
-function getMinWidth901Snapshot(): boolean {
-  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(MIN_WIDTH_901).matches;
-}
-
-function getMinWidth901ServerSnapshot(): boolean {
+function getServerMediaSnapshot(): boolean {
   return false;
 }
 
-function useMinWidth901(): boolean {
-  return useSyncExternalStore(subscribeMinWidth901, getMinWidth901Snapshot, getMinWidth901ServerSnapshot);
+function useMediaQuery(query: string): boolean {
+  const subscribe = useCallback(
+    (callback: () => void): (() => void) => {
+      if (!hasMatchMedia()) return () => {};
+      const mql = window.matchMedia(query);
+      mql.addEventListener("change", callback);
+      return () => mql.removeEventListener("change", callback);
+    },
+    [query],
+  );
+  const getSnapshot = useCallback((): boolean => hasMatchMedia() && window.matchMedia(query).matches, [query]);
+  return useSyncExternalStore(subscribe, getSnapshot, getServerMediaSnapshot);
 }
 
 function buildMapUrl(event: EventItem): string | null {
@@ -155,11 +159,12 @@ interface MetaRowProps {
   icon: LucideIcon;
   primary: ReactNode;
   secondary: ReactNode;
+  className?: string;
 }
 
-function MetaRow({ icon: Icon, primary, secondary }: MetaRowProps) {
+function MetaRow({ icon: Icon, primary, secondary, className }: MetaRowProps) {
   return (
-    <div className="flex items-start gap-3 text-sm">
+    <div className={cn("flex items-start gap-3 text-sm", className)}>
       <Icon className="mt-px h-[18px] w-[18px] shrink-0 text-muted-foreground" strokeWidth={1.8} aria-hidden="true" />
       <div className="min-w-0">
         <div className="break-words text-foreground">{primary}</div>
@@ -248,8 +253,9 @@ export function EventDetailsScreen({ event, onBack, canManage, onEdit, onDelete 
   const mapUrl = (hasMap || locationName) ? buildMapUrl(event) : null;
   const link = parseEventUrl(event.url);
   const description = event.description?.trim() ?? "";
-  const isDesktop = useMinWidth901();
-  const showDesktopMap = isDesktop && hasMap;
+  const isDesktop = useMediaQuery(MIN_WIDTH_901);
+  const isWide = useMediaQuery(MIN_WIDTH_1200) && hasMap;
+  const showDesktopMap = isDesktop && hasMap && !isWide;
   const showPhoneMap = !isDesktop && hasMap;
 
   const handleAddToCalendar = () => downloadEventIcs(event);
@@ -271,76 +277,52 @@ export function EventDetailsScreen({ event, onBack, canManage, onEdit, onDelete 
       </button>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div
-          className={showDesktopMap
-            ? "mx-auto max-w-[960px] grid grid-cols-[minmax(0,1fr)_300px] gap-7 items-start px-6 pt-5"
-            : "min-[901px]:mx-auto min-[901px]:max-w-[680px] min-[901px]:px-5 min-[901px]:pt-5"}
-        >
-          <MaybeWrap when={showDesktopMap} className="min-w-0">
-            {showHero && (
-              <div className="relative aspect-[4/3] overflow-hidden min-[901px]:aspect-video min-[901px]:rounded-2xl">
-                <img
-                  src={getProxiedImageUrl(imageUrl, resolveProxyBase())}
-                  alt={event.title}
-                  onError={() => setFailedImageUrl(imageUrl)}
-                  className="h-full w-full object-cover"
-                />
-                <SourcePill
-                  category={event.category}
-                  className="absolute bottom-3 left-3.5 bg-white/[0.92] text-[hsl(150_10%_15%)]"
-                />
-              </div>
-            )}
-
-            <div className="flex flex-col gap-3.5 bg-card p-4 min-[901px]:px-0">
-              {!showHero && (
-                <SourcePill category={event.category} className="self-start border border-border bg-muted text-foreground" />
-              )}
-
-              <h1 className="text-xl font-semibold leading-tight text-foreground text-balance">{event.title}</h1>
-
-              {dateLines && <MetaRow icon={CalendarDays} primary={dateLines.primary} secondary={dateLines.secondary} />}
-
-              {locationName && (
-                <MetaRow
-                  icon={MapPin}
-                  primary={locationName}
-                  secondary={mapUrl ? (
-                    <a href={mapUrl} target="_blank" rel="noopener noreferrer" className={META_LINK_CLASS}>
-                      {et.openOnMap}
-                    </a>
-                  ) : null}
-                />
-              )}
-
-              {showPhoneMap && <EventMap event={event} mapUrl={mapUrl} className="aspect-video" showChip={false} />}
-
-              {link && (
-                <MetaRow
-                  icon={Link2}
-                  primary={link.host}
-                  secondary={(
-                    <a href={link.href} target="_blank" rel="noopener noreferrer" className={META_LINK_CLASS}>
-                      {et.openOriginal}
-                    </a>
-                  )}
-                />
-              )}
-
-              {description && (
-                <p className="max-w-[65ch] whitespace-pre-line text-[15px] leading-relaxed text-foreground">
-                  {description}
-                </p>
-              )}
-
-              {!showDesktopMap && (
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleAddToCalendar}
-                    className={cn(!link && "col-span-2")}
-                  >
+        {isWide ? (
+          <>
+            <div className="border-b border-border bg-gradient-to-b from-muted to-card">
+              <div className="mx-auto flex max-w-[1320px] items-end justify-between gap-10 px-12 pb-7 pt-9">
+                <div className="flex min-w-0 flex-col gap-3.5">
+                  <SourcePill category={event.category} className="self-start border border-border bg-card text-foreground" />
+                  <h1 className="text-[34px] font-semibold leading-[1.1] tracking-tight text-foreground text-balance">
+                    {event.title}
+                  </h1>
+                  <div className="mt-1 flex flex-wrap gap-x-11 gap-y-3">
+                    {dateLines && (
+                      <MetaRow
+                        icon={CalendarDays}
+                        primary={dateLines.primary}
+                        secondary={dateLines.secondary}
+                        className="text-[15px]"
+                      />
+                    )}
+                    {locationName && (
+                      <MetaRow
+                        icon={MapPin}
+                        primary={locationName}
+                        secondary={mapUrl ? (
+                          <a href={mapUrl} target="_blank" rel="noopener noreferrer" className={META_LINK_CLASS}>
+                            {et.openOnMap}
+                          </a>
+                        ) : null}
+                        className="text-[15px]"
+                      />
+                    )}
+                    {link && (
+                      <MetaRow
+                        icon={Link2}
+                        primary={link.host}
+                        secondary={(
+                          <a href={link.href} target="_blank" rel="noopener noreferrer" className={META_LINK_CLASS}>
+                            {et.openOriginal}
+                          </a>
+                        )}
+                        className="text-[15px]"
+                      />
+                    )}
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2.5">
+                  <Button type="button" variant="outline" onClick={handleAddToCalendar}>
                     <CalendarPlus aria-hidden="true" />
                     {et.addToCalendar}
                   </Button>
@@ -352,34 +334,159 @@ export function EventDetailsScreen({ event, onBack, canManage, onEdit, onDelete 
                     </Button>
                   )}
                 </div>
-              )}
-
-              {canManage && <AdminRow onEdit={onEdit} onDelete={handleDelete} />}
+              </div>
             </div>
-          </MaybeWrap>
 
-          {showDesktopMap && (
-            <aside className="sticky top-4 flex flex-col gap-3">
-              <EventMap event={event} mapUrl={mapUrl} className="aspect-[4/3]" showChip />
-              <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-3.5">
-                {dateLines && (
-                  <MetaRow icon={CalendarDays} primary={dateLines.primary} secondary={locationName || null} />
+            <div className="mx-auto grid max-w-[1320px] grid-cols-[minmax(0,1fr)_480px] items-start gap-16 px-12 py-8">
+              <div className="flex min-w-0 flex-col gap-5">
+                {showHero && (
+                  <div className="aspect-video max-w-[720px] overflow-hidden rounded-2xl">
+                    <img
+                      src={getProxiedImageUrl(imageUrl, resolveProxyBase())}
+                      alt={event.title}
+                      onError={() => setFailedImageUrl(imageUrl)}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
                 )}
-                <Button type="button" variant="outline" onClick={handleAddToCalendar} className="w-full">
-                  <CalendarPlus aria-hidden="true" />
-                  {et.addToCalendar}
-                </Button>
-                {link && (
-                  <Button asChild className="w-full">
-                    <a href={link.href} target="_blank" rel="noopener noreferrer">
-                      {et.openOriginal}
-                    </a>
-                  </Button>
+                {description && (
+                  <p className="max-w-[68ch] whitespace-pre-line text-base leading-[1.75] text-foreground">
+                    {description}
+                  </p>
+                )}
+                {canManage && (
+                  <div className="max-w-[68ch]">
+                    <AdminRow onEdit={onEdit} onDelete={handleDelete} />
+                  </div>
                 )}
               </div>
-            </aside>
-          )}
-        </div>
+              <aside className="sticky top-6 flex flex-col gap-2.5">
+                <EventMap event={event} mapUrl={mapUrl} className="aspect-[4/3] rounded-2xl" showChip />
+                {(locationName || mapUrl) && (
+                  <p className="text-[13px] text-muted-foreground">
+                    {locationName}
+                    {locationName && mapUrl && et.metaSeparator}
+                    {mapUrl && (
+                      <a href={mapUrl} target="_blank" rel="noopener noreferrer" className={META_LINK_CLASS}>
+                        {et.openOnMap}
+                      </a>
+                    )}
+                  </p>
+                )}
+              </aside>
+            </div>
+          </>
+        ) : (
+          <div
+            className={showDesktopMap
+              ? "mx-auto max-w-[960px] grid grid-cols-[minmax(0,1fr)_300px] gap-7 items-start px-6 pt-5"
+              : "min-[901px]:mx-auto min-[901px]:max-w-[680px] min-[901px]:px-5 min-[901px]:pt-5"}
+          >
+            <MaybeWrap when={showDesktopMap} className="min-w-0">
+              {showHero && (
+                <div className="relative aspect-[4/3] overflow-hidden min-[901px]:aspect-video min-[901px]:rounded-2xl">
+                  <img
+                    src={getProxiedImageUrl(imageUrl, resolveProxyBase())}
+                    alt={event.title}
+                    onError={() => setFailedImageUrl(imageUrl)}
+                    className="h-full w-full object-cover"
+                  />
+                  <SourcePill
+                    category={event.category}
+                    className="absolute bottom-3 left-3.5 bg-white/[0.92] text-[hsl(150_10%_15%)]"
+                  />
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3.5 bg-card p-4 min-[901px]:px-0">
+                {!showHero && (
+                  <SourcePill category={event.category} className="self-start border border-border bg-muted text-foreground" />
+                )}
+
+                <h1 className="text-xl font-semibold leading-tight text-foreground text-balance">{event.title}</h1>
+
+                {dateLines && <MetaRow icon={CalendarDays} primary={dateLines.primary} secondary={dateLines.secondary} />}
+
+                {locationName && (
+                  <MetaRow
+                    icon={MapPin}
+                    primary={locationName}
+                    secondary={mapUrl ? (
+                      <a href={mapUrl} target="_blank" rel="noopener noreferrer" className={META_LINK_CLASS}>
+                        {et.openOnMap}
+                      </a>
+                    ) : null}
+                  />
+                )}
+
+                {showPhoneMap && <EventMap event={event} mapUrl={mapUrl} className="aspect-video" showChip={false} />}
+
+                {link && (
+                  <MetaRow
+                    icon={Link2}
+                    primary={link.host}
+                    secondary={(
+                      <a href={link.href} target="_blank" rel="noopener noreferrer" className={META_LINK_CLASS}>
+                        {et.openOriginal}
+                      </a>
+                    )}
+                  />
+                )}
+
+                {description && (
+                  <p className="max-w-[65ch] whitespace-pre-line text-[15px] leading-relaxed text-foreground">
+                    {description}
+                  </p>
+                )}
+
+                {!showDesktopMap && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleAddToCalendar}
+                      className={cn(!link && "col-span-2")}
+                    >
+                      <CalendarPlus aria-hidden="true" />
+                      {et.addToCalendar}
+                    </Button>
+                    {link && (
+                      <Button asChild>
+                        <a href={link.href} target="_blank" rel="noopener noreferrer">
+                          {et.openOriginal}
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {canManage && <AdminRow onEdit={onEdit} onDelete={handleDelete} />}
+              </div>
+            </MaybeWrap>
+
+            {showDesktopMap && (
+              <aside className="sticky top-4 flex flex-col gap-3">
+                <EventMap event={event} mapUrl={mapUrl} className="aspect-[4/3]" showChip />
+                <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-3.5">
+                  {dateLines && (
+                    <MetaRow icon={CalendarDays} primary={dateLines.primary} secondary={locationName || null} />
+                  )}
+                  <Button type="button" variant="outline" onClick={handleAddToCalendar} className="w-full">
+                    <CalendarPlus aria-hidden="true" />
+                    {et.addToCalendar}
+                  </Button>
+                  {link && (
+                    <Button asChild className="w-full">
+                      <a href={link.href} target="_blank" rel="noopener noreferrer">
+                        {et.openOriginal}
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </aside>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

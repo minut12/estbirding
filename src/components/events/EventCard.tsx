@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react
 import { Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { et, formatEventCountdown, formatEventMonthAbbr } from "@/localization/et";
-import type { EventItem } from "@/data/events";
+import type { EventCategory, EventItem } from "@/data/events";
+import { BirdPlaceholder } from "./BirdPlaceholder";
 import { getProxiedImageUrl } from "@/features/news/newsImage";
 import { resolveProxyBase } from "@/config/proxyEndpoint";
 
@@ -117,13 +118,15 @@ function AdminActions({ onEdit, onDelete }: AdminActionsProps) {
 }
 
 interface ThumbProps {
+  id: string;
+  category: EventCategory;
   imageUrl: string;
   className: string;
 }
 
-function EventThumb({ imageUrl, className }: ThumbProps) {
+function EventThumb({ id, category, imageUrl, className }: ThumbProps) {
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  if (!imageUrl || failedUrl === imageUrl) return <div className={cn("shrink-0 bg-muted", className)} />;
+  if (!imageUrl || failedUrl === imageUrl) return <BirdPlaceholder id={id} category={category} className={className} />;
   return (
     <img
       src={getProxiedImageUrl(imageUrl, resolveProxyBase())}
@@ -162,7 +165,7 @@ export function EventRow({ event, isNext, isPast, onPress, canManage, onEdit, on
     <div className={cn("flex items-center gap-2 px-4 py-3", isPast && "opacity-60")}>
       <button type="button" onClick={onPress} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         <DateBlock startAt={event.startAt} isNext={isNext} />
-        <EventThumb imageUrl={event.imageUrl} className="h-12 w-12 rounded-md" />
+        <EventThumb id={event.id} category={event.category} imageUrl={event.imageUrl} className="h-12 w-12 rounded-md" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-foreground">{event.title}</div>
           <div className="mt-0.5 truncate text-xs text-muted-foreground">{buildMeta(event)}</div>
@@ -187,7 +190,7 @@ export function EventFeaturedCard({ event, onPress, canManage, onEdit, onDelete 
     <div className="my-2 flex items-center gap-2 rounded-2xl border border-border bg-card p-3">
       <button type="button" onClick={onPress} className="flex min-w-0 flex-1 items-center gap-4 text-left">
         <DateBlock startAt={event.startAt} isNext />
-        <EventThumb imageUrl={event.imageUrl} className="h-[76px] w-[112px] rounded-xl" />
+        <EventThumb id={event.id} category={event.category} imageUrl={event.imageUrl} className="h-[76px] w-[112px] rounded-xl" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-base font-semibold text-foreground">{event.title}</div>
           <div className="mt-0.5 truncate text-xs text-muted-foreground">{buildMeta(event)}</div>

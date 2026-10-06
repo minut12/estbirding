@@ -11530,6 +11530,9 @@ window.toggleNotification = async function(speciesName) {
   var cached = readCache();
   if(cached) setData(cached);
 
+  /* P95: one retry 20 s after a failed fetch (RPC used to time out for anon). */
+  var retried = false;
+  function retryOnce(){ if(retried) return; retried = true; setTimeout(function(){ window.__randeajadLoad(); }, 20000); }
   window.__randeajadLoad = async function(){
     if(!mx) loadMax();
     if(hist) return;
@@ -11541,13 +11544,13 @@ window.toggleNotification = async function(speciesName) {
         headers: { 'Content-Type': 'application/json', 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey },
         body: '{}'
       });
-      if(!res.ok){ console.warn('[randeajad] HTTP', res.status); return; }
+      if(!res.ok){ console.warn('[randeajad] HTTP', res.status); retryOnce(); return; }
       var h = await res.json();
       if(!h || typeof h !== 'object' || Array.isArray(h)){ console.warn('[randeajad] unexpected payload'); return; }
       setData(h);
       writeCache(h);
       if(typeof render === 'function') render();
-    }catch(e){ console.warn('[randeajad]', e); }
+    }catch(e){ console.warn('[randeajad]', e); retryOnce(); }
   };
 
   /* Returns {key, pairs} with the payload key actually matched (direct hit or via the slug map), or null. */

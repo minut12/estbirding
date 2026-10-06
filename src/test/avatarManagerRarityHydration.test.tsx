@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 
 vi.mock('sonner', () => ({
@@ -72,7 +72,7 @@ const STORED_META: Record<string, { rarityLevel: 'none' | 'rare' | 'super' | 'me
 };
 
 async function selectSpecies(name: string) {
-  const item = await screen.findByText(name);
+  const item = await within(await screen.findByTestId('species-list')).findByText(name);
   fireEvent.click(item);
   return waitFor(() => {
     const el = document.getElementById('rarityLevel') as HTMLSelectElement | null;
@@ -138,17 +138,19 @@ describe('AvatarManager rarity hydration', () => {
   it('hydrates stored values when a different species is selected after an edit', async () => {
     render(<AvatarManager scope={USA_CO_SCOPE} />);
 
-    const raritySelect = await selectSpecies('American Crow');
+    let raritySelect = await selectSpecies('American Crow');
     expect(raritySelect.value).toBe('none');
     fireEvent.change(raritySelect, { target: { value: 'rare' } });
     expect(raritySelect.value).toBe('rare');
 
     // Selecting another species is a real selection change → hydrate its stored meta.
-    await selectSpecies('Blue Jay');
+    fireEvent.click(screen.getByRole('button', { name: /Liigid/ }));
+    raritySelect = await selectSpecies('Blue Jay');
     await waitFor(() => expect(raritySelect.value).toBe('super'));
 
     // Re-selecting the first species re-hydrates its stored value (unsaved edit discarded).
-    await selectSpecies('American Crow');
+    fireEvent.click(screen.getByRole('button', { name: /Liigid/ }));
+    raritySelect = await selectSpecies('American Crow');
     await waitFor(() => expect(raritySelect.value).toBe('none'));
   });
 });

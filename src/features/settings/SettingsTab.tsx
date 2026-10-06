@@ -50,7 +50,7 @@ import { SUPABASE_KEY, isDeveloperModeEnabled, setDeveloperModeEnabled } from '@
 import { broadcastGpsConfigToMapIframes } from '@/config/gpsConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
-type SettingsPage = 'home' | 'news' | 'translations' | 'species' | 'rariliin' | 'species_prediction' | 'event_log';
+type SettingsPage = 'home' | 'news' | 'translations' | 'species' | 'species_prediction' | 'event_log';
 const LS_RESOLVED_PROXY_BASE = 'resolved_proxy_base_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
@@ -288,6 +288,7 @@ export default function SettingsTab() {
   const [settingsPage, setSettingsPage] = useState<SettingsPage>('home');
   const [devMode, setDevMode] = useState<boolean>(() => isDeveloperModeEnabled());
   const [devTapCount, setDevTapCount] = useState(0);
+  const [speciesScope, setSpeciesScope] = useState<'ee' | 'rariliin'>('ee');
   const [form, setForm] = useState<AppSettings>(loadSettings);
   const [confirmMode, setConfirmMode] = useState<ResetMode>(null);
   const [resetting, setResetting] = useState(false);
@@ -973,8 +974,34 @@ export default function SettingsTab() {
     </>
   );
 
-  const renderSettingsSpecies = () => <AvatarManager scope={LINNULIIGID_SCOPE} />;
-  const renderSettingsRariliin = () => <AvatarManager scope={RARILIIN_SCOPE} />;
+  const renderSettingsSpecies = () => {
+    const scope = speciesScope === 'rariliin' ? RARILIIN_SCOPE : LINNULIIGID_SCOPE;
+    const scopeOptions: ReadonlyArray<{ value: 'ee' | 'rariliin'; label: string }> = [
+      { value: 'ee', label: 'Linnuliigid (EE)' },
+      { value: 'rariliin', label: 'Rariliin' },
+    ];
+    return (
+      <>
+        <div className="flex bg-muted rounded-[10px] p-[3px] mb-4">
+          {scopeOptions.map((opt) => {
+            const isActive = speciesScope === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => setSpeciesScope(opt.value)}
+                className={`flex-1 rounded-[8px] py-1.5 text-sm ${isActive ? 'bg-card shadow-sm font-semibold text-foreground' : 'text-muted-foreground'}`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <AvatarManager key={scope.id} scope={scope} />
+      </>
+    );
+  };
   const renderSettingsSpeciesPrediction = () => <SpeciesPredictionSettings />;
   const renderSettingsEventLog = () => <EventLog />;
 
@@ -1121,8 +1148,7 @@ export default function SettingsTab() {
     if (!canManageSettings) return renderSettingsHome();
     if (settingsPage === 'news') return <>{renderSettingsHeader('Uudised')}{renderSettingsNews()}</>;
     if (settingsPage === 'translations') return <>{renderSettingsHeader('Tõlge')}{renderSettingsTranslations()}</>;
-    if (settingsPage === 'species') return <>{renderSettingsHeader('Linnuliigid')}{renderSettingsSpecies()}</>;
-    if (settingsPage === 'rariliin') return <>{renderSettingsHeader('Rariliin')}{renderSettingsRariliin()}</>;
+    if (settingsPage === 'species') return <>{renderSettingsHeader('Liigid')}{renderSettingsSpecies()}</>;
     if (settingsPage === 'species_prediction') return <>{renderSettingsHeader('Species Prediction & Research')}{renderSettingsSpeciesPrediction()}</>;
     if (settingsPage === 'event_log') return <>{renderSettingsHeader('Sündmuste logi')}{renderSettingsEventLog()}</>;
     return renderSettingsHome();

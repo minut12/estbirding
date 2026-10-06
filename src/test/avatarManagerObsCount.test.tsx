@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 
 vi.mock('sonner', () => ({
@@ -95,7 +95,7 @@ describe('AvatarManager GBIF obs-count line', () => {
   });
 
   async function selectAmericanCrow() {
-    const item = await screen.findByText('American Crow');
+    const item = await within(await screen.findByTestId('species-list')).findByText('American Crow');
     fireEvent.click(item);
   }
 
@@ -115,9 +115,9 @@ describe('AvatarManager GBIF obs-count line', () => {
   it('never leaks an obs-count field into the cloud save patch', async () => {
     render(<AvatarManager scope={USA_CO_SCOPE} />);
     await selectAmericanCrow();
-    await screen.findByRole('button', { name: 'Salvesta liigi seaded' });
+    await screen.findByRole('button', { name: 'Salvesta' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Salvesta liigi seaded' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvesta' }));
 
     await waitFor(() => expect(vi.mocked(saveSpeciesMetaToCloud)).toHaveBeenCalledTimes(1));
     const patch = vi.mocked(saveSpeciesMetaToCloud).mock.calls[0][1] as Record<string, unknown>;

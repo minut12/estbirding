@@ -1,14 +1,12 @@
-﻿import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import {
-  Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
-} from '@/components/ui/command';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { Upload, Trash2, Bird, RefreshCw, Check, Cloud, Loader2 } from 'lucide-react';
+import { Upload, Trash2, Bird, RefreshCw, Cloud, Loader2, ChevronLeft, ChevronRight, Bell } from 'lucide-react';
 import { LINNULIIGID_SCOPE, type SpeciesScopeConfig } from '@/lib/mapScope';
 import {
   getMergedAvatars, validateFile, processImage, notifyIframeUpdate,
@@ -39,6 +37,50 @@ import { fetchGbifOccurrenceCount } from '@/lib/gbifOccurrenceCount';
 import UsaRarityClassifier from '@/features/settings/UsaRarityClassifier';
 import { ET_STRINGS } from '@/lib/etStrings';
 import { normalizeUiText } from '@/lib/textNormalize';
+import { isDeveloperModeEnabled } from '@/config/supabaseConfig';
+
+type RarityLevel = 'none' | 'rare' | 'super' | 'mega';
+type MigrantMode = 'heuristic' | 'true' | 'false';
+type ListFilter = 'all' | 'nocode' | 'noavatar' | 'notify';
+type SpeciesRow = {
+  name: string;
+  avatar: string;
+  latin: string;
+  code: string;
+  rarity: RarityLevel;
+  notify: boolean;
+  migrant: MigrantMode;
+};
+
+const RARITY_OPTIONS: ReadonlyArray<{ value: RarityLevel; label: string }> = [
+  { value: 'none', label: ET_STRINGS.rarityNormal },
+  { value: 'rare', label: ET_STRINGS.rarityRare },
+  { value: 'super', label: ET_STRINGS.raritySuper },
+  { value: 'mega', label: ET_STRINGS.rarityMega },
+];
+const NOTE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: '', label: 'V\u00e4ljas' },
+  { value: 'k\u00f5ik teated', label: 'K\u00f5ik teated' },
+  { value: 'ainult haruldused', label: 'Ainult haruldused' },
+];
+const MIGRANT_OPTIONS: ReadonlyArray<{ value: MigrantMode; title: string; sub: string }> = [
+  { value: 'heuristic', title: 'Heuristika otsustab', sub: 'Vaikimisi' },
+  { value: 'true', title: 'Alati saabuja', sub: 'Talvist vaatlust ei arvestata' },
+  { value: 'false', title: 'Ei ole saabuja', sub: 'Kevadr\u00e4ndest alati v\u00e4lja j\u00e4etud' },
+];
+const MIGRANT_CHIP_LABEL: Record<MigrantMode, string> = {
+  true: 'Saabuja',
+  false: 'Ei saabu',
+  heuristic: 'Heuristika',
+};
+const LIST_FILTER_OPTIONS: ReadonlyArray<{ value: ListFilter; label: string }> = [
+  { value: 'all', label: 'K\u00f5ik' },
+  { value: 'nocode', label: 'Koodita' },
+  { value: 'noavatar', label: 'Avatarita' },
+  { value: 'notify', label: 'Teavitusega' },
+];
+const SECTION_LABEL_CLASS = 'text-[13px] font-semibold text-muted-foreground mb-2 ml-1';
+const SECTION_BODY_CLASS = 'rounded-[14px] border border-border bg-card p-3.5 space-y-3';
 
 export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: SpeciesScopeConfig }) {
   const [species, setSpecies] = useState<string[]>([]);
@@ -70,6 +112,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   const [obsCount, setObsCount] = useState<number | null>(null);
   const [obsLoading, setObsLoading] = useState(false);
   const [obsError, setObsError] = useState(false);
+  const [listFilter, setListFilter] = useState<ListFilter>('all');
   const fileRef = useRef<HTMLInputElement>(null);
   const hydratedSelectionRef = useRef<string | null>(null);
 
@@ -469,6 +512,13 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     return `${dd}.${mo}.${yyyy} ${hh}:${mm}`;
   }, []);
 
+  const handleSaveAll = useCallback(async () => {
+    if (!preview) { handleMetaSave(); return; }
+    await handleSave();
+    if (scope.id === 'rariliin') handleMetaSave();
+  }, [preview, scope, handleSave, handleMetaSave]);
+
+  const isRariliin = scope.id === 'rariliin';
   const activeKey = selected || manualKey;
   const displayUrl = preview || currentAvatar || scope.placeholderAvatarUrl;
   const hasSpecies = species.length > 0;
@@ -478,144 +528,129 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       : getScopedSpeciesMeta(selected, scope))
     : null;
 
-  const filtered = search
-    ? species.filter((s) => normalizeUiText(s).toLowerCase().includes(search.toLowerCase()))
-    : species;
+  // avatarsReady is a dep so the merged avatar cache is re-read once shared avatars load.
+  const rowData = useMemo(() => {
+    const avatars = getMergedAvatars(scope);
+    return species.map((s): SpeciesRow => {
+      const meta = scope.id === 'rariliin'
+        ? getRariliinSpeciesMeta(s, scopeMetadata)
+        : getScopedSpeciesMeta(s, scope);
+      const cloud = cloudItems[s];
+      return {
+        name: s,
+        avatar: meta.avatarUrl || avatars[s] || '',
+        latin: meta.scientificName || '',
+        code: meta.rariliinCode || '',
+        rarity: meta.rarityLevel || 'none',
+        notify: cloud?.notify === true || meta.notify === true,
+        migrant: cloud?.is_migrant === true ? 'true' : cloud?.is_migrant === false ? 'false' : 'heuristic',
+      };
+    });
+  }, [species, scope, scopeMetadata, avatarsReady, cloudItems]);
 
-  return (
-    <div className="space-y-4">
-      <h3 className="font-semibold text-foreground flex items-center gap-2">
-        <Cloud className="w-4 h-4 text-primary" />
-        {scope.displayName} {ET_STRINGS.speciesSettings.toLowerCase()}
-      </h3>
-      <p className="text-xs text-muted-foreground">{scope.id === 'rariliin' ? 'Ainult Rariliini väljad: 3+3 kood ja teate märkus.' : ET_STRINGS.sharedManaged}</p>
+  const searchNeedle = normalizeUiText(search).toLowerCase().trim();
+  const visibleRows = rowData.filter((row) => {
+    if (listFilter === 'nocode' && row.code) return false;
+    if (listFilter === 'noavatar' && row.avatar) return false;
+    if (listFilter === 'notify' && !row.notify) return false;
+    if (!searchNeedle) return true;
+    const haystack = [row.name, row.latin, isRariliin ? row.code : ''];
+    return haystack.some((value) => normalizeUiText(value).toLowerCase().includes(searchNeedle));
+  });
 
-      {hasSpecies ? (
-        <div className="space-y-1.5">
-          <Label>Vali liik</Label>
-          <Command className="border border-input rounded-md">
-            <CommandInput placeholder="Otsi liiki..." value={search} onValueChange={setSearch} />
-            <CommandList className="max-h-[400px]">
-              <CommandEmpty>Liiki ei leitud</CommandEmpty>
-              <CommandGroup>
-                {filtered.map((s) => (
-                  <CommandItem key={s} value={s} onSelect={() => { setSelected(s); setSearch(''); }} className="flex items-center gap-2">
-                    {selected === s && <Check className="w-3 h-3 text-primary" />}
-                    <span>{s}</span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          <Label htmlFor="manualSpecies">Liigi nimi (käsitsi)</Label>
-          <Input
-            id="manualSpecies"
-            placeholder="nt. Sookurg"
-            value={manualKey}
-            onChange={(e) => { setManualKey(e.target.value); setSelected(e.target.value); }}
-          />
-          <p className="text-xs text-destructive">species.json ei laadunud. Sisesta liigi nimi käsitsi.</p>
-        </div>
-      )}
+  const filterOptions = LIST_FILTER_OPTIONS.filter((opt) => isRariliin || opt.value !== 'nocode');
+  const headerLatin = isRariliin ? (selectedScopeMeta?.scientificName || '') : scientificName.trim();
+  const canRemoveCustom = isCustomSpecies(selected) && !bundledSpecies.has(normalizeUiText(selected).toLowerCase());
 
-      {/* Add new species section */}
-      <div className="flex items-center gap-2">
-        {!showAddForm ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowAddForm(true)}
-            className="text-xs"
-          >
-            + Lisa uus liik
-          </Button>
-        ) : (
-          <div className="flex items-center gap-2 w-full">
-            <Input
-              placeholder="Uue liigi nimi, nt. Sookurg"
-              value={newSpeciesName}
-              onChange={(e) => setNewSpeciesName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleAddSpecies(); }}
-              className="text-sm"
-              autoFocus
-            />
-            <Button size="sm" onClick={handleAddSpecies}>Lisa</Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => { setShowAddForm(false); setNewSpeciesName(''); }}
+  const renderRarityGrid = () => (
+    <>
+      <div role="radiogroup" aria-label={ET_STRINGS.rarityLabel} className="grid grid-cols-2 gap-2">
+        {RARITY_OPTIONS.map((opt) => {
+          const isActive = rarityLevel === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={isActive}
+              onClick={() => setRarityLevel(opt.value)}
+              className={`rounded-[10px] border px-3 py-2 text-sm text-left ${isActive ? 'border-primary bg-accent font-semibold' : 'border-border bg-card'}`}
             >
-              Tühista
-            </Button>
-          </div>
-        )}
+              {opt.label}
+            </button>
+          );
+        })}
       </div>
+      <select
+        id="rarityLevel"
+        className="sr-only"
+        aria-hidden="true"
+        tabIndex={-1}
+        value={rarityLevel}
+        onChange={(e) => setRarityLevel(e.target.value as 'none' | 'rare' | 'super' | 'mega')}
+      >
+        {RARITY_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+      </select>
+    </>
+  );
 
-      {activeKey && (
-        <>
-          <Separator />
-          <div className="flex items-center gap-3">
-            <Avatar className="w-16 h-16 border border-border">
-              <AvatarImage src={displayUrl} alt={activeKey} />
-              <AvatarFallback><Bird className="w-6 h-6 text-muted-foreground" /></AvatarFallback>
-            </Avatar>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm text-foreground truncate">{activeKey}</p>
-              {isCustomSpecies(selected) && !bundledSpecies.has(normalizeUiText(selected).toLowerCase()) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-destructive h-6 px-2"
-                  onClick={handleRemoveCustomSpecies}
+  const renderNotifyRow = () => (
+    <div className="flex items-center justify-between gap-3">
+      <Label htmlFor="speciesNotify" className="text-sm font-normal">Saada teavitus uutest vaatlustest</Label>
+      <Switch id="speciesNotify" checked={notify} onCheckedChange={(c) => setNotify(c)} />
+    </div>
+  );
+
+  const renderRariliinSections = () => (
+    <section>
+      <h3 className={SECTION_LABEL_CLASS}>Rariliin</h3>
+      <div className={SECTION_BODY_CLASS}>
+        <div className="space-y-1.5">
+          <Label htmlFor="rariliinCode">3+3 kood</Label>
+          <Input
+            id="rariliinCode"
+            placeholder="nt SAXOLA"
+            maxLength={6}
+            className="h-[52px] text-[22px] font-mono font-semibold tracking-[0.14em] uppercase border-2 border-primary text-center"
+            value={rariliinCode}
+            onChange={(e) => setRariliinCode(e.target.value)}
+          />
+          <p className="text-[13px] text-muted-foreground">Perekonna ja liigi nime kolm esimest t&auml;hte</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label>{ET_STRINGS.rarityLabel}</Label>
+          {renderRarityGrid()}
+        </div>
+        {renderNotifyRow()}
+        <div className="space-y-1.5">
+          <Label>Teate m&auml;rkus</Label>
+          <div id="notificationNote" className="flex bg-muted rounded-[10px] p-[3px]">
+            {NOTE_OPTIONS.map((opt) => {
+              const isActive = notificationNote === opt.value;
+              return (
+                <button
+                  key={opt.value || 'off'}
+                  type="button"
+                  aria-pressed={isActive}
+                  onClick={() => setNotificationNote(opt.value)}
+                  className={`flex-1 rounded-[8px] py-1.5 text-sm ${isActive ? 'bg-card shadow-sm font-semibold text-foreground' : 'text-muted-foreground'}`}
                 >
-                  <Trash2 className="w-3 h-3 mr-1" /> Eemalda liik
-                </Button>
-              )}
-              <p className="text-xs text-muted-foreground">
-                {preview ? 'Eelvaade (salvestamata)' : currentAvatar ? 'Pilves salvestatud avatar' : 'Vaikimisi / placeholder'}
-              </p>
-            </div>
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
+        </div>
+      </div>
+    </section>
+  );
 
-          <div className="space-y-2">
-            {scope.id === 'rariliin' ? (
-              <>
-                <Label htmlFor="rariliinCode">3+3 kood</Label>
-                <Input id="rariliinCode" placeholder="nt SAXOLA" value={rariliinCode} onChange={(e) => setRariliinCode(e.target.value)} />
-                <Label htmlFor="notificationNote">Teate märkus</Label>
-                <select
-                  id="notificationNote"
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={notificationNote}
-                  onChange={(e) => setNotificationNote(e.target.value)}
-                >
-                  <option value="">Väljas</option>
-                  <option value="kõik teated">Kõik teated</option>
-                  <option value="ainult haruldused">Ainult haruldused</option>
-                </select>
-              </>
-            ) : selectedScopeMeta && (
-              <div className="rounded-md border border-border bg-muted/20 p-3 text-xs space-y-1">
-                {selectedScopeMeta.rariliinCode && <div>3+3 kood: {selectedScopeMeta.rariliinCode}</div>}
-                {selectedScopeMeta.notificationNote && <div>Teate märkus: {selectedScopeMeta.notificationNote}</div>}
-              </div>
-            )}
-            <Label htmlFor="rarityLevel">{ET_STRINGS.rarityLabel}</Label>
-            <select
-              id="rarityLevel"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={rarityLevel}
-              onChange={(e) => setRarityLevel(e.target.value as 'none' | 'rare' | 'super' | 'mega')}
-            >
-              <option value="none">{ET_STRINGS.rarityNormal}</option>
-              <option value="rare">{ET_STRINGS.rarityRare}</option>
-              <option value="super">{ET_STRINGS.raritySuper}</option>
-              <option value="mega">{ET_STRINGS.rarityMega}</option>
-            </select>
-            {scope.id !== 'rariliin' && (<>
+  const renderSpeciesSections = () => (
+    <>
+      <section>
+        <h3 className={SECTION_LABEL_CLASS}>Nimed ja koodid</h3>
+        <div className={SECTION_BODY_CLASS}>
+          <div className="space-y-1.5">
             <Label htmlFor="ebirdCode">eBird speciesCode</Label>
             <Input
               id="ebirdCode"
@@ -623,6 +658,8 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
               value={ebirdCode}
               onChange={(e) => setEbirdCode(e.target.value)}
             />
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="scientificName">Teaduslik nimi (ladina)</Label>
             <div className="flex items-center gap-2">
               <Input
@@ -646,94 +683,261 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
               <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <span>Vaatlusi kokku (eBird):</span>
                 {obsLoading
-                  ? <span className="inline-flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> laen…</span>
+                  ? <span className="inline-flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> laen&hellip;</span>
                   : obsError || obsCount == null
-                    ? <span title="GBIF päring ebaõnnestus">—</span>
+                    ? <span title={'GBIF p\u00e4ring eba\u00f5nnestus'}>&mdash;</span>
                     : <span className="font-medium text-foreground tabular-nums">{obsCount.toLocaleString('et-EE')}</span>}
               </p>
             )}
-            <Label>Saabumise klassifikatsioon</Label>
-            <div className="flex flex-col gap-1 text-sm">
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="is_migrant"
-                  value="heuristic"
-                  checked={isMigrantMode === 'heuristic'}
-                  onChange={() => setIsMigrantMode('heuristic')}
-                />
-                <span>Heuristika otsustab (vaikeväärtus)</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="is_migrant"
-                  value="true"
-                  checked={isMigrantMode === 'true'}
-                  onChange={() => setIsMigrantMode('true')}
-                />
-                <span>Alati saabuja (jäta talvine vaatlus tähelepanuta)</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="is_migrant"
-                  value="false"
-                  checked={isMigrantMode === 'false'}
-                  onChange={() => setIsMigrantMode('false')}
-                />
-                <span>Ei ole saabuja (alati välistatud)</span>
-              </label>
-            </div>
-            </>)}
-            <label className="flex items-center gap-2 text-sm">
+          </div>
+        </div>
+      </section>
+      <section>
+        <h3 className={SECTION_LABEL_CLASS}>{ET_STRINGS.rarityLabel}</h3>
+        <div className={SECTION_BODY_CLASS}>
+          {renderRarityGrid()}
+        </div>
+      </section>
+      <section>
+        <h3 className={SECTION_LABEL_CLASS}>Saabumine</h3>
+        <div className="rounded-[14px] border border-border bg-card overflow-hidden divide-y divide-border">
+          {MIGRANT_OPTIONS.map((opt) => (
+            <label key={opt.value} className="flex items-center gap-3 px-3.5 py-2.5 cursor-pointer">
               <input
-                type="checkbox"
-                checked={notify}
-                onChange={(e) => setNotify(e.target.checked)}
+                type="radio"
+                name="is_migrant"
+                value={opt.value}
+                checked={isMigrantMode === opt.value}
+                onChange={() => setIsMigrantMode(opt.value)}
               />
-              <span>Saada teavitus uutest vaatlustest</span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-medium text-foreground">{opt.title}</span>
+                <span className="block text-[13px] text-muted-foreground">{opt.sub}</span>
+              </span>
             </label>
-            <Button variant="outline" className="w-full" onClick={handleMetaSave} disabled={saving}>
-              {ET_STRINGS.saveSpeciesSettings}
-            </Button>
-            <Button variant="outline" className="w-full gap-2" onClick={handleSyncNow} disabled={syncing}>
-              {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              {syncing ? 'Sünkroonin...' : 'Sünkrooni nüüd'}
-            </Button>
-            <p className="text-xs text-muted-foreground">Viimane sünkroon: {formatLastSync(lastSyncAt)}</p>
-            <div className="rounded-md border border-border bg-muted/20 p-2 text-xs space-y-1">
-              <div className="font-medium">Meta Sync Status</div>
-              <div>cloudLoaded: {syncStatus.cloudLoaded ? 'yes' : 'no'}</div>
-              <div>cloudUpdatedAt: {syncStatus.cloudUpdatedAt || '-'}</div>
-              <div>localUpdatedAt: {syncStatus.localUpdatedAt || '-'}</div>
-              <div>lastSyncAt: {syncStatus.lastSyncAt || '-'}</div>
-              <div>lastSyncError: {syncStatus.lastSyncError || '-'}</div>
-            </div>
-          </div>
+          ))}
+        </div>
+      </section>
+      <section>
+        <h3 className={SECTION_LABEL_CLASS}>Teavitused</h3>
+        <div className={SECTION_BODY_CLASS}>
+          {renderNotifyRow()}
+        </div>
+      </section>
+    </>
+  );
 
-          <div className="space-y-2">
-            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFileChange} />
-            <Button variant="outline" className="w-full gap-2" disabled={processing || saving} onClick={() => fileRef.current?.click()}>
-              <Upload className="w-4 h-4" />
-              {processing ? 'Töötlen...' : ET_STRINGS.uploadAvatar}
-            </Button>
-          </div>
+  const renderDevSync = () => (
+    <div className="space-y-2">
+      <Button variant="outline" className="w-full gap-2" onClick={handleSyncNow} disabled={syncing}>
+        {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+        {syncing ? 'S\u00fcnkroonin...' : 'S\u00fcnkrooni n\u00fc\u00fcd'}
+      </Button>
+      <p className="text-xs text-muted-foreground">Viimane s&uuml;nkroon: {formatLastSync(lastSyncAt)}</p>
+      <div className="rounded-md border border-border bg-muted/20 p-2 text-xs space-y-1">
+        <div className="font-medium">Meta Sync Status</div>
+        <div>cloudLoaded: {syncStatus.cloudLoaded ? 'yes' : 'no'}</div>
+        <div>cloudUpdatedAt: {syncStatus.cloudUpdatedAt || '-'}</div>
+        <div>localUpdatedAt: {syncStatus.localUpdatedAt || '-'}</div>
+        <div>lastSyncAt: {syncStatus.lastSyncAt || '-'}</div>
+        <div>lastSyncError: {syncStatus.lastSyncError || '-'}</div>
+      </div>
+    </div>
+  );
 
-          <div className="flex flex-col gap-2">
-            {preview && (
-              <Button onClick={handleSave} className="w-full gap-2" disabled={saving}>
-                <Cloud className="w-4 h-4" />
-                {saving ? 'Salvestan...' : 'Salvesta pilve'}
-              </Button>
-            )}
+  const renderEditor = (showBack: boolean) => (
+    <div className="space-y-4">
+      {showBack && (
+        <button
+          type="button"
+          onClick={() => { setSelected(''); setManualKey(''); }}
+          className="inline-flex items-center gap-1 text-primary font-medium text-sm"
+        >
+          <ChevronLeft className="w-4 h-4" /> Liigid
+        </button>
+      )}
+      <div className="rounded-[14px] border border-border bg-card p-3.5 flex items-center gap-4">
+        <Avatar className="w-24 h-24 border border-border shrink-0">
+          <AvatarImage src={displayUrl} alt={activeKey} />
+          <AvatarFallback><Bird className="w-8 h-8 text-muted-foreground" /></AvatarFallback>
+        </Avatar>
+        <div className="flex-1 min-w-0 space-y-1">
+          <p className="text-lg font-semibold text-foreground truncate">{activeKey}</p>
+          {headerLatin && <p className="text-[13px] italic text-muted-foreground truncate">{headerLatin}</p>}
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFileChange} />
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button variant="outline" size="sm" className="gap-1.5" disabled={processing || saving} onClick={() => fileRef.current?.click()}>
+              {processing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              Vaheta pilti
+            </Button>
             {currentAvatar && (
-              <Button variant="outline" onClick={handleRemove} className="w-full gap-2" disabled={saving}>
-                <Trash2 className="w-4 h-4" />
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRemove} disabled={saving}>
+                <Trash2 className="w-3.5 h-3.5" />
                 Eemalda
               </Button>
             )}
           </div>
+          <p className="text-xs text-muted-foreground">
+            {preview ? 'Eelvaade (salvestamata)' : currentAvatar ? 'Pilves salvestatud avatar' : 'Vaikimisi / placeholder'}
+          </p>
+        </div>
+      </div>
+
+      {isRariliin ? renderRariliinSections() : renderSpeciesSections()}
+
+      <div className="sticky bottom-0 -mx-4 px-4 py-3 bg-card border-t border-border">
+        <Button className="w-full" onClick={() => { void handleSaveAll(); }} disabled={saving || processing}>
+          Salvesta
+        </Button>
+      </div>
+      {isDeveloperModeEnabled() && renderDevSync()}
+
+      {canRemoveCustom && (
+        <button type="button" className="text-destructive text-sm font-medium" onClick={handleRemoveCustomSpecies}>
+          Eemalda liik
+        </button>
+      )}
+    </div>
+  );
+
+  const renderRowChips = (row: SpeciesRow) => (
+    <div className="flex items-center gap-1.5 shrink-0">
+      {isRariliin
+        ? (row.code
+          ? <span className="font-mono text-xs font-semibold tracking-wider rounded-md bg-foreground text-background px-1.5 py-0.5">{row.code}</span>
+          : <span className="rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 text-xs px-1.5 py-0.5">Kood puudub</span>)
+        : <span className="rounded-md bg-muted text-muted-foreground text-xs px-1.5 py-0.5">{MIGRANT_CHIP_LABEL[row.migrant]}</span>}
+      {row.notify && <Bell className="w-4 h-4 text-primary" />}
+      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+    </div>
+  );
+
+  const renderSpeciesList = () => (
+    <div className="space-y-3">
+      <Input
+        placeholder={isRariliin ? 'Otsi liiki, ladinakeelset nime v\u00f5i koodi' : 'Otsi liiki v\u00f5i ladinakeelset nime'}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      <div className="flex flex-wrap gap-2">
+        {filterOptions.map((opt) => {
+          const isActive = listFilter === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              aria-pressed={isActive}
+              onClick={() => setListFilter(opt.value)}
+              className={`rounded-full px-3 py-1 text-[13px] border ${isActive ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border'}`}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+      <div data-testid="species-list" className="rounded-[14px] border border-border bg-card overflow-hidden divide-y divide-border">
+        {visibleRows.length === 0 && (
+          <p className="px-3.5 py-3 text-sm text-muted-foreground">Tulemusi pole</p>
+        )}
+        {visibleRows.map((row) => {
+          const rarityLabel = isRariliin && row.rarity !== 'none'
+            ? RARITY_OPTIONS.find((opt) => opt.value === row.rarity)?.label
+            : undefined;
+          return (
+            <button
+              key={row.name}
+              type="button"
+              className="w-full text-left flex items-center gap-3 px-3.5 py-2.5 min-h-[58px]"
+              onClick={() => { setSelected(row.name); setSearch(''); }}
+            >
+              {row.avatar
+                ? <img src={row.avatar} className="w-10 h-10 rounded-full object-cover shrink-0" alt="" />
+                : (
+                  <span className="w-10 h-10 rounded-full border-2 border-dashed border-border grid place-items-center text-sm font-semibold text-muted-foreground shrink-0">
+                    {row.name.charAt(0).toUpperCase()}
+                  </span>
+                )}
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{row.name}</div>
+                {row.latin && <div className="text-[13px] italic text-muted-foreground truncate">{row.latin}</div>}
+                {rarityLabel && <div className="text-[13px] text-muted-foreground truncate">{rarityLabel}</div>}
+              </div>
+              {renderRowChips(row)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const renderAddSpecies = () => (
+    <div className="flex items-center gap-2">
+      {!showAddForm ? (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowAddForm(true)}
+          className="text-xs"
+        >
+          + Lisa uus liik
+        </Button>
+      ) : (
+        <div className="flex items-center gap-2 w-full">
+          <Input
+            placeholder="Uue liigi nimi, nt. Sookurg"
+            value={newSpeciesName}
+            onChange={(e) => setNewSpeciesName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAddSpecies(); }}
+            className="text-sm"
+            autoFocus
+          />
+          <Button size="sm" onClick={handleAddSpecies}>Lisa</Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => { setShowAddForm(false); setNewSpeciesName(''); }}
+          >
+            T&uuml;hista
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
+  // Editor replaces the list once a species is picked. Without a species list the
+  // manual-name input stays on screen (it sets `selected` on every keystroke) and the
+  // editor renders below it, without a back button.
+  if (hasSpecies && activeKey) {
+    return renderEditor(true);
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="font-semibold text-foreground flex items-center gap-2">
+        <Cloud className="w-4 h-4 text-primary" />
+        {scope.displayName} {ET_STRINGS.speciesSettings.toLowerCase()}
+      </h3>
+      <p className="text-xs text-muted-foreground">{isRariliin ? 'Ainult Rariliini v\u00e4ljad: 3+3 kood ja teate m\u00e4rkus.' : ET_STRINGS.sharedManaged}</p>
+
+      {renderAddSpecies()}
+
+      {hasSpecies ? renderSpeciesList() : (
+        <div className="space-y-1.5">
+          <Label htmlFor="manualSpecies">Liigi nimi (k&auml;sitsi)</Label>
+          <Input
+            id="manualSpecies"
+            placeholder="nt. Sookurg"
+            value={manualKey}
+            onChange={(e) => { setManualKey(e.target.value); setSelected(e.target.value); }}
+          />
+          <p className="text-xs text-destructive">species.json ei laadunud. Sisesta liigi nimi k&auml;sitsi.</p>
+        </div>
+      )}
+
+      {!hasSpecies && activeKey && (
+        <>
+          <Separator />
+          {renderEditor(false)}
         </>
       )}
 

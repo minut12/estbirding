@@ -1,4 +1,4 @@
-import { useCallback, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ArrowLeft, CalendarDays, CalendarPlus, Link2, MapPin, Pencil, Trash2, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { et } from "@/localization/et";
@@ -95,6 +95,19 @@ function SourcePill({ category, className }: { category: EventCategory; classNam
       <span className={cn("h-2 w-2 rounded-full", CATEGORY_DOT_CLASS[category])} aria-hidden="true" />
       {et.categoryLabel(category)}
     </span>
+  );
+}
+
+function BackPill({ onBack }: { onBack: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      className="inline-flex h-9 items-center gap-2 self-start rounded-full border border-border bg-card px-3.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      {et.backToEvents}
+    </button>
   );
 }
 
@@ -208,16 +221,31 @@ export function EventDetailsScreen({ event, onBack, canManage, onEdit, onDelete 
     onBack();
   };
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      // Second safeguard: Radix already preventDefaults Esc when it closes a dialog.
+      if (document.querySelector('[role="dialog"][data-state="open"]')) return;
+      onBack();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onBack]);
+
   return (
     <div className="flex h-full flex-col bg-card">
-      <button
-        type="button"
-        onClick={onBack}
-        className="flex w-full shrink-0 items-center gap-2 border-b border-border bg-card px-4 py-2.5 text-left text-sm font-medium text-foreground"
-      >
-        <ArrowLeft className="h-[18px] w-[18px]" aria-hidden="true" />
-        {et.eventsTitle}
-      </button>
+      {!isWide && (
+        <div className="shrink-0 border-b border-border bg-card">
+          <div className={showDesktopMap
+            ? "mx-auto max-w-[960px] px-6 py-2.5"
+            : isDesktop
+              ? "mx-auto max-w-[680px] px-5 py-2.5"
+              : "px-4 py-2"}
+          >
+            <BackPill onBack={onBack} />
+          </div>
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isWide ? (
@@ -225,6 +253,7 @@ export function EventDetailsScreen({ event, onBack, canManage, onEdit, onDelete 
             <div className="border-b border-border bg-gradient-to-b from-muted to-card">
               <div className="mx-auto flex max-w-[1320px] items-end justify-between gap-10 px-12 pb-7 pt-9">
                 <div className="flex min-w-0 flex-col gap-3.5">
+                  <BackPill onBack={onBack} />
                   <SourcePill category={event.category} className="self-start border border-border bg-card text-foreground" />
                   <h1 className="text-[34px] font-semibold leading-[1.1] tracking-tight text-foreground text-balance">
                     {event.title}

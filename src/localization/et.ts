@@ -24,6 +24,7 @@ const CHIPS = {
 
 export const et = {
   eventsTitle: "Üritused",
+  backToEvents: "Kõik üritused",
   refresh: "Värskenda",
   searchPlaceholder: "Otsi üritusi…",
   tabs: {

@@ -12,7 +12,7 @@ import {
 } from "@/features/events/eventsService";
 import { useAuth } from "@/features/auth/AuthContext";
 import { EventLinkSheet } from "@/features/events/EventLinkSheet";
-import EventDetailsScreen from "./EventDetailsScreen";
+import { EventDetailsScreen } from "./EventDetailsScreen";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,6 @@ type MonthGroup = {
 };
 
 const DESKTOP_EVENTS_QUERY = "(min-width: 901px)";
-const FALLBACK_IMAGE_URL = "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop";
 
 // Copied from NewsTab (do not import across features).
 const CHIP_BASE = "shrink-0 inline-flex items-center gap-1 h-7 px-2.5 rounded-full border text-xs font-medium transition-colors";
@@ -103,11 +102,11 @@ function toEventItem(row: ManualEventRow): EventItem {
     title: row.title,
     startAt: row.starts_at,
     endAt: row.ends_at || undefined,
-    locationName: row.location_name || et.locationPending,
+    locationName: (row.location_name || "").trim(),
     lat: safeLat,
     lng: safeLon,
     category: CATEGORY_BY_TYPE[row.type] ?? "EstBirding",
-    imageUrl: validImage ? imageCandidate : FALLBACK_IMAGE_URL,
+    imageUrl: validImage ? imageCandidate : "",
     description: row.description || undefined,
     url: row.url || undefined,
     isPublished: row.status === "active",
@@ -211,7 +210,19 @@ export default function EventsScreen() {
   };
 
   if (openedDetails) {
-    return <EventDetailsScreen event={openedDetails} onBack={() => setOpenedDetails(null)} />;
+    const detailsId = openedDetails.id;
+    return (
+      <EventDetailsScreen
+        event={openedDetails}
+        onBack={() => setOpenedDetails(null)}
+        canManage={canManage}
+        onEdit={() => {
+          setOpenedDetails(null);
+          openEdit(detailsId);
+        }}
+        onDelete={() => void onDelete(detailsId)}
+      />
+    );
   }
 
   const titleEl = <h2 className="text-lg font-semibold text-foreground">{et.eventsTitle}</h2>;

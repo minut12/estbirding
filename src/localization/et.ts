@@ -40,10 +40,11 @@ export const et = {
   delete: "Kustuta",
   eventDeleted: "Üritus kustutatud",
   loadingEvents: "Laen üritusi...",
-  locationPending: "Asukoht täpsustamisel",
   adminModeOn: "Admin režiim: sees",
   adminModeOff: "Admin režiim: väljas (admin rolli vaja)",
-  detailsTitle: "Ürituse detailid",
+  addToCalendar: "Lisa kalendrisse",
+  openOnMap: "Ava kaardil",
+  openOriginal: "Ava algallikas",
   eventLink: {
     titleCreate: "Lisa üritus",
     titleEdit: "Muuda üritust",

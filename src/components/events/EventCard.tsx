@@ -31,7 +31,7 @@ function buildMeta(event: EventItem): string {
 }
 
 /** Two-step delete: first click arms for CONFIRM_DELETE_MS, second click calls onConfirm. */
-function useConfirmDelete(onConfirm: (() => void) | undefined) {
+export function useConfirmDelete(onConfirm: (() => void) | undefined) {
   const [isArmed, setIsArmed] = useState(false);
   const timerRef = useRef<number | null>(null);
 
@@ -67,7 +67,7 @@ interface AdminActionsProps {
   onDelete?: () => void;
 }
 
-const ADMIN_BUTTON_CLASS =
+export const ADMIN_BUTTON_CLASS =
   "inline-flex h-8 w-8 items-center justify-center gap-1 rounded-md text-xs transition-colors sm:h-7 sm:w-auto sm:px-2";
 
 function AdminActions({ onEdit, onDelete }: AdminActionsProps) {

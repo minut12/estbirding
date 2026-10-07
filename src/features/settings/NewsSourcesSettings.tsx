@@ -28,6 +28,68 @@ type CloudNewsSourceRow = {
   translate_to_et?: boolean | null;
 };
 
+export type NewsSourceStat = {
+  source_slug: string;
+  items_7d: number;
+  items_30d: number;
+  last_published_at: string | null;
+  translation_errors_30d: number;
+};
+
+type NewsSourceStatsRpcClient = {
+  rpc: (fn: 'get_news_source_stats') => PromiseLike<{ data: unknown; error: unknown }>;
+};
+
+const SOURCE_COUNTRY_CODES: Record<string, string> = {
+  birdlife_suomi: 'FI',
+  birdlife_poland: 'PL',
+  birding_poland: 'PL',
+  birding_estonia: 'EE',
+  eoy: 'EE',
+  birding_latvia: 'LV',
+  birding_lithuania: 'LT',
+  birding_belgium: 'BE',
+};
+
+const QUIET_AMBER = '#D99A1E';
+
+const STAT_DATE_FORMAT = new Intl.DateTimeFormat('et-EE', { day: 'numeric', month: 'short', timeZone: 'Europe/Tallinn' });
+
+function getSourceCountryCode(source: NewsSourceConfigItem): string {
+  return SOURCE_COUNTRY_CODES[source.id] ?? source.name.trim().slice(0, 2).toUpperCase();
+}
+
+function toFiniteNumber(value: unknown): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function parseNewsSourceStats(data: unknown): Record<string, NewsSourceStat> | null {
+  if (!Array.isArray(data)) return null;
+  const entries = data
+    .filter((row): row is Record<string, unknown> => typeof row === 'object' && row !== null)
+    .map((row): NewsSourceStat => ({
+      source_slug: String(row.source_slug ?? '').trim(),
+      items_7d: toFiniteNumber(row.items_7d),
+      items_30d: toFiniteNumber(row.items_30d),
+      last_published_at: typeof row.last_published_at === 'string' ? row.last_published_at : null,
+      translation_errors_30d: toFiniteNumber(row.translation_errors_30d),
+    }))
+    .filter((stat) => stat.source_slug !== '')
+    .map((stat): [string, NewsSourceStat] => [stat.source_slug, stat]);
+  return Object.fromEntries(entries);
+}
+
+function formatStatDate(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : STAT_DATE_FORMAT.format(date);
+}
+
+function newsNoun(count: number): string {
+  return count === 1 ? 'uudis' : 'uudist';
+}
+
 function slugifySourceId(value: string): string {
   return value
     .toLowerCase()
@@ -49,6 +111,18 @@ export default function NewsSourcesSettings() {
   const [showAdd, setShowAdd] = useState(false);
   const [pendingAddClose, setPendingAddClose] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [stats, setStats] = useState<Record<string, NewsSourceStat> | null>(null);
+
+  const loadStats = async () => {
+    try {
+      const { data, error } = await (supabase as unknown as NewsSourceStatsRpcClient).rpc('get_news_source_stats');
+      if (error) throw error;
+      const parsed = parseNewsSourceStats(data);
+      if (parsed) setStats(parsed);
+    } catch (error) {
+      console.error('[news-settings] failed to load news source stats', error);
+    }
+  };
 
   const mapCloudRowToSource = (row: CloudNewsSourceRow): NewsSource => ({
     id: String(row.slug || row.source_key || row.key || row.id || '').trim(),
@@ -94,9 +168,11 @@ export default function NewsSourcesSettings() {
     } finally {
       setLoadingCloud(false);
     }
+    void loadStats();
   };
 
   useEffect(() => {
+    void loadStats();
     void loadCloudSources();
   }, []);
 
@@ -215,6 +291,19 @@ export default function NewsSourcesSettings() {
 
   const sources = localSources;
   const enabledCount = sources.filter((source) => source.enabled).length;
+  const items30dOf = (source: NewsSource): number => stats?.[source.id]?.items_30d ?? 0;
+  const items7dOf = (source: NewsSource): number => stats?.[source.id]?.items_7d ?? 0;
+  const enabledSources = sources.filter((source) => source.enabled);
+  const enabledItems7d = enabledSources.reduce((sum, source) => sum + items7dOf(source), 0);
+  const enabledItems30d = enabledSources.reduce((sum, source) => sum + items30dOf(source), 0);
+  const maxItems30d = sources.reduce((max, source) => Math.max(max, items30dOf(source)), 0);
+  const orderedSources = stats
+    ? [...sources].sort((a, b) => (
+      Number(b.enabled) - Number(a.enabled)
+      || items30dOf(b) - items30dOf(a)
+      || a.name.localeCompare(b.name, 'et')
+    ))
+    : sources;
 
   if (sources.length === 0) {
     return (
@@ -277,17 +366,28 @@ export default function NewsSourcesSettings() {
         </button>
       )}
 
+      {stats && (
+        <div className="grid grid-cols-3 gap-2 rounded-2xl bg-foreground p-4 text-background">
+          <StatSummaryCell value={String(enabledItems7d)} label={<>uudist 7 p&auml;evaga</>} />
+          <StatSummaryCell value={String(enabledItems30d)} label={<>uudist 30 p&auml;evaga</>} />
+          <StatSummaryCell value={`${enabledCount}/${sources.length}`} label="allikat sees" />
+        </div>
+      )}
+
       <section>
         <h3 className="text-[13px] font-semibold text-muted-foreground mb-2 ml-1">
-          {sources.length} allikat &middot; {enabledCount} sees
+          {stats ? <>Aktiivsuse j&auml;rgi</> : <>{sources.length} allikat &middot; {enabledCount} sees</>}
         </h3>
         <div className="overflow-hidden rounded-[14px] border border-border bg-card divide-y divide-border">
-          {sources.map((source) => (
+          {orderedSources.map((source) => (
             <SourceCard
               key={source.id}
               source={source}
               onLocalUpdate={onLocalUpdate}
               onSaved={loadCloudSources}
+              stat={stats?.[source.id] ?? null}
+              maxItems30d={maxItems30d}
+              countryCode={getSourceCountryCode(source)}
             />
           ))}
         </div>
@@ -356,6 +456,20 @@ function MaintenanceRowText({ title, sub }: MaintenanceRowTextProps) {
   );
 }
 
+type StatSummaryCellProps = {
+  value: string;
+  label: ReactNode;
+};
+
+function StatSummaryCell({ value, label }: StatSummaryCellProps) {
+  return (
+    <div className="min-w-0">
+      <div className="tabular-nums text-[26px] font-bold leading-tight">{value}</div>
+      <div className="text-xs opacity-70">{label}</div>
+    </div>
+  );
+}
+
 function getSourceHost(url: string): string | null {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -368,10 +482,16 @@ function SourceCard({
   source,
   onLocalUpdate,
   onSaved,
+  stat,
+  maxItems30d,
+  countryCode,
 }: {
   source: NewsSource;
   onLocalUpdate: (next: NewsSource) => void;
   onSaved: () => Promise<void>;
+  stat: NewsSourceStat | null;
+  maxItems30d: number;
+  countryCode: string;
 }) {
   const [url, setUrl] = useState(source.url || '');
   const [enabled, setEnabled] = useState(source.enabled);
@@ -488,8 +608,34 @@ function SourceCard({
   if (!enabled) subParts.push('v\u00e4ljas');
   const subLine = subParts.join(' \u00b7 ');
 
+  const translationChip = translationLocked ? (
+    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Eesti keeles</span>
+  ) : translateToEt ? (
+    <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-primary">T&otilde;lgitakse</span>
+  ) : null;
+
+  const isQuiet = Boolean(stat) && enabled && stat?.items_7d === 0;
+  const lastDate = formatStatDate(stat?.last_published_at ?? null);
+  let statsLine: string | null = null;
+  if (stat) {
+    statsLine = enabled
+      ? [
+        `${stat.items_7d} ${newsNoun(stat.items_7d)} 7 p`,
+        `${stat.items_30d} ${newsNoun(stat.items_30d)} 30 p`,
+        ...(lastDate ? [`viimane ${lastDate}`] : []),
+      ].join(' \u00b7 ')
+      : ['V\u00e4ljas', ...(lastDate ? [`viimane uudis ${lastDate}`] : [])].join(' \u00b7 ');
+  }
+  const meterPercent = stat && maxItems30d > 0 ? Math.min(100, (stat.items_30d / maxItems30d) * 100) : 0;
+
   const expandedBody = (
     <div className="space-y-3 bg-muted/30 px-3.5 pb-3.5 pt-3">
+      {stat && (
+        <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <span className="truncate">{subLine}</span>
+          {translationChip}
+        </div>
+      )}
       {source.url && (
         <a
           href={source.url}
@@ -574,23 +720,50 @@ function SourceCard({
           type="button"
           aria-expanded={expanded}
           onClick={() => setExpanded((prev) => !prev)}
-          className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left"
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
-          <span className="flex w-full min-w-0 items-center gap-2">
-            <span className={`truncate text-[15px] font-medium ${enabled ? 'text-foreground' : 'text-muted-foreground'}`}>
-              {normalizeDisplayText(source.name)}
-            </span>
-            {translationLocked ? (
-              <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Eesti keeles</span>
-            ) : translateToEt ? (
-              <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-primary">T&otilde;lgitakse</span>
-            ) : null}
+          <span
+            aria-hidden="true"
+            className={`grid h-10 w-10 shrink-0 place-items-center rounded-[11px] text-sm font-bold ${enabled ? 'bg-accent text-primary' : 'bg-muted text-muted-foreground'}`}
+          >
+            {countryCode}
           </span>
-          <span className="flex w-full min-w-0 items-center gap-1 text-xs text-muted-foreground">
-            <span className="truncate">{subLine}</span>
-            {expanded
-              ? <ChevronUp className="h-3.5 w-3.5 shrink-0" />
-              : <ChevronDown className="h-3.5 w-3.5 shrink-0" />}
+          <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+            <span className="flex w-full min-w-0 items-center gap-2">
+              <span className={`truncate text-[15px] font-medium ${enabled ? 'text-foreground' : 'text-muted-foreground'}`}>
+                {normalizeDisplayText(source.name)}
+              </span>
+              {stat && stat.translation_errors_30d > 0 && (
+                <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive">
+                  {stat.translation_errors_30d} t&otilde;lkeviga
+                </span>
+              )}
+              {isQuiet && (
+                <span
+                  className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                  style={{ backgroundColor: `${QUIET_AMBER}26`, color: QUIET_AMBER }}
+                >
+                  Vaikne
+                </span>
+              )}
+              {!stat && translationChip}
+            </span>
+            <span className="flex w-full min-w-0 items-center gap-1 text-xs text-muted-foreground">
+              {statsLine
+                ? <span className="truncate text-[12.5px] tabular-nums">{statsLine}</span>
+                : <span className="truncate">{subLine}</span>}
+              {expanded
+                ? <ChevronUp className="h-3.5 w-3.5 shrink-0" />
+                : <ChevronDown className="h-3.5 w-3.5 shrink-0" />}
+            </span>
+            {stat && enabled && (
+              <span className="mt-1 block h-[5px] w-full overflow-hidden rounded-full bg-muted">
+                <span
+                  className={`block h-full rounded-full ${isQuiet ? '' : 'bg-primary'}`}
+                  style={{ width: `${meterPercent}%`, ...(isQuiet ? { backgroundColor: QUIET_AMBER } : {}) }}
+                />
+              </span>
+            )}
           </span>
         </button>
         <div className="shrink-0" onClick={(event) => event.stopPropagation()}>

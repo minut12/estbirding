@@ -133,7 +133,7 @@ export default function AdminUsersScreen() {
   return (
     <div className="min-h-[100dvh] bg-background">
       <header className="sticky top-0 z-10 bg-card border-b border-border px-4 py-3 flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
+        <Button variant="ghost" size="icon" onClick={() => navigate('/', { state: { estbirding: { activeTab: 'seaded' } } })}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
         <h1 className="text-lg font-bold text-foreground">Kasutajate haldamine</h1>

@@ -21,6 +21,8 @@ const NEWS_HASHES = new Set(['#news', '#news-article']);
 
 function resolveInitialTab(): Tab {
   if (typeof window !== 'undefined' && window.location.pathname === '/ulevaade') return 'ulevaade';
+  const routerTab = window.history.state?.usr?.estbirding?.activeTab;
+  if (routerTab === 'seaded') return 'seaded';
   const stateTab = window.history.state?.estbirding?.activeTab;
   if (stateTab === 'uudised') return 'uudised';
   if (NEWS_HASHES.has(window.location.hash)) return 'uudised';
@@ -56,6 +58,7 @@ export default function Index() {
     if (location.pathname === '/ulevaade') { setActive('ulevaade'); return; }
     const nav = (location.state as { estbirding?: { activeTab?: string } } | null)?.estbirding;
     if (location.pathname === '/' && nav?.activeTab === 'kaart') setActive('kaart');
+    if (location.pathname === '/' && nav?.activeTab === 'seaded') setActive('seaded');
   }, [location.pathname, location.key, location.state]);
 
   useEffect(() => {

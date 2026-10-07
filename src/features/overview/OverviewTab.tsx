@@ -23,6 +23,7 @@ import { isSpringWindow } from '@/lib/speciesVisibility';
 import CorridorBadge from './CorridorBadge';
 import WindyChart from './WindyChart';
 import RareObservationsFeed from './RareObservationsFeed';
+import { groupEntriesBySpecies } from './entryGroups';
 
 function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
   const out = new Map<string, string>();
@@ -916,6 +917,176 @@ function readEstbirdingState(state: unknown): EstbirdingNavState | null {
   return nested as EstbirdingNavState;
 }
 
+// P98: one Ulevaade (Eesti) card per species when it has 2+ entries. Rows are newest first.
+function SpeciesObsRow({ entry, subId, hasMedia, ebirdCode }: { entry: VaatlusEntry; subId?: string; hasMedia: boolean; ebirdCode?: string }) {
+  const obs = formatObservers(entry.observers);
+  const src = getSourceDisplay(entry.source);
+  const isEbird = entry.source === 'ebird' || entry.source === 'et_rarity_topup';
+  const isElu = entry.source === 'elurikkus';
+  return (
+    <li className="py-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span className="font-medium shrink-0 sm:w-24">{formatEntryDate(entry.date)}</span>
+        <span className="order-last basis-full min-w-0 text-muted-foreground sm:order-none sm:basis-auto sm:flex-1">
+          {entry.location}
+          {entry.region ? <> &middot; {entry.region}</> : null}
+          {!obs.unknown ? <> &middot; {obs.text}</> : null}
+        </span>
+        {typeof entry.count === 'number' && entry.count > 1 && (
+          <span className="text-xs text-muted-foreground">{entry.count} isendit</span>
+        )}
+        {src && (
+          <span className="inline-flex items-center gap-1 text-xs">
+            <span aria-hidden>{src.emoji}</span>
+            <span>{src.label}</span>
+          </span>
+        )}
+        {hasMedia && <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">fotoga</span>}
+        {subId && isEbird && (
+          <a href={`https://ebird.org/checklist/${subId}`} target="_blank" rel="noopener noreferrer"
+             className="inline-flex min-h-8 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium hover:border-primary">
+            Kontrollnimekiri <ExternalLink className="w-3 h-3" />
+          </a>
+        )}
+        {subId && isElu && (
+          <a href={`https://elurikkus.ee/app/occurrences/occurrence/${encodeURIComponent(subId)}`} target="_blank" rel="noopener noreferrer"
+             className="inline-flex min-h-8 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium hover:border-primary">
+            Vaata vaatlust <ExternalLink className="w-3 h-3" />
+          </a>
+        )}
+      </div>
+      {subId && isEbird && (
+        <div className="mt-1">
+          <ChecklistDetails subId={subId} ebirdCode={ebirdCode} />
+        </div>
+      )}
+    </li>
+  );
+}
+
+function SpeciesCard({ items, domIds, subIdFor, hasMediaFor, ebirdCode, avatarUrl, onShowOnMap }: {
+  items: VaatlusEntry[];
+  domIds: string[];
+  subIdFor: (e: VaatlusEntry) => string | undefined;
+  hasMediaFor: (e: VaatlusEntry) => boolean;
+  ebirdCode?: string;
+  avatarUrl?: string;
+  onShowOnMap?: () => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const head = items[0];
+  const tier = items.reduce<RarityTier>((best, it) => {
+    const t = effectiveRarityTier(it);
+    return TIER_RANK[t] > TIER_RANK[best] ? t : best;
+  }, 'none');
+  const reason = items.find((it) => it.rarity_reason)?.rarity_reason;
+  // eBird comparison_et is a per-observation comment; only Elurikkus carries a species-level note.
+  const comparison = items.find((it) => it.source === 'elurikkus' && it.comparison_et)?.comparison_et;
+  const dates = items.map((it) => it.date).filter(Boolean).sort();
+  const shown = showAll ? items : items.slice(0, 3);
+  const statsBySource: Array<{ src: string; stats: SightsStats }> = [];
+  for (const it of items) {
+    const s = it.sights_stats;
+    const src = String(it.source || '');
+    if (it.data_integrity === 'unverified' || !s || !Number.isFinite(s.total_obs)) continue;
+    if (statsBySource.some((x) => x.src === src)) continue;
+    statsBySource.push({ src, stats: s });
+  }
+  return (
+    <Card
+      id={domIds[0]}
+      data-entry-card=""
+      className={cn(
+        'p-4 space-y-2',
+        tier === 'rare' && 'border-l-4 border-l-amber-500 bg-amber-50/40',
+        tier === 'super' && 'border-l-4 border-l-destructive bg-destructive/5',
+        tier === 'mega' && 'border-l-8 border-l-red-800 bg-red-900/5 ring-1 ring-red-800/40 shadow-md',
+      )}
+    >
+      {domIds.slice(1).map((id) => <span key={id} id={id} className="block h-0" aria-hidden />)}
+      {tier !== 'none' && (
+        <div className="flex items-center gap-2">
+          {tier === 'rare' && <Badge className="gap-1 bg-amber-500 text-white hover:bg-amber-500/90 border-transparent">Rari</Badge>}
+          {tier === 'super' && (
+            <Badge className="gap-1 bg-red-600 text-white hover:bg-red-600/90 border-transparent">
+              <AlertTriangle className="w-3 h-3" />
+              Super rari
+            </Badge>
+          )}
+          {tier === 'mega' && (
+            <Badge className="gap-1 bg-red-800 text-white hover:bg-red-800/90 border-transparent font-bold shadow-sm">
+              <AlertTriangle className="w-3 h-3" />
+              Mega rari
+            </Badge>
+          )}
+        </div>
+      )}
+      <div className="flex items-start gap-3">
+        {avatarUrl ? (
+          <img src={avatarUrl} alt={head.species_et} loading="lazy" className="w-14 h-14 rounded-md object-cover shrink-0 bg-muted" />
+        ) : (
+          <div className="w-14 h-14 rounded-md shrink-0 bg-muted flex items-center justify-center text-muted-foreground">
+            <Bird className="w-7 h-7" />
+          </div>
+        )}
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-semibold">{head.species_et}</span>
+            <span className="italic text-muted-foreground text-sm">({head.species_lat})</span>
+          </div>
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{pluralizeObs(items.length)}</span>
+            {dates.length > 0 && <> &middot; {formatDateRange(dates[0], dates[dates.length - 1])}</>}
+            {head.location ? <> &middot; viimati {head.location}</> : null}
+          </div>
+        </div>
+      </div>
+      {tier !== 'none' && reason && (
+        <p className={cn('text-sm', tier === 'rare' ? 'text-amber-700' : 'text-destructive')}>{reason}</p>
+      )}
+      {comparison && <p className="text-sm italic text-muted-foreground">{comparison}</p>}
+      <ul className="divide-y divide-border/40 border-t border-border/40">
+        {shown.map((it, i) => (
+          <SpeciesObsRow
+            key={`${it.date}-${it.location}-${i}`}
+            entry={it}
+            subId={subIdFor(it)}
+            hasMedia={hasMediaFor(it)}
+            ebirdCode={ebirdCode}
+          />
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {items.length > 3 && (
+          <button type="button" onClick={() => setShowAll((v) => !v)}
+            className="inline-flex min-h-8 items-center rounded-full border border-border bg-card px-3 py-1 text-xs font-medium hover:border-primary">
+            {showAll ? <>N&auml;ita v&auml;hem</> : <>N&auml;ita k&otilde;iki ({items.length})</>}
+          </button>
+        )}
+        {onShowOnMap && (
+          <button type="button" onClick={onShowOnMap}
+            className="inline-flex min-h-8 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium hover:border-primary">
+            <MapPin className="w-3 h-3" /> N&auml;ita kaardil
+          </button>
+        )}
+      </div>
+      {statsBySource.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-border/40 space-y-1 text-xs text-muted-foreground">
+          {statsBySource.map(({ src, stats }) => (
+            <div key={src || 'x'} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <BarChart3 className="h-3 w-3 shrink-0" />
+              {getSourceDisplay(src) && <span className="font-medium">{getSourceDisplay(src)?.label}</span>}
+              <span>{pluralizeObs(stats.total_obs)}</span>
+              {stats.observer_count > 0 && <><span aria-hidden>&middot;</span><span>{pluralizeObserver(stats.observer_count)}</span></>}
+              {(stats.first_date || stats.last_date) && <><span aria-hidden>&middot;</span><span>{formatDateRange(stats.first_date, stats.last_date)}</span></>}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // How long the violet ring stays on the card the user was sent to.
 const HIGHLIGHT_MS = 2000;
 
@@ -1072,6 +1243,7 @@ export default function OverviewTab() {
   );
   const eeEntries = useMemo(() => sortEntries(mergedEstonia), [mergedEstonia]);
   const euEntries = useMemo(() => sortEntries(report?.europe_entries || []), [report]);
+  const eeGroups = useMemo(() => groupEntriesBySpecies(eeEntries), [eeEntries]);
   const eeSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.estonia), [report]);
   const euSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.europe), [report]);
   const eeMediaLookup = useMemo(() => buildHasMediaLookup(report?.source_data?.estonia), [report]);
@@ -1128,9 +1300,10 @@ export default function OverviewTab() {
     window.setTimeout(() => {
       const el = document.getElementById(entryDomId(item.scope, item.entry, item.idx));
       if (!el) return;
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      el.classList.add('ring-2', 'ring-red-800');
-      window.setTimeout(() => el.classList.remove('ring-2', 'ring-red-800'), HIGHLIGHT_MS);
+      const target = (el.closest('[data-entry-card]') as HTMLElement | null) ?? el;
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      target.classList.add('ring-2', 'ring-red-800');
+      window.setTimeout(() => target.classList.remove('ring-2', 'ring-red-800'), HIGHLIGHT_MS);
     }, 50);
   }, []);
 
@@ -1533,6 +1706,38 @@ export default function OverviewTab() {
                     Sel perioodil silmapaistvaid vaatlusi ei registreeritud.
                   </p>
                 ) : (
+                  section === 'ee' ? (
+                    eeGroups.map((g) => {
+                      if (g.items.length === 1) {
+                        const { entry, idx } = g.items[0];
+                        return (
+                          <EntryCard
+                            key={`${entry.species_lat}-${entry.date}-${idx}`}
+                            entry={entry}
+                            subId={findSubId(entry, activeLookup)}
+                            hasMedia={findHasMedia(entry, activeMedia)}
+                            ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
+                            avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
+                            domId={entryDomId('ee', entry, idx)}
+                            onShowOnMap={() => navigate('/', { state: { estbirding: { activeTab: 'kaart', mapId: 'rariliin', focusSpecies: entry.species_et } } })}
+                          />
+                        );
+                      }
+                      const head = g.items[0].entry;
+                      return (
+                        <SpeciesCard
+                          key={`grp-${g.key}`}
+                          items={g.items.map((it) => it.entry)}
+                          domIds={g.items.map((it) => entryDomId('ee', it.entry, it.idx))}
+                          subIdFor={(e) => findSubId(e, activeLookup)}
+                          hasMediaFor={(e) => findHasMedia(e, activeMedia)}
+                          ebirdCode={lookupEbirdCode(head.species_lat, ebirdCodeLookup)}
+                          avatarUrl={lookupAvatarUrl(head.species_lat, avatarUrlLookup)}
+                          onShowOnMap={() => navigate('/', { state: { estbirding: { activeTab: 'kaart', mapId: 'rariliin', focusSpecies: head.species_et } } })}
+                        />
+                      );
+                    })
+                  ) :
                   activeEntries.map((entry, idx) => (
                     <EntryCard
                       key={`${entry.species_lat}-${entry.date}-${idx}`}
@@ -1542,7 +1747,6 @@ export default function OverviewTab() {
                       ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
                       avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
                       domId={entryDomId(section === 'eu' ? 'eu' : 'ee', entry, idx)}
-                      onShowOnMap={section === 'ee' ? () => navigate('/', { state: { estbirding: { activeTab: 'kaart', mapId: 'rariliin', focusSpecies: entry.species_et } } }) : undefined}
                     />
                   ))
                 )}

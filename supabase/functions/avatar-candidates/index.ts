@@ -1,4 +1,4 @@
-// redeploy-marker: 2026-10-07 - P97c2 avatar-candidates (iNaturalist + Wikimedia, CC0/CC BY/CC BY-SA, admin search + byte proxy)
+// redeploy-marker: 2026-10-07 - P97c2b avatar-candidates (iNat taxa lookup: rank=species,subspecies, is_active, per_page 30)
 //
 // Admin-only avatar picker backend.
 //   GET  ?probe=1                                  -> upstream reachability (no auth, no data)
@@ -227,7 +227,9 @@ function inatCandidate(photo: InatPhoto, userLogin: string | null): Candidate | 
 
 async function searchInaturalist(scientificName: string): Promise<Candidate[]> {
   const taxa = parseInatTaxa(
-    await fetchJson(`${INAT_API}/taxa?q=${encodeURIComponent(scientificName)}&per_page=10`),
+    await fetchJson(
+      `${INAT_API}/taxa?q=${encodeURIComponent(scientificName)}&rank=species,subspecies&is_active=true&per_page=30`,
+    ),
   );
   const wanted = scientificName.toLowerCase();
   const taxon = taxa.find((t) => t.name.toLowerCase() === wanted);

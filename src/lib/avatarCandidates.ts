@@ -39,7 +39,8 @@ export class AvatarCandidatesError extends Error {
   }
 }
 
-export const AVATAR_CREDITS_LS_KEY = 'bm_avatar_credits_v1';
+export const AVATAR_CREDITS_LS_KEY = 'bm_avatar_credits_v2';
+const LEGACY_AVATAR_CREDITS_LS_KEY = 'bm_avatar_credits_v1';
 
 const FUNCTION_NAME = 'avatar-candidates';
 const DEFAULT_ERROR = 'avatar_candidates_failed';
@@ -177,13 +178,30 @@ export async function fetchCandidateImageFile(c: AvatarCandidate): Promise<File>
   return new File([blob], `${c.id}.${ext}`, { type });
 }
 
-/** Keyed by the raw DB species_key (scope prefix included, verbatim). */
+/**
+ * Credit-map key for an avatar URL: origin + pathname of an https URL, so the
+ * ?v=... cache-buster and any #fragment are dropped. Returns null for anything
+ * else. The map iframes apply the same rule to the URL they display.
+ */
+export function avatarCreditUrlKey(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return null;
+    return `${u.origin}${u.pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Keyed by avatarCreditUrlKey(public_url); rows without a usable https URL are skipped. */
 export function buildAvatarCreditMap(rows: unknown[]): Record<string, AvatarCredit> {
   const map: Record<string, AvatarCredit> = {};
   for (const row of rows) {
-    if (!isPlainRecord(row) || typeof row.species_key !== 'string') continue;
+    if (!isPlainRecord(row) || typeof row.public_url !== 'string') continue;
+    const key = avatarCreditUrlKey(row.public_url);
+    if (key === null) continue;
     const credit = parseAvatarCredit(row.credit);
-    if (credit) map[row.species_key] = credit;
+    if (credit) map[key] = credit;
   }
   return map;
 }
@@ -193,6 +211,11 @@ export function persistAvatarCredits(map: Record<string, AvatarCredit>): void {
     localStorage.setItem(AVATAR_CREDITS_LS_KEY, JSON.stringify(map));
   } catch {
     // Storage unavailable or full: credits are a display convenience only.
+  }
+  try {
+    localStorage.removeItem(LEGACY_AVATAR_CREDITS_LS_KEY);
+  } catch {
+    // Storage unavailable: nothing to clean up.
   }
 }
 
@@ -212,8 +235,10 @@ function loadAvatarCredits(): Record<string, AvatarCredit> {
   return map;
 }
 
-export function setAvatarCreditInStorage(dbKey: string, credit: AvatarCredit | null): void {
+export function setAvatarCreditInStorage(avatarUrl: string, credit: AvatarCredit | null): void {
+  const key = avatarCreditUrlKey(avatarUrl);
+  if (key === null) return;
   const current = loadAvatarCredits();
-  const { [dbKey]: _removed, ...rest } = current;
-  persistAvatarCredits(credit ? { ...rest, [dbKey]: credit } : rest);
+  const { [key]: _removed, ...rest } = current;
+  persistAvatarCredits(credit ? { ...rest, [key]: credit } : rest);
 }

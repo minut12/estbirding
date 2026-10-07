@@ -210,7 +210,7 @@ export async function uploadSharedAvatar(
     }, { onConflict: 'species_key' });
   if (dbError) throw new Error('Andmebaasi salvestamine ebaõnnestus: ' + dbError.message);
 
-  setAvatarCreditInStorage(scopedSpeciesKey(speciesKey, scope), credit);
+  setAvatarCreditInStorage(publicUrl, credit);
   const cache = loadSharedCache(scope);
   cache[speciesKey] = publicUrl;
   persistSharedCache(cache, scope);
@@ -223,7 +223,7 @@ export async function removeSharedAvatar(speciesKey: string, scope: SpeciesScope
 
   await supabase.storage.from('bird-avatars').remove([filePath]);
   await supabase.from('bird_avatar_map').delete().eq('species_key', scopedSpeciesKey(speciesKey, scope));
-  setAvatarCreditInStorage(scopedSpeciesKey(speciesKey, scope), null);
+  setAvatarCreditInStorage(supabase.storage.from('bird-avatars').getPublicUrl(filePath).data.publicUrl, null);
 
   const cache = loadSharedCache(scope);
   delete cache[speciesKey];

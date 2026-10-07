@@ -27,6 +27,7 @@ vi.mock('@/config/supabaseConfig', () => ({
 
 import {
   AVATAR_CREDITS_LS_KEY,
+  avatarCreditUrlKey,
   buildAvatarCreditMap,
   fetchCandidateImageFile,
   parseAvatarCredit,
@@ -112,21 +113,34 @@ describe('parseAvatarCredit', () => {
   });
 });
 
+describe('avatarCreditUrlKey', () => {
+  it('strips the ?v= query and the #fragment', () => {
+    expect(avatarCreditUrlKey('https://cdn.example/a.webp?v=123#x')).toBe('https://cdn.example/a.webp');
+  });
+
+  it('returns null for http, empty and non-URL input', () => {
+    expect(avatarCreditUrlKey('http://cdn.example/a.webp')).toBeNull();
+    expect(avatarCreditUrlKey('')).toBeNull();
+    expect(avatarCreditUrlKey('not a url')).toBeNull();
+  });
+});
+
 describe('buildAvatarCreditMap', () => {
-  it('skips null and invalid credits and keeps scoped keys verbatim', () => {
+  it('keys by origin+pathname and skips null/invalid credits and unusable URLs', () => {
     const rows: unknown[] = [
-      { species_key: 'linnuliigid:Rasvatihane', public_url: 'u1', credit: validCredit },
-      { species_key: 'rariliin:X', public_url: 'u2', credit: { ...validCredit, source: 'wikimedia' } },
-      { species_key: 'linnuliigid:Sinitihane', public_url: 'u3', credit: null },
-      { species_key: 'linnuliigid:Bad', public_url: 'u4', credit: { ...validCredit, license: 'gfdl' } },
-      { public_url: 'u5', credit: validCredit },
+      { species_key: 'linnuliigid:Rasvatihane', public_url: 'https://cdn.example/u1.webp?v=1', credit: validCredit },
+      { species_key: 'rariliin:X', public_url: 'https://cdn.example/u2.webp', credit: { ...validCredit, source: 'wikimedia' } },
+      { species_key: 'linnuliigid:Sinitihane', public_url: 'https://cdn.example/u3.webp', credit: null },
+      { species_key: 'linnuliigid:Bad', public_url: 'https://cdn.example/u4.webp', credit: { ...validCredit, license: 'gfdl' } },
+      { species_key: 'linnuliigid:NoUrl', credit: validCredit },
+      { species_key: 'linnuliigid:Http', public_url: 'http://cdn.example/u6.webp', credit: validCredit },
       null,
     ];
 
     const map = buildAvatarCreditMap(rows);
 
-    expect(Object.keys(map).sort()).toEqual(['linnuliigid:Rasvatihane', 'rariliin:X']);
-    expect(map['rariliin:X'].source).toBe('wikimedia');
+    expect(Object.keys(map).sort()).toEqual(['https://cdn.example/u1.webp', 'https://cdn.example/u2.webp']);
+    expect(map['https://cdn.example/u2.webp'].source).toBe('wikimedia');
   });
 });
 
@@ -198,12 +212,16 @@ describe('uploadSharedAvatar credit', () => {
     expect(payload.species_key).toBe('linnuliigid:Rasvatihane');
   });
 
-  it('writes the credit object and stores it locally under the scoped key', async () => {
+  it('writes the credit object and stores it locally under the unversioned public URL', async () => {
+    localStorage.setItem('bm_avatar_credits_v1', JSON.stringify({ 'linnuliigid:Rasvatihane': validCredit }));
+
     await uploadSharedAvatar('Rasvatihane', dataUrl, undefined, validCredit);
 
     const payload = mocks.upsert.mock.calls[0][0] as Record<string, unknown>;
     expect(payload.credit).toEqual(validCredit);
+    expect(String(payload.public_url)).toContain('?v=');
     const stored: unknown = JSON.parse(localStorage.getItem(AVATAR_CREDITS_LS_KEY) || '{}');
-    expect(stored).toEqual({ 'linnuliigid:Rasvatihane': validCredit });
+    expect(stored).toEqual({ 'https://cdn.example/a.webp': validCredit });
+    expect(localStorage.getItem('bm_avatar_credits_v1')).toBeNull();
   });
 });

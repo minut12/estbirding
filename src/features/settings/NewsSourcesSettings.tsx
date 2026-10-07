@@ -49,6 +49,7 @@ const SOURCE_COUNTRY_CODES: Record<string, string> = {
   birding_latvia: 'LV',
   birding_lithuania: 'LT',
   birding_belgium: 'BE',
+  birding_iceland: 'IS',
 };
 
 const QUIET_AMBER = '#D99A1E';

@@ -60,6 +60,7 @@ interface NewsSource {
   slug: string;
   source_key?: string | null;
   key?: string | null;
+  country_code?: string | null;
 }
 
 type NewsListState = {
@@ -784,7 +785,7 @@ export default function NewsTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('news_sources')
-        .select('id, name, slug, source_key, key')
+        .select('id, name, slug, source_key, key, country_code')
         .eq('is_active', true)
         .eq('is_enabled', true)
         .order('name', { ascending: true });
@@ -816,7 +817,7 @@ export default function NewsTab() {
   const isDesktop = useIsDesktopNews();
 
   const chipSources = useMemo(() => {
-    const chipLabel = (s: NewsSource) => sourceChipLabel(s.slug || s.source_key, normalizeDisplayText(s.name));
+    const chipLabel = (s: NewsSource) => sourceChipLabel(s.slug || s.source_key, normalizeDisplayText(s.name), s.country_code);
     return [...filterSources].sort((a, b) => {
       const la = chipLabel(a);
       const lb = chipLabel(b);
@@ -1102,7 +1103,7 @@ export default function NewsTab() {
       {chipSources.map((s) => {
         const canonical = getCanonicalSourceValue(s);
         const slug = s.slug || s.source_key;
-        const code = sourceCountry(slug);
+        const code = sourceCountry(slug, s.country_code);
         return (
           <button
             key={canonical}
@@ -1111,7 +1112,7 @@ export default function NewsTab() {
             className={cn(CHIP_BASE, sourceFilter === canonical ? CHIP_ACTIVE : CHIP_INACTIVE)}
           >
             {code && hasCountryFlag(code) && <CountryFlag code={code} />}
-            {sourceChipLabel(slug, normalizeDisplayText(s.name))}
+            {sourceChipLabel(slug, normalizeDisplayText(s.name), s.country_code)}
           </button>
         );
       })}
@@ -1296,7 +1297,8 @@ function useNewsCardModel(item: NewsItem, sources: NewsSource[], showEtContent: 
     const body = stripTitleFromSnippet(plain, displayTitle);
     return body.slice(0, 150);
   }, [useEtDisplay, translatedBody, item.body, item.summary, item.excerpt, displayTitle]);
-  const code = sourceCountry(item.source_slug || item.source_key);
+  const itemSource = sources.find((s) => (!!item.source_id && s.id === item.source_id) || (!!item.source_slug && s.slug === item.source_slug));
+  const code = sourceCountry(item.source_slug || item.source_key, itemSource?.country_code);
   const shortDate = useMemo(
     () => formatShortNewsDate(item.published_at || item.created_at || item.fetched_at || ''),
     [item.published_at, item.created_at, item.fetched_at],

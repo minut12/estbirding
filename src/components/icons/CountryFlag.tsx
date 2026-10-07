@@ -17,32 +17,36 @@ const FLAGS: Record<string, FlagSpec> = {
   BE: { w: 15, h: 13, body: '<rect width="5" height="13" fill="#000"/><rect x="5" width="5" height="13" fill="#FDDA24"/><rect x="10" width="5" height="13" fill="#EF3340"/>' },
   BY: { w: 18, h: 9, body: '<rect width="18" height="6" fill="#C8313E"/><rect y="6" width="18" height="3" fill="#4AA657"/><rect width="2" height="9" fill="#fff"/>' },
   RU: { w: 18, h: 12, body: '<rect width="18" height="4" fill="#fff"/><rect y="4" width="18" height="4" fill="#0039A6"/><rect y="8" width="18" height="4" fill="#D52B1E"/>' },
+  IS: { w: 25, h: 18, body: '<rect width="25" height="18" fill="#02529C"/><rect x="7" width="4" height="18" fill="#fff"/><rect y="7" width="25" height="4" fill="#fff"/><rect x="8" width="2" height="18" fill="#DC1E35"/><rect y="8" width="25" height="2" fill="#DC1E35"/>' },
 };
 FLAGS['RU-LEN'] = FLAGS.RU;
 FLAGS['RU-PSK'] = FLAGS.RU;
 FLAGS['RU-KGD'] = FLAGS.RU;
 
-export type CountryCode = 'EE' | 'FI' | 'PL' | 'BE' | 'LV' | 'LT' | 'SE' | 'NO' | 'DK' | 'DE' | 'BY' | 'RU';
+export type CountryCode = 'EE' | 'FI' | 'PL' | 'BE' | 'LV' | 'LT' | 'SE' | 'NO' | 'DK' | 'DE' | 'BY' | 'RU' | 'IS';
 
-const SOURCE_COUNTRY: Record<string, CountryCode> = { eoy: 'EE', birding_estonia: 'EE', birdlife_suomi: 'FI', birdlife_poland: 'PL', birding_poland: 'PL', birding_belgium: 'BE', birding_latvia: 'LV', birding_lithuania: 'LT' };
+const SOURCE_COUNTRY: Record<string, CountryCode> = { eoy: 'EE', birding_estonia: 'EE', birdlife_suomi: 'FI', birdlife_poland: 'PL', birding_poland: 'PL', birding_belgium: 'BE', birding_latvia: 'LV', birding_lithuania: 'LT', birding_iceland: 'IS' };
 
-const COUNTRY_CHIP_LABEL: Partial<Record<CountryCode, string>> = { FI: 'Soome', PL: 'Poola', BE: 'Belgia', LV: 'Läti', LT: 'Leedu' };
+const COUNTRY_CHIP_LABEL: Partial<Record<CountryCode, string>> = { FI: 'Soome', PL: 'Poola', BE: 'Belgia', LV: 'Läti', LT: 'Leedu', IS: 'Island', SE: 'Rootsi', NO: 'Norra', DK: 'Taani', DE: 'Saksamaa' };
 
 function normalizeSlug(slug: string | null | undefined): string {
   return String(slug ?? '').trim().toLowerCase();
 }
 
-export function sourceCountry(slug: string | null | undefined): CountryCode | null {
+// P99b: country_code from news_sources wins; the slug map is the fallback for rows without it.
+export function sourceCountry(slug: string | null | undefined, countryCode?: string | null): CountryCode | null {
+  const cc = String(countryCode ?? '').trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(cc) && cc in FLAGS) return cc as CountryCode;
   const key = normalizeSlug(slug);
   if (!key) return null;
   return Object.prototype.hasOwnProperty.call(SOURCE_COUNTRY, key) ? SOURCE_COUNTRY[key] : null;
 }
 
-export function sourceChipLabel(slug: string | null | undefined, fallbackName: string): string {
+export function sourceChipLabel(slug: string | null | undefined, fallbackName: string, countryCode?: string | null): string {
   const key = normalizeSlug(slug);
   if (key === 'eoy') return 'EOÜ';
   if (key === 'birding_estonia') return 'Eesti';
-  const code = sourceCountry(key);
+  const code = sourceCountry(key, countryCode);
   return (code && COUNTRY_CHIP_LABEL[code]) || fallbackName;
 }
 

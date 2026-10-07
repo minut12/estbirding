@@ -1063,6 +1063,7 @@ export type Database = {
       }
       news_sources: {
         Row: {
+          country_code: string | null
           created_at: string
           feed_url: string | null
           fetch_url: string | null
@@ -1079,6 +1080,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          country_code?: string | null
           created_at?: string
           feed_url?: string | null
           fetch_url?: string | null
@@ -1095,6 +1097,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          country_code?: string | null
           created_at?: string
           feed_url?: string | null
           fetch_url?: string | null

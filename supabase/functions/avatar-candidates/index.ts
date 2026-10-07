@@ -1,4 +1,4 @@
-// redeploy-marker: 2026-10-07 - P97c2b avatar-candidates (iNat taxa lookup: rank=species,subspecies, is_active, per_page 30)
+// redeploy-marker: 2026-10-07 - P97c2c avatar-candidates (thumb.wikimedia.org allowed, Commons non-image files skipped)
 //
 // Admin-only avatar picker backend.
 //   GET  ?probe=1                                  -> upstream reachability (no auth, no data)
@@ -29,6 +29,7 @@ const IMAGE_HOSTS: ReadonlySet<string> = new Set([
   "inaturalist-open-data.s3.amazonaws.com",
   "static.inaturalist.org",
   "upload.wikimedia.org",
+  "thumb.wikimedia.org",
 ]);
 const IMAGE_TYPES: ReadonlySet<string> = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -270,6 +271,7 @@ interface CommonsImage {
   thumbUrl: string;
   fullUrl: string;
   pageUrl: string;
+  mime: string | null;
   licenseShortName: string | null;
   licenseUrl: string | null;
   artist: string | null;
@@ -309,6 +311,7 @@ function parseCommonsPage(page: unknown): CommonsImage | null {
     thumbUrl,
     fullUrl,
     pageUrl,
+    mime: str(info.mime),
     licenseShortName: extValue(ext, "LicenseShortName"),
     licenseUrl: extValue(ext, "LicenseUrl"),
     artist: extValue(ext, "Artist"),
@@ -355,6 +358,7 @@ function absoluteHttps(url: string): string {
 function commonsCandidate(image: CommonsImage): Candidate | null {
   const license = commonsLicense(image.licenseShortName);
   if (!license || !image.licenseUrl) return null;
+  if (!image.mime || !image.mime.startsWith("image/")) return null;
   return {
     id: `wm-${image.pageId}`,
     source: "wikimedia",
@@ -383,7 +387,7 @@ async function searchWikimedia(scientificName: string): Promise<Candidate[]> {
     gsrsearch: `haswbstatement:P180=${qid}`,
     gsrlimit: "20",
     prop: "imageinfo",
-    iiprop: "url|extmetadata",
+    iiprop: "url|extmetadata|mime",
     iiurlwidth: "640",
     format: "json",
   });

@@ -12,6 +12,7 @@ import { clearAppCaches, fullReset, doSoftReload, doHardReload, type ResetReport
 import { APP_VERSION } from '@/lib/version';
 import {
   Trash2, RotateCcw, LogOut, Users, MapPin, Bird, Rss, Activity, LifeBuoy, ChevronRight, Wrench,
+  Settings,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -99,6 +100,49 @@ function SettingsSection({ label, children }: SettingsSectionProps) {
   );
 }
 
+const DESKTOP_SETTINGS_QUERY = '(min-width: 901px)';
+
+// Copied from NewsTab (do not import across features)
+function useIsDesktopSettings(): boolean {
+  const [isDesktop, setIsDesktop] = useState<boolean>(() => (
+    typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia(DESKTOP_SETTINGS_QUERY).matches
+  ));
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mql = window.matchMedia(DESKTOP_SETTINGS_QUERY);
+    const onChange = () => setIsDesktop(mql.matches);
+    onChange();
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+  return isDesktop;
+}
+
+interface DesktopNavItemProps {
+  icon: LucideIcon;
+  label: ReactNode;
+  isActive: boolean;
+  onClick: () => void;
+}
+
+function DesktopNavItem({ icon: Icon, label, isActive, onClick }: DesktopNavItemProps) {
+  return (
+    <button
+      type="button"
+      aria-current={isActive ? 'page' : undefined}
+      onClick={onClick}
+      className={`h-10 px-2.5 rounded-[10px] flex items-center gap-2.5 text-[14.5px] hover:bg-muted${isActive ? ' bg-card font-semibold ring-1 ring-border' : ''}`}
+    >
+      <Icon className={`w-[18px] h-[18px] shrink-0${isActive ? ' text-primary' : ''}`} />
+      {label}
+    </button>
+  );
+}
+
+const DESKTOP_NAV_GROUP_LABEL_CLASS = 'text-[12.5px] font-semibold text-muted-foreground ml-2.5 mb-1.5';
+
 export default function SettingsTab() {
   const { user, role, isAdmin: isAdminUser, hasPermission, signOut } = useAuth();
   const navigate = useNavigate();
@@ -113,6 +157,7 @@ export default function SettingsTab() {
   const canManageSettings = isAdminUser || hasPermission(PERMISSIONS.settingsManage);
   const canSeeAdminLinks = isAdminUser || hasPermission(PERMISSIONS.settingsLinksAdmin);
   const isFree = role === 'user_level_1';
+  const isDesktop = useIsDesktopSettings();
 
   useEffect(() => {
     setForm(loadSettings());
@@ -313,19 +358,21 @@ export default function SettingsTab() {
   const roleLabel = role === 'admin' ? 'Admin' : role === 'user_level_2' ? 'Tase 2' : 'Tase 1';
   const avatarLetter = (user?.email ?? '').charAt(0).toUpperCase();
 
-  const renderSettingsHome = () => (
+  const renderSettingsHome = (opts?: { showProfile?: boolean }) => (
     <div className="flex flex-col gap-[22px]">
-      <div className="flex items-center gap-3">
-        <div className="w-[52px] h-[52px] rounded-full bg-primary text-primary-foreground grid place-items-center font-semibold text-lg shrink-0">
-          {avatarLetter}
+      {opts?.showProfile !== false && (
+        <div className="flex items-center gap-3">
+          <div className="w-[52px] h-[52px] rounded-full bg-primary text-primary-foreground grid place-items-center font-semibold text-lg shrink-0">
+            {avatarLetter}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold truncate">{user?.email}</div>
+            <span className="inline-flex rounded-full bg-accent text-primary text-xs font-medium px-2 py-0.5 mt-1">
+              {roleLabel}
+            </span>
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold truncate">{user?.email}</div>
-          <span className="inline-flex rounded-full bg-accent text-primary text-xs font-medium px-2 py-0.5 mt-1">
-            {roleLabel}
-          </span>
-        </div>
-      </div>
+      )}
 
       {!isFree && (
         <SettingsSection label="Teavitused">
@@ -409,6 +456,115 @@ export default function SettingsTab() {
     if (settingsPage === 'event_log') return <>{renderSettingsHeader('Diagnostika')}{renderSettingsEventLog()}</>;
     return renderSettingsHome();
   };
+
+  const renderDesktopPage = (title: string, body: ReactNode) => (
+    <>
+      <h2 className="text-lg font-semibold">{title}</h2>
+      {body}
+    </>
+  );
+
+  const renderDesktopContent = () => {
+    if (settingsPage === 'home') return renderSettingsHome({ showProfile: false });
+    if (!canManageSettings) return renderSettingsHome({ showProfile: false });
+    if (settingsPage === 'news') return renderDesktopPage('Uudiste allikad', renderSettingsNews());
+    if (settingsPage === 'species') return renderDesktopPage('Liigid', renderSettingsSpecies());
+    if (settingsPage === 'event_log') return renderDesktopPage('Diagnostika', renderSettingsEventLog());
+    return renderSettingsHome({ showProfile: false });
+  };
+
+  const renderDesktopNav = () => (
+    <nav aria-label="Seadete jaotised" className="flex-[1_1_220px] max-w-[240px] flex flex-col gap-[18px]">
+      <div className="flex flex-col">
+        <div className={DESKTOP_NAV_GROUP_LABEL_CLASS}>Minu seaded</div>
+        <DesktopNavItem
+          icon={Settings}
+          label={<>&Uuml;ldine</>}
+          isActive={settingsPage === 'home'}
+          onClick={() => setSettingsPage('home')}
+        />
+      </div>
+      <div className="flex flex-col">
+        <div className={DESKTOP_NAV_GROUP_LABEL_CLASS}>Haldus</div>
+        {canSeeAdminLinks && (
+          <DesktopNavItem
+            icon={Users}
+            label={<>Kasutajad</>}
+            isActive={false}
+            onClick={() => navigate('/admin/users')}
+          />
+        )}
+        <DesktopNavItem
+          icon={Bird}
+          label={<>Liigid</>}
+          isActive={settingsPage === 'species'}
+          onClick={() => setSettingsPage('species')}
+        />
+        <DesktopNavItem
+          icon={Rss}
+          label={<>Uudiste allikad</>}
+          isActive={settingsPage === 'news'}
+          onClick={() => setSettingsPage('news')}
+        />
+        <DesktopNavItem
+          icon={Activity}
+          label={<>Diagnostika</>}
+          isActive={settingsPage === 'event_log'}
+          onClick={() => setSettingsPage('event_log')}
+        />
+      </div>
+    </nav>
+  );
+
+  if (isDesktop) {
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <header className="border-b border-border bg-card">
+          <div className="mx-auto max-w-[1080px] px-6 min-h-[60px] flex items-center justify-between gap-4 flex-wrap">
+            <h2 className="text-xl font-semibold">Seaded</h2>
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="inline-flex rounded-full bg-accent text-primary text-xs font-medium px-2 py-0.5">
+                {roleLabel}
+              </span>
+              <span className="text-[13px] text-muted-foreground">{user?.email}</span>
+              <div className="h-[34px] w-[34px] rounded-full bg-primary text-primary-foreground grid place-items-center font-semibold text-sm shrink-0">
+                {avatarLetter}
+              </div>
+            </div>
+          </div>
+        </header>
+        <div className="flex-1 min-h-0 overflow-y-auto bg-muted/40">
+          <div className="mx-auto max-w-[1080px] px-6 pt-7 pb-12 flex flex-wrap items-start gap-8">
+            {canManageSettings && renderDesktopNav()}
+            <div className={`flex-[999_1_560px] min-w-0 max-w-[680px] flex flex-col gap-[26px]${canManageSettings ? '' : ' mx-auto'}`}>
+              {renderDesktopContent()}
+            </div>
+          </div>
+        </div>
+
+        <AlertDialog open={confirmMode !== null} onOpenChange={(open) => { if (!open) setConfirmMode(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {confirmMode === 'hard' ? 'L\u00e4htesta rakendus' : 'T\u00fchjenda vahem\u00e4lu'}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmMode === 'hard'
+                  ? 'K\u00f5ik salvestatud seaded ja vahem\u00e4lu kustutatakse. Rakendus laaditakse uuesti.'
+                  : 'Vahem\u00e4lu t\u00fchjendatakse ja rakendus laaditakse uuesti. Seaded j\u00e4\u00e4vad alles.'}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>T&uuml;hista</AlertDialogCancel>
+              <AlertDialogAction onClick={handleReset}>
+                {confirmMode === 'hard' ? 'L\u00e4htesta' : 'T\u00fchjenda'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">

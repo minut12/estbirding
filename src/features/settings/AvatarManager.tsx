@@ -6,7 +6,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { Upload, Trash2, Bird, RefreshCw, Cloud, Loader2, ChevronLeft, ChevronRight, Bell } from 'lucide-react';
+import { Upload, Trash2, Bird, RefreshCw, Cloud, Loader2, ChevronLeft, ChevronRight, Bell, Images } from 'lucide-react';
 import { LINNULIIGID_SCOPE, type SpeciesScopeConfig } from '@/lib/mapScope';
 import {
   getMergedAvatars, validateFile, processImage, notifyIframeUpdate,
@@ -38,6 +38,8 @@ import UsaRarityClassifier from '@/features/settings/UsaRarityClassifier';
 import { ET_STRINGS } from '@/lib/etStrings';
 import { normalizeUiText } from '@/lib/textNormalize';
 import { isDeveloperModeEnabled } from '@/config/supabaseConfig';
+import type { AvatarCredit } from '@/lib/avatarCandidates';
+import { AvatarPickerSheet, creditLine } from '@/features/settings/AvatarPickerSheet';
 
 type RarityLevel = 'none' | 'rare' | 'super' | 'mega';
 type MigrantMode = 'heuristic' | 'true' | 'false';
@@ -89,6 +91,8 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   const [preview, setPreview] = useState<string | null>(null);
   const [currentAvatar, setCurrentAvatar] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pendingCredit, setPendingCredit] = useState<AvatarCredit | null>(null);
   const [saving, setSaving] = useState(false);
   const [manualKey, setManualKey] = useState('');
   const [ebirdCode, setEbirdCode] = useState('');
@@ -189,6 +193,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       hydratedSelectionRef.current = null;
       setCurrentAvatar(null);
       setPreview(null);
+      setPendingCredit(null);
       setEbirdCode('');
       setRarityLevel('none');
       setScientificName('');
@@ -214,6 +219,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     );
     setNotify(cloudItem?.notify === true);
     setPreview(null);
+    setPendingCredit(null);
   }, [scope, selected, scopeMetadata, avatarsReady, cloudItems]);
 
   // Live global eBird observation count (via GBIF's eBird dataset) for the current
@@ -254,11 +260,31 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     try {
       const dataUrl = await processImage(file);
       setPreview(dataUrl);
+      setPendingCredit(null);
     } catch (ex: any) {
       toast.error(ex?.message || 'Pildi töötlemine ebaõnnestus');
     } finally {
       setProcessing(false);
       if (fileRef.current) fileRef.current.value = '';
+    }
+  }, []);
+
+  const handlePickedFile = useCallback(async (file: File, credit: AvatarCredit): Promise<void> => {
+    const err = validateFile(file);
+    if (err) {
+      toast.error(err);
+      throw new Error(err);
+    }
+    setProcessing(true);
+    try {
+      const dataUrl = await processImage(file);
+      setPreview(dataUrl);
+      setPendingCredit(credit);
+    } catch (ex: unknown) {
+      toast.error(ex instanceof Error && ex.message ? ex.message : 'Pildi t\u00f6\u00f6tlemine eba\u00f5nnestus');
+      throw ex;
+    } finally {
+      setProcessing(false);
     }
   }, []);
 
@@ -284,7 +310,8 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
         notify,
       };
       console.info('[avatar-manager] avatar upload start', { species: selected });
-      const publicUrl = await uploadSharedAvatar(selected, preview, scope);
+      const creditToSave = pendingCredit;
+      const publicUrl = await uploadSharedAvatar(selected, preview, scope, creditToSave);
       console.info('[avatar-manager] avatar upload end', { species: selected, publicUrl });
       const cloudPatch = { ...patch, avatarUrl: publicUrl, is_migrant: migrantValue };
       console.info('[avatar-manager] metadata save start', { species: selected, patch: cloudPatch });
@@ -292,6 +319,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       console.info('[avatar-manager] metadata save end', { species: selected, saved: Boolean(merged[selected]) });
       setCurrentAvatar(publicUrl);
       setPreview(null);
+      setPendingCredit(null);
       upsertSpeciesMeta(selected, { ...patch, avatarUrl: publicUrl }, scope);
       notifyIframeUpdate('update', selected, publicUrl, scope);
       setLastSyncAt(localStorage.getItem(scope.speciesMetaLastSyncAtKey || SPECIES_META_LAST_SYNC_AT_KEY) || '');
@@ -309,7 +337,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     } finally {
       setSaving(false);
     }
-  }, [saving, scope, selected, preview, ebirdCode, rarityLevel, scientificName, notify, isMigrantMode]);
+  }, [saving, scope, selected, preview, pendingCredit, ebirdCode, rarityLevel, scientificName, notify, isMigrantMode]);
 
   const handleRemove = useCallback(async () => {
     if (!selected) return;
@@ -318,6 +346,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       await removeSharedAvatar(selected, scope);
       setCurrentAvatar(null);
       setPreview(null);
+      setPendingCredit(null);
       upsertSpeciesMeta(selected, { avatarUrl: '' }, scope);
       notifyIframeUpdate('reset', selected, undefined, scope);
       toast.success('Avatar eemaldatud');
@@ -770,6 +799,16 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
               {processing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
               Vaheta pilti
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={!headerLatin || processing || saving}
+              onClick={() => setPickerOpen(true)}
+            >
+              <Images className="w-3.5 h-3.5" />
+              Vali pilt
+            </Button>
             {currentAvatar && (
               <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRemove} disabled={saving}>
                 <Trash2 className="w-3.5 h-3.5" />
@@ -777,9 +816,21 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
               </Button>
             )}
           </div>
+          {!headerLatin && <p className="text-xs text-muted-foreground">Lisa enne teaduslik nimi</p>}
           <p className="text-xs text-muted-foreground">
             {preview ? 'Eelvaade (salvestamata)' : currentAvatar ? 'Pilves salvestatud avatar' : 'Vaikimisi / placeholder'}
           </p>
+          {pendingCredit && preview && (
+            <p className="text-xs text-muted-foreground">{creditLine(pendingCredit)}</p>
+          )}
+          <AvatarPickerSheet
+            open={pickerOpen}
+            onOpenChange={setPickerOpen}
+            speciesName={activeKey}
+            scientificName={headerLatin}
+            onPicked={handlePickedFile}
+            onUploadOwn={() => fileRef.current?.click()}
+          />
         </div>
       </div>
 

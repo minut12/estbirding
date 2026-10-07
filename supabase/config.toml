@@ -210,3 +210,6 @@ verify_jwt = false
 
 [functions.event-from-url]
 verify_jwt = false
+
+[functions.avatar-candidates]
+verify_jwt = false

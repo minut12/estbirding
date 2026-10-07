@@ -1,10 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/integrations/supabase/client', () => ({
-  supabase: { rpc: vi.fn() },
+  supabase: { rpc: vi.fn(), from: vi.fn() },
 }));
 
-import { formatSignIn, isRecentSignIn, parseAdminUsers } from '@/features/admin/adminUsers';
+import { supabase } from '@/integrations/supabase/client';
+import {
+  ADMIN_ERROR_TEXT,
+  adminErrorMessage,
+  formatSignIn,
+  isRecentSignIn,
+  parseAdminUsers,
+  setAdminUserStatus,
+} from '@/features/admin/adminUsers';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = Date.parse('2026-10-07T12:00:00Z');
@@ -109,5 +117,91 @@ describe('formatSignIn', () => {
     const out = formatSignIn(daysAgo(400), NOW);
     expect(out).not.toBe('');
     expect(out).toBe(rtf.format(-1, 'year'));
+  });
+});
+
+describe('adminErrorMessage', () => {
+  it('maps "cannot change own role" from an Error', () => {
+    expect(adminErrorMessage(new Error('cannot change own role'))).toBe(ADMIN_ERROR_TEXT.ownRole);
+  });
+
+  it('maps "cannot change own role" from a plain object', () => {
+    expect(adminErrorMessage({ message: 'cannot change own role' })).toBe(ADMIN_ERROR_TEXT.ownRole);
+  });
+
+  it('maps "cannot remove the last admin" from an Error', () => {
+    expect(adminErrorMessage(new Error('cannot remove the last admin'))).toBe(ADMIN_ERROR_TEXT.lastAdmin);
+  });
+
+  it('maps "cannot remove the last admin" from a plain object', () => {
+    expect(adminErrorMessage({ message: 'cannot remove the last admin' })).toBe(ADMIN_ERROR_TEXT.lastAdmin);
+  });
+
+  it('maps "user not found" from an Error', () => {
+    expect(adminErrorMessage(new Error('user not found'))).toBe(ADMIN_ERROR_TEXT.notFound);
+  });
+
+  it('maps "user not found" from a plain object', () => {
+    expect(adminErrorMessage({ message: 'user not found' })).toBe(ADMIN_ERROR_TEXT.notFound);
+  });
+
+  it('maps "admin role required" from an Error', () => {
+    expect(adminErrorMessage(new Error('admin role required'))).toBe(ADMIN_ERROR_TEXT.adminRequired);
+  });
+
+  it('maps "admin role required" from a plain object', () => {
+    expect(adminErrorMessage({ message: 'admin role required' })).toBe(ADMIN_ERROR_TEXT.adminRequired);
+  });
+
+  it('matches by substring inside a longer message', () => {
+    expect(adminErrorMessage(new Error('P0001: cannot change own role (hint)'))).toBe(ADMIN_ERROR_TEXT.ownRole);
+  });
+
+  it('falls back for an unknown message', () => {
+    expect(adminErrorMessage(new Error('something else'))).toBe(ADMIN_ERROR_TEXT.fallback);
+    expect(adminErrorMessage({ message: 'something else' })).toBe(ADMIN_ERROR_TEXT.fallback);
+  });
+
+  it('falls back for non-objects, null and objects without a string message', () => {
+    expect(adminErrorMessage('cannot change own role')).toBe(ADMIN_ERROR_TEXT.fallback);
+    expect(adminErrorMessage(42)).toBe(ADMIN_ERROR_TEXT.fallback);
+    expect(adminErrorMessage(null)).toBe(ADMIN_ERROR_TEXT.fallback);
+    expect(adminErrorMessage(undefined)).toBe(ADMIN_ERROR_TEXT.fallback);
+    expect(adminErrorMessage({ message: 7 })).toBe(ADMIN_ERROR_TEXT.fallback);
+  });
+});
+
+describe('setAdminUserStatus', () => {
+  it('updates profiles.status for the given id', async () => {
+    const select = vi.fn().mockResolvedValue({ data: [{ id: 'u1' }], error: null });
+    const eq = vi.fn().mockReturnValue({ select });
+    const update = vi.fn().mockReturnValue({ eq });
+    const from = vi.mocked(supabase.from);
+    from.mockReturnValue({ update } as unknown as ReturnType<typeof supabase.from>);
+
+    await setAdminUserStatus('u1', 'disabled');
+
+    expect(from).toHaveBeenCalledWith('profiles');
+    expect(update).toHaveBeenCalledWith({ status: 'disabled' });
+    expect(eq).toHaveBeenCalledWith('id', 'u1');
+    expect(select).toHaveBeenCalledWith('id');
+  });
+
+  it('throws when supabase returns an error', async () => {
+    const select = vi.fn().mockResolvedValue({ data: null, error: { message: 'admin role required' } });
+    const eq = vi.fn().mockReturnValue({ select });
+    const update = vi.fn().mockReturnValue({ eq });
+    vi.mocked(supabase.from).mockReturnValue({ update } as unknown as ReturnType<typeof supabase.from>);
+
+    await expect(setAdminUserStatus('u1', 'active')).rejects.toThrow('admin role required');
+  });
+
+  it('throws when no row was updated (e.g. filtered out by RLS)', async () => {
+    const select = vi.fn().mockResolvedValue({ data: [], error: null });
+    const eq = vi.fn().mockReturnValue({ select });
+    const update = vi.fn().mockReturnValue({ eq });
+    vi.mocked(supabase.from).mockReturnValue({ update } as unknown as ReturnType<typeof supabase.from>);
+
+    await expect(setAdminUserStatus('u1', 'disabled')).rejects.toThrow(/^Oleku muutmine/);
   });
 });

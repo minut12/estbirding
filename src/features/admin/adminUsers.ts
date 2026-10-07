@@ -109,3 +109,42 @@ export function formatSignIn(iso: string | null, now = Date.now()): string {
   if (absDays < DAYS_PER_YEAR) return rtf.format(-Math.round(days / DAYS_PER_MONTH), 'month');
   return rtf.format(-Math.round(days / DAYS_PER_YEAR), 'year');
 }
+
+export type AdminUserStatus = 'active' | 'disabled';
+
+export async function setAdminUserStatus(userId: string, status: AdminUserStatus): Promise<void> {
+  const { data, error } = await supabase.from('profiles').update({ status }).eq('id', userId).select('id');
+  if (error) throw toError(error, 'Oleku muutmine eba\u00f5nnestus');
+  // RLS can filter the row out without an error: 0 updated rows is a failure, not a success.
+  if (!data || data.length === 0) throw new Error('Oleku muutmine eba\u00f5nnestus');
+}
+
+export const ADMIN_ERROR_TEXT = {
+  ownRole: 'Oma rolli ei saa muuta.',
+  lastAdmin: 'Viimast administraatorit ei saa eemaldada.',
+  notFound: 'Kasutajat ei leitud.',
+  adminRequired: 'Ainult administraator saab seda teha.',
+  fallback: 'Muutmine eba\u00f5nnestus.',
+} as const;
+
+const ADMIN_ERROR_MAP: readonly (readonly [string, string])[] = [
+  ['cannot change own role', ADMIN_ERROR_TEXT.ownRole],
+  ['cannot remove the last admin', ADMIN_ERROR_TEXT.lastAdmin],
+  ['user not found', ADMIN_ERROR_TEXT.notFound],
+  ['admin role required', ADMIN_ERROR_TEXT.adminRequired],
+];
+
+function rawErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const message = (err as { message: unknown }).message;
+    if (typeof message === 'string') return message;
+  }
+  return '';
+}
+
+export function adminErrorMessage(err: unknown): string {
+  const message = rawErrorMessage(err);
+  const match = ADMIN_ERROR_MAP.find(([needle]) => message.includes(needle));
+  return match ? match[1] : ADMIN_ERROR_TEXT.fallback;
+}

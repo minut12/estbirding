@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-07 - P99a admin check (Authorization -> auth.getUser 401, events_admin_assert_admin 403) before the body is read
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -26,6 +27,19 @@ function isMissingTranslateColumnError(error: unknown): boolean {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
+
+  // P99a: verify_jwt is false for this function, so check login + admin here (same as avatar-candidates).
+  const authHeader = req.headers.get("Authorization") || "";
+  if (!authHeader) return jsonResponse(401, { error: "Unauthorized" });
+  const authClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: authHeader } } },
+  );
+  const { data: authData, error: authError } = await authClient.auth.getUser();
+  if (authError || !authData.user) return jsonResponse(401, { error: "Unauthorized" });
+  const { error: adminError } = await authClient.rpc("events_admin_assert_admin");
+  if (adminError) return jsonResponse(403, { error: "forbidden" });
 
   try {
     const body = await req.json().catch(() => ({}));

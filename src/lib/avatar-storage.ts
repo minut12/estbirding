@@ -6,6 +6,12 @@
 import { supabase } from '@/config/supabaseClient';
 import { validateSupabaseConfig } from '@/config/supabaseConfig';
 import { LINNULIIGID_SCOPE, type SpeciesScopeConfig } from '@/lib/mapScope';
+import {
+  buildAvatarCreditMap,
+  persistAvatarCredits,
+  setAvatarCreditInStorage,
+  type AvatarCredit,
+} from '@/lib/avatarCandidates';
 
 const MAX_SIZE = 256;
 const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -66,6 +72,7 @@ export async function fetchSharedAvatars(scope: SpeciesScopeConfig = LINNULIIGID
     const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_all_avatars');
 
     if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
+      persistAvatarCredits(buildAvatarCreditMap(rpcData));
       const map: AvatarMap = {};
       const scopePrefix = scope.avatarSpeciesKeyPrefix; // e.g. "usa-co:" or "linnuliigid:"
       let skippedOtherScope = 0;
@@ -162,7 +169,12 @@ function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([decodeURIComponent(payload)], { type: mimeType });
 }
 
-export async function uploadSharedAvatar(speciesKey: string, dataUrl: string, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<string> {
+export async function uploadSharedAvatar(
+  speciesKey: string,
+  dataUrl: string,
+  scope: SpeciesScopeConfig = LINNULIIGID_SCOPE,
+  credit: AvatarCredit | null = null,
+): Promise<string> {
   const validation = validateSupabaseConfig();
   if (!validation.ok) throw new Error(validation.error || 'Supabase seadistus puudub.');
 
@@ -193,10 +205,12 @@ export async function uploadSharedAvatar(speciesKey: string, dataUrl: string, sc
       species_key: scopedSpeciesKey(speciesKey, scope),
       file_path: filePath,
       public_url: publicUrl,
+      credit,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'species_key' });
   if (dbError) throw new Error('Andmebaasi salvestamine ebaõnnestus: ' + dbError.message);
 
+  setAvatarCreditInStorage(scopedSpeciesKey(speciesKey, scope), credit);
   const cache = loadSharedCache(scope);
   cache[speciesKey] = publicUrl;
   persistSharedCache(cache, scope);
@@ -209,6 +223,7 @@ export async function removeSharedAvatar(speciesKey: string, scope: SpeciesScope
 
   await supabase.storage.from('bird-avatars').remove([filePath]);
   await supabase.from('bird_avatar_map').delete().eq('species_key', scopedSpeciesKey(speciesKey, scope));
+  setAvatarCreditInStorage(scopedSpeciesKey(speciesKey, scope), null);
 
   const cache = loadSharedCache(scope);
   delete cache[speciesKey];

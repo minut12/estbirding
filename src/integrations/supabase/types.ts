@@ -34,18 +34,21 @@ export type Database = {
       }
       bird_avatar_map: {
         Row: {
+          credit: Json | null
           file_path: string
           public_url: string
           species_key: string
           updated_at: string
         }
         Insert: {
+          credit?: Json | null
           file_path: string
           public_url: string
           species_key: string
           updated_at?: string
         }
         Update: {
+          credit?: Json | null
           file_path?: string
           public_url?: string
           species_key?: string
@@ -1662,6 +1665,7 @@ export type Database = {
       get_all_avatars: {
         Args: never
         Returns: {
+          credit: Json | null
           public_url: string
           species_key: string
         }[]

@@ -917,7 +917,7 @@ function readEstbirdingState(state: unknown): EstbirdingNavState | null {
   return nested as EstbirdingNavState;
 }
 
-// P98: one Ulevaade (Eesti) card per species when it has 2+ entries. Rows are newest first.
+// P98/P98b: one Ulevaade (Eesti + Euroopa) card per species when it has 2+ entries. Rows are newest first.
 function SpeciesObsRow({ entry, subId, hasMedia, ebirdCode }: { entry: VaatlusEntry; subId?: string; hasMedia: boolean; ebirdCode?: string }) {
   const obs = formatObservers(entry.observers);
   const src = getSourceDisplay(entry.source);
@@ -928,6 +928,9 @@ function SpeciesObsRow({ entry, subId, hasMedia, ebirdCode }: { entry: VaatlusEn
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
         <span className="font-medium shrink-0 sm:w-24">{formatEntryDate(entry.date)}</span>
         <span className="order-last basis-full min-w-0 text-muted-foreground sm:order-none sm:basis-auto sm:flex-1">
+          {entry.country_code && entry.country_code !== 'EE' && hasCountryFlag(entry.country_code) ? (
+            <span className="mr-1 inline-flex align-middle"><CountryFlag code={entry.country_code} /></span>
+          ) : null}
           {entry.location}
           {entry.region ? <> &middot; {entry.region}</> : null}
           {!obs.unknown ? <> &middot; {obs.text}</> : null}
@@ -980,8 +983,10 @@ function SpeciesCard({ items, domIds, subIdFor, hasMediaFor, ebirdCode, avatarUr
     return TIER_RANK[t] > TIER_RANK[best] ? t : best;
   }, 'none');
   const reason = items.find((it) => it.rarity_reason)?.rarity_reason;
-  // eBird comparison_et is a per-observation comment; only Elurikkus carries a species-level note.
-  const comparison = items.find((it) => it.source === 'elurikkus' && it.comparison_et)?.comparison_et;
+  const eluComparison = items.find((it) => it.source === 'elurikkus' && it.comparison_et)?.comparison_et;
+  // eBird comparison_et is per observation; show it once only when every row carries the identical text.
+  const sameComparison = head.comparison_et && items.every((it) => it.comparison_et === head.comparison_et) ? head.comparison_et : null;
+  const comparison = eluComparison || sameComparison;
   const dates = items.map((it) => it.date).filter(Boolean).sort();
   const shown = showAll ? items : items.slice(0, 3);
   const statsBySource: Array<{ src: string; stats: SightsStats }> = [];
@@ -1244,6 +1249,7 @@ export default function OverviewTab() {
   const eeEntries = useMemo(() => sortEntries(mergedEstonia), [mergedEstonia]);
   const euEntries = useMemo(() => sortEntries(report?.europe_entries || []), [report]);
   const eeGroups = useMemo(() => groupEntriesBySpecies(eeEntries), [eeEntries]);
+  const euGroups = useMemo(() => groupEntriesBySpecies(euEntries), [euEntries]);
   const eeSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.estonia), [report]);
   const euSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.europe), [report]);
   const eeMediaLookup = useMemo(() => buildHasMediaLookup(report?.source_data?.estonia), [report]);
@@ -1706,49 +1712,37 @@ export default function OverviewTab() {
                     Sel perioodil silmapaistvaid vaatlusi ei registreeritud.
                   </p>
                 ) : (
-                  section === 'ee' ? (
-                    eeGroups.map((g) => {
-                      if (g.items.length === 1) {
-                        const { entry, idx } = g.items[0];
-                        return (
-                          <EntryCard
-                            key={`${entry.species_lat}-${entry.date}-${idx}`}
-                            entry={entry}
-                            subId={findSubId(entry, activeLookup)}
-                            hasMedia={findHasMedia(entry, activeMedia)}
-                            ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
-                            avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
-                            domId={entryDomId('ee', entry, idx)}
-                            onShowOnMap={() => navigate('/', { state: { estbirding: { activeTab: 'kaart', mapId: 'rariliin', focusSpecies: entry.species_et } } })}
-                          />
-                        );
-                      }
-                      const head = g.items[0].entry;
+                  (section === 'eu' ? euGroups : eeGroups).map((g) => {
+                    const scope: 'ee' | 'eu' = section === 'eu' ? 'eu' : 'ee';
+                    if (g.items.length === 1) {
+                      const { entry, idx } = g.items[0];
                       return (
-                        <SpeciesCard
-                          key={`grp-${g.key}`}
-                          items={g.items.map((it) => it.entry)}
-                          domIds={g.items.map((it) => entryDomId('ee', it.entry, it.idx))}
-                          subIdFor={(e) => findSubId(e, activeLookup)}
-                          hasMediaFor={(e) => findHasMedia(e, activeMedia)}
-                          ebirdCode={lookupEbirdCode(head.species_lat, ebirdCodeLookup)}
-                          avatarUrl={lookupAvatarUrl(head.species_lat, avatarUrlLookup)}
-                          onShowOnMap={() => navigate('/', { state: { estbirding: { activeTab: 'kaart', mapId: 'rariliin', focusSpecies: head.species_et } } })}
+                        <EntryCard
+                          key={`${entry.species_lat}-${entry.date}-${idx}`}
+                          entry={entry}
+                          subId={findSubId(entry, activeLookup)}
+                          hasMedia={findHasMedia(entry, activeMedia)}
+                          ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
+                          avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
+                          domId={entryDomId(scope, entry, idx)}
+                          onShowOnMap={scope === 'ee' ? () => navigate('/', { state: { estbirding: { activeTab: 'kaart', mapId: 'rariliin', focusSpecies: entry.species_et } } }) : undefined}
                         />
                       );
-                    })
-                  ) :
-                  activeEntries.map((entry, idx) => (
-                    <EntryCard
-                      key={`${entry.species_lat}-${entry.date}-${idx}`}
-                      entry={entry}
-                      subId={findSubId(entry, activeLookup)}
-                      hasMedia={findHasMedia(entry, activeMedia)}
-                      ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
-                      avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
-                      domId={entryDomId(section === 'eu' ? 'eu' : 'ee', entry, idx)}
-                    />
-                  ))
+                    }
+                    const head = g.items[0].entry;
+                    return (
+                      <SpeciesCard
+                        key={`grp-${scope}-${g.key}`}
+                        items={g.items.map((it) => it.entry)}
+                        domIds={g.items.map((it) => entryDomId(scope, it.entry, it.idx))}
+                        subIdFor={(e) => findSubId(e, activeLookup)}
+                        hasMediaFor={(e) => findHasMedia(e, activeMedia)}
+                        ebirdCode={lookupEbirdCode(head.species_lat, ebirdCodeLookup)}
+                        avatarUrl={lookupAvatarUrl(head.species_lat, avatarUrlLookup)}
+                        onShowOnMap={scope === 'ee' ? () => navigate('/', { state: { estbirding: { activeTab: 'kaart', mapId: 'rariliin', focusSpecies: head.species_et } } }) : undefined}
+                      />
+                    );
+                  })
                 )}
               </div>
             )}

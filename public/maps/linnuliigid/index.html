@@ -10334,13 +10334,24 @@ function _clearEluObsMarkers(){
 // wrapper only. Display-only: marker lat/lng, pin storage and _markerIcon are untouched.
 function _nudgeEluObs(){
   try{
-    var tips = [];
-    markers.forEach(function(m){ try{ if(m && map.hasLayer(m)) tips.push(map.latLngToLayerPoint(m.getLatLng())); }catch(e){} });
+    // P100: shift only a same-site marker (<= 150 m from a pin) and only at zoom >= 12. At lower zoom
+    // 20 px is several km, so the pixel test alone pushed other sites' markers into wrong places.
+    var zoomOk = map.getZoom() >= 12;
+    var pins = [];
+    if(zoomOk){
+      markers.forEach(function(m){ try{ if(m && map.hasLayer(m)){ var pll = m.getLatLng(); pins.push({ ll: pll, pt: map.latLngToLayerPoint(pll) }); } }catch(e){} });
+    }
     eluObsMarkers.forEach(function(list){
       for(var i=0;i<list.length;i++){
         var mk = list[i]; var el = mk && mk.getElement && mk.getElement(); var inner = el && el.firstElementChild; if(!inner) continue;
-        var pt = map.latLngToLayerPoint(mk.getLatLng()); var hit = false;
-        for(var j=0;j<tips.length;j++){ var dx = pt.x - tips[j].x, dy = pt.y - tips[j].y; if(Math.abs(dx) < 22 && dy > -60 && dy < 14){ hit = true; break; } }
+        var hit = false;
+        if(zoomOk){
+          var ll = mk.getLatLng(); var pt = map.latLngToLayerPoint(ll);
+          for(var j=0;j<pins.length;j++){
+            var dx = pt.x - pins[j].pt.x, dy = pt.y - pins[j].pt.y;
+            if(Math.abs(dx) < 22 && dy > -60 && dy < 14 && map.distance(ll, pins[j].ll) <= 150){ hit = true; break; }
+          }
+        }
         inner.style.transform = hit ? 'translate(20px,4px)' : '';
       }
     });

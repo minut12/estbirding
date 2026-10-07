@@ -362,6 +362,8 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
 .bm-card-coords{font:600 11.5px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#4a5852;cursor:pointer}
 .bm-card-coords:hover{color:var(--sc)}
 .bm-card-foot-note{flex:0 0 auto}
+.bm-photo-credit{margin-top:6px;font-size:10.5px;line-height:1.35;color:#8a9a91;overflow-wrap:anywhere}
+.bm-photo-credit a{color:inherit;text-decoration:underline}
 </style>
 <style id="sbNewUi">
 /* P84b new sidebar (port of linnuliigid P37/P38 sbNewUi). Scoped to html:not(.sb-classic); html.sb-classic rules only neutralise the new markup. */
@@ -8409,6 +8411,26 @@ function escapeHtml(s){
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+// P97c4c: photo credit for the displayed avatar. Reads localStorage 'bm_avatar_credits_v2'
+// (written by the React parent, keyed by https origin+pathname of the avatar URL).
+function _bmAvatarCreditHtml(avatarUrl){
+  try {
+    var u = new URL(String(avatarUrl || ''), window.location.href);
+    if (u.protocol !== 'https:') return '';
+    var map = JSON.parse(localStorage.getItem('bm_avatar_credits_v2') || '{}');
+    var c = (map && typeof map === 'object') ? map[u.origin + u.pathname] : null;
+    if (!c || typeof c !== 'object') return '';
+    var srcLabel = { inaturalist: 'iNaturalist', wikimedia: 'Wikimedia' }[c.source];
+    var licLabel = { 'cc0': 'CC0', 'cc-by': 'CC BY', 'cc-by-sa': 'CC BY-SA' }[c.license];
+    if (!srcLabel || !licLabel || typeof c.author !== 'string' || !c.author) return '';
+    var link = function(href, text){
+      return (typeof href === 'string' && /^https:\/\//i.test(href))
+        ? '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(text) + '</a>'
+        : escapeHtml(text);
+    };
+    return '<div class="bm-photo-credit">Foto: ' + escapeHtml(c.author) + ' / ' + link(c.pageUrl, srcLabel) + ', ' + link(c.licenseUrl, licLabel) + '</div>';
+  } catch (e) { return ''; }
+}
 /* P84c card (linnuliigid P58c/P64 anatomy). opts = { source:'elurikkus'|'ebird', dateTxt, extUrl }; default source 'elurikkus'.
    Remark / media blocks render only when the point carries those fields (Rariliin stores none today). */
 function rlIsApprox(p){ return String((p && (p.coords_source || p.coordsSource)) || '') === 'snapshot_fallback' || /^restricted/.test(String((p && p.coords_status) || '')); }
@@ -8693,6 +8715,7 @@ function buildPopupHtml(key, p, opts){
       + rlHistBlockHtml(isEb ? 'eb' : 'elu', key)
       + '<div class="bm-card-acts">' + extBtn + wazeBtn + copyBtn + '</div>'
       + foot
+      + _bmAvatarCreditHtml(av)
     + '</div>'
   + '</div>';
 }

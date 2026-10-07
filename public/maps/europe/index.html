@@ -465,6 +465,8 @@ html:not(.sb-classic) .bm-sc-ico{flex:0 0 auto;display:inline-flex;align-items:c
 html:not(.sb-classic) .bm-sc-ico:hover{border-color:var(--sc);color:var(--sc)}
 html:not(.sb-classic) .bm-sc-ico.is-ok{border-color:#2d7a4b;background:#e4f1e8;color:#2d7a4b}
 html:not(.sb-classic) .bm-sc-ft{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding-top:8px;border-top:1px solid #eef2ef;font-size:11px;color:#6c7f74}
+.bm-photo-credit{margin-top:6px;font-size:10.5px;line-height:1.35;color:#8a9a91;overflow-wrap:anywhere}
+.bm-photo-credit a{color:inherit;text-decoration:underline}
 html:not(.sb-classic) .bm-sc-ft code{font:600 11.5px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#4a5852}
 html:not(.sb-classic) .bm-sc-ft .is-ok{color:#2d7a4b;font-weight:700}
   </style>
@@ -2633,6 +2635,26 @@ if (!DEV_DEBUG) {
   function esc(s){
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
+  // P97c4c: photo credit for the displayed avatar. Reads localStorage 'bm_avatar_credits_v2'
+  // (written by the React parent, keyed by https origin+pathname of the avatar URL).
+  function euAvatarCreditHtml(avatarUrl){
+    try {
+      var u = new URL(String(avatarUrl || ''), window.location.href);
+      if (u.protocol !== 'https:') return '';
+      var map = JSON.parse(localStorage.getItem('bm_avatar_credits_v2') || '{}');
+      var c = (map && typeof map === 'object') ? map[u.origin + u.pathname] : null;
+      if (!c || typeof c !== 'object') return '';
+      var srcLabel = { inaturalist: 'iNaturalist', wikimedia: 'Wikimedia' }[c.source];
+      var licLabel = { 'cc0': 'CC0', 'cc-by': 'CC BY', 'cc-by-sa': 'CC BY-SA' }[c.license];
+      if (!srcLabel || !licLabel || typeof c.author !== 'string' || !c.author) return '';
+      var link = function(href, text){
+        return (typeof href === 'string' && /^https:\/\//i.test(href))
+          ? '<a href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(text) + '</a>'
+          : esc(text);
+      };
+      return '<div class="bm-photo-credit">Foto: ' + esc(c.author) + ' / ' + link(c.pageUrl, srcLabel) + ', ' + link(c.licenseUrl, licLabel) + '</div>';
+    } catch (e) { return ''; }
+  }
   // P77a/P78a: eBird checklist per-species data, cached per subId
   // (value: {code: {c: comment or "", m: {p, a, v}}} for every species in obs[], or null on failure)
   var euChecklistCommentCache = new Map();
@@ -3139,6 +3161,7 @@ if (!DEV_DEBUG) {
         euCardExtras(isAgg, species, d) +
         (acts ? '<div class="bm-sc-acts">' + acts + '</div>' : '') +
         ft +
+        euAvatarCreditHtml(av) +
       '</div></div>';
   }
   // Pins/cards for the markers the original updateMarker just created (keys species@@CC).

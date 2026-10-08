@@ -1,7 +1,18 @@
 import { useState } from 'react';
-import { ChevronLeft, UserX } from 'lucide-react';
+import { ChevronLeft, Loader2, UserCheck, UserX } from 'lucide-react';
 import { toast } from 'sonner';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  ADMIN_ERROR_TEXT,
   adminErrorMessage,
   formatSignIn,
   ROLE_LABEL,
@@ -28,9 +39,12 @@ const LABEL_CLASS = 'mb-2 ml-1 text-[13px] font-semibold text-[#5B6B62]';
 const GROUP_CLASS = 'overflow-hidden rounded-[14px] border border-[#DFE6E1] bg-white';
 const KV_CLASS = 'flex min-h-[46px] items-center justify-between gap-3 px-3.5 py-2';
 
+const STATUS_BUTTON_DANGER_CLASS = 'border-[#F1C9C5] text-[#B42318]';
+const STATUS_BUTTON_NEUTRAL_CLASS = 'border-[#DFE6E1] text-[#1F2723]';
+
 const STATUS_TOAST: Record<AdminUserStatus, string> = {
-  disabled: 'Kasutaja m\u00e4rgitud keelatuks',
-  active: 'Kasutaja m\u00e4rgitud aktiivseks',
+  disabled: 'Juurdep\u00e4\u00e4s keelatud',
+  active: 'Juurdep\u00e4\u00e4s taastatud',
 };
 
 function formatJoined(iso: string): string {
@@ -81,6 +95,7 @@ export function UserDetail({
 }: UserDetailProps) {
   // Keyed by user id so a save still in flight for another user never locks this one.
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const saving = savingId === user.id;
 
   const finishSaving = (id: string) => setSavingId((current) => (current === id ? null : current));
@@ -102,10 +117,9 @@ export function UserDetail({
     }
   };
 
-  const toggleStatus = async () => {
+  const applyStatus = async (next: AdminUserStatus) => {
     if (isSelf || saving) return;
     const target = user;
-    const next: AdminUserStatus = target.status === 'active' ? 'disabled' : 'active';
     setSavingId(target.id);
     try {
       await setAdminUserStatus(target.id, next);
@@ -118,14 +132,51 @@ export function UserDetail({
     }
   };
 
+  const onStatusClick = () => {
+    if (isSelf || saving) return;
+    if (user.status === 'active') {
+      setConfirmOpen(true);
+      return;
+    }
+    void applyStatus('active');
+  };
+
   const name = user.displayName || user.email;
   const initial = name ? name.charAt(0).toUpperCase() : '?';
   const isActive = user.status === 'active';
   const radiosDisabled = isSelf || saving;
 
   const avatarClass = isSelf ? AVATAR_SELF_CLASS : AVATAR_OTHER_CLASS;
-  const statusLabel = isActive ? <>M&auml;rgi keelatuks</> : <>M&auml;rgi aktiivseks</>;
-  const statusNote = 'Ei blokeeri veel sisselogimist.';
+  const statusLabel = isActive ? <>Keela juurdep&auml;&auml;s</> : <>Luba juurdep&auml;&auml;s</>;
+  const statusNote = isActive && user.role === 'admin' ? ADMIN_ERROR_TEXT.adminBlock : null;
+  const statusDisabled = saving || statusNote !== null;
+  const statusButtonClass = isActive ? STATUS_BUTTON_DANGER_CLASS : STATUS_BUTTON_NEUTRAL_CLASS;
+  const StatusIcon = saving ? Loader2 : isActive ? UserX : UserCheck;
+  const statusIcon = (
+    <StatusIcon className={`h-[18px] w-[18px]${saving ? ' animate-spin' : ''}`} aria-hidden="true" />
+  );
+
+  const confirmDialog = (
+    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Keelata juurdep&auml;&auml;s?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {name} logitakse v&auml;lja hiljemalt tunni jooksul ja ta ei saa enam sisse logida.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>T&uuml;hista</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => void applyStatus('disabled')}
+            className="bg-[#B42318] text-white hover:bg-[#9A1F15]"
+          >
+            Keela juurdep&auml;&auml;s
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 
   const roleChips = (
     <>
@@ -218,20 +269,21 @@ export function UserDetail({
           </div>
 
           {!isSelf && (
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[13px] text-[#5B6B62]">{statusNote}</p>
+            <div className={`flex items-center gap-3 ${statusNote ? 'justify-between' : 'justify-end'}`}>
+              {statusNote && <p className="text-[13px] text-[#5B6B62]">{statusNote}</p>}
               <button
                 type="button"
-                onClick={() => void toggleStatus()}
-                disabled={saving}
-                className="flex h-[38px] shrink-0 items-center justify-center gap-2 rounded-xl border border-[#F1C9C5] bg-white px-4 font-semibold text-[#B42318] disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={onStatusClick}
+                disabled={statusDisabled}
+                className={`flex h-[38px] shrink-0 items-center justify-center gap-2 rounded-xl border bg-white px-4 font-semibold ${statusButtonClass} disabled:cursor-not-allowed disabled:opacity-60`}
               >
-                <UserX className="h-[18px] w-[18px]" aria-hidden="true" />
+                {statusIcon}
                 {statusLabel}
               </button>
             </div>
           )}
         </div>
+        {confirmDialog}
       </div>
     );
   }
@@ -266,17 +318,18 @@ export function UserDetail({
           <div className="flex flex-col gap-2">
             <button
               type="button"
-              onClick={() => void toggleStatus()}
-              disabled={saving}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-[#F1C9C5] bg-white font-semibold text-[#B42318] disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={onStatusClick}
+              disabled={statusDisabled}
+              className={`flex h-12 w-full items-center justify-center gap-2 rounded-xl border bg-white font-semibold ${statusButtonClass} disabled:cursor-not-allowed disabled:opacity-60`}
             >
-              <UserX className="h-[18px] w-[18px]" aria-hidden="true" />
+              {statusIcon}
               {statusLabel}
             </button>
-            <p className="mx-1 text-[13px] text-[#5B6B62]">{statusNote}</p>
+            {statusNote && <p className="mx-1 text-[13px] text-[#5B6B62]">{statusNote}</p>}
           </div>
         )}
       </div>
+      {confirmDialog}
     </div>
   );
 }

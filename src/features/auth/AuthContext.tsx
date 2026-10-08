@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
 export type AppRole = 'admin' | 'user_level_1' | 'user_level_2';
@@ -71,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<AppRole | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const disabledCheckedRef = useRef<string | null>(null);
 
   const loadRoleAndPermissions = useCallback(async (u: User) => {
     const [r, p] = await Promise.all([
@@ -88,9 +90,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
+    // Once per sign-in: a disabled account is signed out. Fails open if the profile read fails.
+    const checkDisabled = async (u: User) => {
+      if (disabledCheckedRef.current === u.id) return;
+      try {
+        disabledCheckedRef.current = u.id;
+        const { data, error } = await supabase.from('profiles').select('status').eq('id', u.id).maybeSingle();
+        if (error || !data) return;
+        if (data.status === 'disabled') {
+          toast.error('Sinu konto on keelatud.');
+          void supabase.auth.signOut();
+        }
+      } catch {
+        /* fail open */
+      }
+    };
+
     // Helper to load profile + role without blocking the auth listener
     const handleUser = (u: User | null) => {
       if (!u) {
+        disabledCheckedRef.current = null;
         setRole(null);
         setPermissions([]);
         if (mounted) setLoading(false);
@@ -98,7 +117,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       // Fire-and-forget: do NOT await inside onAuthStateChange
       ensureProfileAndRole(u)
-        .then(() => loadRoleAndPermissions(u))
+        .then(() => {
+          void checkDisabled(u);
+          return loadRoleAndPermissions(u);
+        })
         .catch((err) => console.warn('[auth] handleUser error:', err))
         .finally(() => { if (mounted) setLoading(false); });
     };

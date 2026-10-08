@@ -113,11 +113,26 @@ export function formatSignIn(iso: string | null, now = Date.now()): string {
 
 export type AdminUserStatus = 'active' | 'disabled';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function invokeErrorMessage(error: unknown): Promise<string> {
+  const fallbackText = 'Oleku muutmine eba\u00f5nnestus';
+  const fallback = isRecord(error) && typeof error.message === 'string' && error.message ? error.message : fallbackText;
+  if (!isRecord(error) || !(error.context instanceof Response)) return fallback;
+  try {
+    const payload: unknown = await error.context.json();
+    return isRecord(payload) && typeof payload.error === 'string' ? payload.error : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function setAdminUserStatus(userId: string, status: AdminUserStatus): Promise<void> {
-  const { data, error } = await supabase.from('profiles').update({ status }).eq('id', userId).select('id');
-  if (error) throw toError(error, 'Oleku muutmine eba\u00f5nnestus');
-  // RLS can filter the row out without an error: 0 updated rows is a failure, not a success.
-  if (!data || data.length === 0) throw new Error('Oleku muutmine eba\u00f5nnestus');
+  const { data, error } = await supabase.functions.invoke('admin-user-status', { body: { userId, status } });
+  if (error) throw new Error(await invokeErrorMessage(error));
+  if (!isRecord(data) || data.ok !== true) throw new Error('Oleku muutmine eba\u00f5nnestus');
 }
 
 export const ADMIN_ERROR_TEXT = {
@@ -125,6 +140,8 @@ export const ADMIN_ERROR_TEXT = {
   lastAdmin: 'Viimast administraatorit ei saa eemaldada.',
   notFound: 'Kasutajat ei leitud.',
   adminRequired: 'Ainult administraator saab seda teha.',
+  adminBlock: 'Administraatori juurdep\u00e4\u00e4su ei saa keelata. Muuda enne roll.',
+  ownStatus: 'Oma kontot ei saa keelata.',
   fallback: 'Muutmine eba\u00f5nnestus.',
 } as const;
 
@@ -133,6 +150,8 @@ const ADMIN_ERROR_MAP: readonly (readonly [string, string])[] = [
   ['cannot remove the last admin', ADMIN_ERROR_TEXT.lastAdmin],
   ['user not found', ADMIN_ERROR_TEXT.notFound],
   ['admin role required', ADMIN_ERROR_TEXT.adminRequired],
+  ['cannot block an admin', ADMIN_ERROR_TEXT.adminBlock],
+  ['cannot change own status', ADMIN_ERROR_TEXT.ownStatus],
 ];
 
 function rawErrorMessage(err: unknown): string {

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/integrations/supabase/client', () => ({
-  supabase: { rpc: vi.fn(), from: vi.fn() },
+  supabase: { rpc: vi.fn(), from: vi.fn(), functions: { invoke: vi.fn() } },
 }));
 
 import { supabase } from '@/integrations/supabase/client';
@@ -160,6 +160,14 @@ describe('adminErrorMessage', () => {
     expect(adminErrorMessage({ message: 'admin role required' })).toBe(ADMIN_ERROR_TEXT.adminRequired);
   });
 
+  it('maps "cannot block an admin"', () => {
+    expect(adminErrorMessage(new Error('cannot block an admin'))).toBe(ADMIN_ERROR_TEXT.adminBlock);
+  });
+
+  it('maps "cannot change own status"', () => {
+    expect(adminErrorMessage(new Error('cannot change own status'))).toBe(ADMIN_ERROR_TEXT.ownStatus);
+  });
+
   it('matches by substring inside a longer message', () => {
     expect(adminErrorMessage(new Error('P0001: cannot change own role (hint)'))).toBe(ADMIN_ERROR_TEXT.ownRole);
   });
@@ -179,36 +187,34 @@ describe('adminErrorMessage', () => {
 });
 
 describe('setAdminUserStatus', () => {
-  it('updates profiles.status for the given id', async () => {
-    const select = vi.fn().mockResolvedValue({ data: [{ id: 'u1' }], error: null });
-    const eq = vi.fn().mockReturnValue({ select });
-    const update = vi.fn().mockReturnValue({ eq });
-    const from = vi.mocked(supabase.from);
-    from.mockReturnValue({ update } as unknown as ReturnType<typeof supabase.from>);
+  it('invokes the admin-user-status Edge Function and resolves on ok', async () => {
+    const invoke = vi.mocked(supabase.functions.invoke);
+    invoke.mockResolvedValue({ data: { ok: true, status: 'disabled' }, error: null });
 
-    await setAdminUserStatus('u1', 'disabled');
+    await expect(setAdminUserStatus('u1', 'disabled')).resolves.toBeUndefined();
 
-    expect(from).toHaveBeenCalledWith('profiles');
-    expect(update).toHaveBeenCalledWith({ status: 'disabled' });
-    expect(eq).toHaveBeenCalledWith('id', 'u1');
-    expect(select).toHaveBeenCalledWith('id');
+    expect(invoke).toHaveBeenCalledWith('admin-user-status', { body: { userId: 'u1', status: 'disabled' } });
   });
 
-  it('throws when supabase returns an error', async () => {
-    const select = vi.fn().mockResolvedValue({ data: null, error: { message: 'admin role required' } });
-    const eq = vi.fn().mockReturnValue({ select });
-    const update = vi.fn().mockReturnValue({ eq });
-    vi.mocked(supabase.from).mockReturnValue({ update } as unknown as ReturnType<typeof supabase.from>);
+  it('throws the server error string from error.context', async () => {
+    const error = {
+      message: 'Edge Function returned a non-2xx status code',
+      context: new Response(JSON.stringify({ ok: false, error: 'cannot block an admin' }), { status: 409 }),
+    };
+    vi.mocked(supabase.functions.invoke).mockResolvedValue({ data: null, error });
+
+    await expect(setAdminUserStatus('u1', 'disabled')).rejects.toThrow('cannot block an admin');
+  });
+
+  it('falls back to error.message when context is not a Response', async () => {
+    vi.mocked(supabase.functions.invoke).mockResolvedValue({ data: null, error: { message: 'admin role required' } });
 
     await expect(setAdminUserStatus('u1', 'active')).rejects.toThrow('admin role required');
   });
 
-  it('throws when no row was updated (e.g. filtered out by RLS)', async () => {
-    const select = vi.fn().mockResolvedValue({ data: [], error: null });
-    const eq = vi.fn().mockReturnValue({ select });
-    const update = vi.fn().mockReturnValue({ eq });
-    vi.mocked(supabase.from).mockReturnValue({ update } as unknown as ReturnType<typeof supabase.from>);
+  it('throws when data.ok is not true', async () => {
+    vi.mocked(supabase.functions.invoke).mockResolvedValue({ data: { ok: false }, error: null });
 
-    await expect(setAdminUserStatus('u1', 'disabled')).rejects.toThrow(/^Oleku muutmine/);
+    await expect(setAdminUserStatus('u1', 'disabled')).rejects.toThrow();
   });
 });

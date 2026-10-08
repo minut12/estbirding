@@ -169,6 +169,9 @@ verify_jwt = false
 [functions.insert-europe-ebird-cache]
 verify_jwt = false
 
+[functions.europe-new-species]
+verify_jwt = false
+
 [functions.insert-vaatluste-raport]
 verify_jwt = false
 

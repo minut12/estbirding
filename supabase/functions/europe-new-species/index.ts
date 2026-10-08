@@ -1,4 +1,4 @@
-// redeploy-marker: P104c3 2026-10-08 (review fixes A-D + linked retry)
+// redeploy-marker: P104f 2026-10-08 (also writes Rariliin meta + backfill_rariliin)
 // supabase/functions/europe-new-species/index.ts
 //
 // P104: auto-add brand-new species seen in eBird "notable" (FI, SE, LV, LT, PL, BY + NW Russia).
@@ -71,6 +71,8 @@ type SeenRow = { ebird_code: string; status: Status; regions: string[] | null; f
 const BUCKET = "bird-avatars";
 const META_PATH = "meta/species_meta_v1.json";
 const CUSTOM_PATH = "meta/custom_species_v1.json";
+// P104f: Rariliin keeps its own species meta; added species get an entry there too.
+const RARILIIN_META_PATH = "meta/species_meta_rariliin_v1.json";
 const DEFAULT_MAX_ADD = 5;
 const A_UML = String.fromCharCode(228);
 const COUNTRY_ET: Record<string, string> = {
@@ -202,6 +204,50 @@ function asCustom(raw: Record<string, unknown> | null): CustomJson {
   return { version: 1, updatedAt: String(raw?.updatedAt || ""), items: [...items] };
 }
 
+// P104f: Rariliin 3+3 code = first 3 letters of genus + first 3 of species epithet (Cursorius cursor -> CURCUR).
+function rariliinCode(sci: string): string {
+  const w = String(sci || "").trim().split(/\s+/);
+  if (w.length < 2) return "";
+  return (w[0].slice(0, 3) + w[1].slice(0, 3)).toUpperCase();
+}
+
+// P104f: add-only write of Rariliin meta entries. Existing (user) values win; only missing
+// scientificName / ebirdCode / rariliinCode are filled. Aborts if the file is missing or empty.
+async function ensureRariliin(
+  sb: SupabaseClient,
+  entries: Array<{ name: string; sci: string; code: string }>,
+): Promise<{ written: string[]; error: string | null }> {
+  if (!entries.length) return { written: [], error: null };
+  try {
+    const raw = await readJson(sb, RARILIIN_META_PATH);
+    if (!raw) return { written: [], error: "rariliin_meta_missing_abort" };
+    const meta = asMeta(raw);
+    const count0 = Object.keys(meta.items).length;
+    if (count0 === 0) return { written: [], error: "rariliin_meta_empty_abort" };
+    const written: string[] = [];
+    for (const e of entries) {
+      const prev = meta.items[e.name] || {};
+      const next: MetaItem = {
+        rarityLevel: "mega",
+        notify: true,
+        ...prev,
+      };
+      if (!String(next.scientificName || "").trim() && e.sci) next.scientificName = e.sci;
+      if (!String(next.ebirdCode || "").trim() && e.code) next.ebirdCode = e.code;
+      if (!String((next as Record<string, unknown>).rariliinCode || "").trim()) {
+        const rc = rariliinCode(e.sci);
+        if (rc) (next as Record<string, unknown>).rariliinCode = rc;
+      }
+      meta.items[e.name] = next;
+      written.push(e.name);
+    }
+    await writeJson(sb, RARILIIN_META_PATH, { version: 1, updatedAt: new Date().toISOString(), items: meta.items });
+    return { written, error: null };
+  } catch (e) {
+    return { written: [], error: "rariliin_write: " + errorMessage(e) };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
@@ -209,7 +255,7 @@ Deno.serve(async (req) => {
   const secret = Deno.env.get("VAATLUSTE_WEBHOOK_SECRET") || "";
   if (!secret || req.headers.get("x-webhook-secret") !== secret) return json(401, { error: "unauthorized" });
 
-  let body: { candidates?: Candidate[]; dry_run?: boolean; max_add?: number };
+  let body: { candidates?: Candidate[]; dry_run?: boolean; max_add?: number; backfill_rariliin?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -217,6 +263,22 @@ Deno.serve(async (req) => {
   }
 
   const dryRun = body?.dry_run === true;
+
+  // P104f: one-off backfill of Rariliin meta for every species this function has added so far.
+  if (body?.backfill_rariliin === true) {
+    const sbB = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: addedRows, error: addedErr } = await sbB
+      .from("europe_new_species")
+      .select("ebird_code, sci_name, name_et")
+      .eq("status", "added");
+    if (addedErr) return json(500, { error: "db_read", detail: addedErr.message });
+    const entries = ((addedRows || []) as Array<{ ebird_code: string; sci_name: string | null; name_et: string | null }>)
+      .filter((r) => r.name_et)
+      .map((r) => ({ name: String(r.name_et), sci: String(r.sci_name || ""), code: r.ebird_code }));
+    if (dryRun) return json(200, { ok: true, dry_run: true, backfill_rariliin: entries });
+    const res = await ensureRariliin(sbB, entries);
+    return json(res.error ? 500 : 200, { ok: !res.error, backfill_rariliin: res });
+  }
   const maxAddRaw = body?.max_add;
   const maxAdd = typeof maxAddRaw === "number" && Number.isFinite(maxAddRaw) && maxAddRaw >= 0
     ? Math.min(20, Math.floor(maxAddRaw))
@@ -382,6 +444,13 @@ Deno.serve(async (req) => {
     }
   }
 
+  // 4b. P104f: Rariliin meta for added species (failure is reported, not fatal).
+  const rariliin = await ensureRariliin(
+    sb,
+    toAdd.filter((a) => !errorsByCode.has(a.c.code)).map((a) => ({ name: a.name, sci: a.c.sciName, code: a.c.code })),
+  );
+  if (rariliin.error) console.warn("[p104] rariliin", rariliin.error);
+
   // 5. One broadcast push per added species.
   const pushed = new Set<string>();
   for (const a of toAdd) {
@@ -468,6 +537,7 @@ Deno.serve(async (req) => {
     already_handled: refresh.map((c) => c.code),
     outcomes,
     errors: Object.fromEntries(errorsByCode),
+    rariliin,
     db_errors: dbErrors,
   });
 });

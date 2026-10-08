@@ -860,6 +860,8 @@ Deno.serve(async (req) => {
       const isEoy = type === "scrape" && (slug === "eoy" || String(source.fetch_url || source.feed_url || "").includes("eoy.ee"));
       if (isEoy) {
         const summary = await refreshEoy(supabase, supabaseUrl, serviceRoleKey, source, cacheImages, Math.max(0, cacheLimit - cachedImages));
+        // redeploy-marker: P105 2026-10-08 - log the EOU scrape result so a missed day is diagnosable.
+        console.log("[news-refresh:eoy]", JSON.stringify({ status: summary.status, fetchStatus: summary.fetchStatus, fetched: summary.fetchedCount, inserted: summary.inserted, updated: summary.updated, lastError: summary.lastError }));
         summary.visibleCountInNewsList = visibleCountsInActualNewsList.get(source.id) || 0;
         perSource.push(summary);
         inserted += summary.inserted;

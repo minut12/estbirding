@@ -11,7 +11,8 @@ export default async (req) => {
   const url = new URL(req.url);
   const job = url.searchParams.get('job');
   if (job === 'ee' || job === 'europe') {           // manual run of a scheduled job (testing on the branch deploy)
-    const result = job === 'ee' ? await runEeRefresh() : await runEuropeRefresh();
+    // P104: &dry=1 on job=europe = no cache insert, no species writes, no push (europe-new-species dry_run).
+    const result = job === 'ee' ? await runEeRefresh() : await runEuropeRefresh({ dry: url.searchParams.get('dry') === '1' });
     return Response.json(result, { status: result.ok ? 200 : 502 });
   }
   const path = url.searchParams.get('path') || '';   // passthrough for the EFs (M7.5/M7.6)

@@ -23,6 +23,13 @@ const SEVEN_DAYS_MS = 7 * 86400 * 1000;
 const EUROPE_BUDGET_MS = 22000;
 const COUNTRY_TIMEOUT_MS = 8000;
 
+// P104: NW Russia regions near Estonia. Fetched only to spot brand-new species for
+// europe-new-species; the RU-wide notable rows below stay exactly as before.
+const NW_RUSSIA_REGIONS = ['RU-LEN', 'RU-SPE', 'RU-PSK', 'RU-NGR', 'RU-KR'];
+const NEW_SPECIES_TIMEOUT_MS = 12000;
+// P104: everything after the normal insert must finish by here (Netlify scheduled cap is 30 s).
+const NEW_SPECIES_DEADLINE_MS = 26000;
+
 function env(name) {
   const v = (Netlify.env.get(name) || '').trim();
   if (!v) throw new Error(`missing env ${name}`);
@@ -42,7 +49,7 @@ export async function ebirdGet(path, { timeoutMs = 20000 } = {}) {
   } finally { clearTimeout(t); }
 }
 
-export async function postEf(fn, headers, body, { timeoutMs = 25000 } = {}) {
+export async function postEf(fn, headers, body, { timeoutMs = 25000, maxText = 500 } = {}) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -53,7 +60,7 @@ export async function postEf(fn, headers, body, { timeoutMs = 25000 } = {}) {
       signal: controller.signal,
     });
     const text = await res.text();
-    return { status: res.status, ok: res.ok, text: text.slice(0, 500) };
+    return { status: res.status, ok: res.ok, text: text.slice(0, maxText) };
   } finally { clearTimeout(t); }
 }
 
@@ -75,6 +82,64 @@ export async function runEeRefresh() {
 function safeNum(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+// P104: notable obs -> { code: { count, latestMs, latest, exotic, nonExotic } } (last 7 days).
+function aggregateNotable(obs, sevenDaysAgo) {
+  const bySpecies = {};
+  for (const o of obs) {
+    const code = String((o && o.speciesCode) || '').trim();
+    if (!code) continue;
+    const dateMs = parseObsDateMs(o && o.obsDt);
+    if (dateMs == null) continue;
+    if (dateMs < sevenDaysAgo) continue;
+
+    if (!bySpecies[code]) bySpecies[code] = { count: 0, latestMs: 0, latest: null, exotic: '', nonExotic: false };
+    bySpecies[code].count++;
+    const ex = String((o && o.exoticCategory) || '').trim();
+    if (ex) bySpecies[code].exotic = ex;
+    else bySpecies[code].nonExotic = true;
+    if (dateMs > bySpecies[code].latestMs) {
+      bySpecies[code].latestMs = dateMs;
+      bySpecies[code].latest = o;
+    }
+  }
+  return bySpecies;
+}
+
+function toCacheRow(speciesName, cc, agg) {
+  const latest = agg.latest || {};
+  return {
+    species_name: speciesName,
+    country_code: cc,
+    occ7: agg.count,
+    latest_obs_date: String(latest.obsDt || '').slice(0, 10) || null,
+    latest_lat: safeNum(latest.lat),
+    latest_lon: safeNum(latest.lng),
+    latest_loc: typeof latest.locName === 'string' ? latest.locName.slice(0, 500) : null,
+  };
+}
+
+// P104: candidate payload for europe-new-species (exoticCategory only if every obs was exotic).
+function toCandidate(code, agg, region) {
+  const o = agg.latest || {};
+  return {
+    code,
+    comName: typeof o.comName === 'string' ? o.comName : '',
+    sciName: typeof o.sciName === 'string' ? o.sciName : '',
+    region,
+    count: agg.count,
+    exoticCategory: agg.nonExotic ? null : (agg.exotic || null),
+    latest: {
+      obsDt: o.obsDt || null,
+      locName: typeof o.locName === 'string' ? o.locName.slice(0, 200) : null,
+      lat: safeNum(o.lat),
+      lng: safeNum(o.lng),
+      subId: o.subId || null,
+      obsReviewed: o.obsReviewed === true,
+      obsValid: o.obsValid === true,
+    },
+  };
 }
 
 function parseObsDateMs(s) {
@@ -105,7 +170,7 @@ async function loadCodeToName() {
 }
 
 // Job 2: Europe notable → insert-europe-ebird-cache  (port of the n8n Code node)
-export async function runEuropeRefresh() {
+export async function runEuropeRefresh({ dry = false } = {}) {
   const started = Date.now();
   const sevenDaysAgo = Date.now() - SEVEN_DAYS_MS;
 
@@ -131,6 +196,8 @@ export async function runEuropeRefresh() {
   const countries = {};
   const errors = [];
   let partial = false;
+  const candidates = [];
+  const aggByCountry = {};
 
   for (const cc of EUROPE_COUNTRIES) {
     // Post what we have rather than losing the whole run to the 30 s cap.
@@ -159,57 +226,124 @@ export async function runEuropeRefresh() {
       continue;
     }
 
-    const bySpecies = {};
+    const bySpecies = aggregateNotable(obs, sevenDaysAgo);
+    aggByCountry[cc] = bySpecies;
     let trackedCount = 0;
-    for (const o of obs) {
-      const code = String((o && o.speciesCode) || '').trim();
-      if (!code) continue;
-      const dateMs = parseObsDateMs(o && o.obsDt);
-      if (dateMs == null) continue;
-      if (dateMs < sevenDaysAgo) continue;
-
-      if (!bySpecies[code]) bySpecies[code] = { count: 0, latestMs: 0, latest: null };
-      bySpecies[code].count++;
-      if (dateMs > bySpecies[code].latestMs) {
-        bySpecies[code].latestMs = dateMs;
-        bySpecies[code].latest = o;
-      }
-    }
 
     for (const [code, agg] of Object.entries(bySpecies)) {
       const speciesName = codeToName[code];
-      if (!speciesName) continue;
+      if (!speciesName) {
+        // P104: unknown code -> candidate for europe-new-species (Russia comes from the NW regions below).
+        if (cc !== 'RU') candidates.push(toCandidate(code, agg, cc));
+        continue;
+      }
       trackedCount++;
-      const latest = agg.latest || {};
-      rows.push({
-        species_name: speciesName,
-        country_code: cc,
-        occ7: agg.count,
-        latest_obs_date: String(latest.obsDt || '').slice(0, 10) || null,
-        latest_lat: safeNum(latest.lat),
-        latest_lon: safeNum(latest.lng),
-        latest_loc: typeof latest.locName === 'string' ? latest.locName.slice(0, 500) : null,
-      });
+      rows.push(toCacheRow(speciesName, cc, agg));
     }
 
     countries[cc] = { fetched: obs.length, tracked: trackedCount, rows: trackedCount };
   }
 
-  // n8n's "Have rows to insert?" IF node — the false leg skipped the POST.
-  if (!rows.length) {
+  // P104: the normal cache insert runs first, exactly as before, so nothing below can delay it.
+  let insert = null;
+  if (!dry && rows.length) {
+    insert = await postEf(
+      'insert-europe-ebird-cache',
+      { 'x-webhook-secret': env('VAATLUSTE_WEBHOOK_SECRET') },
+      { rows },
+    );
+  }
+
+  // P104: NW Russia notable, used only for brand-new species detection (skipped when time is short).
+  const nwRegions = {};
+  for (const region of NW_RUSSIA_REGIONS) {
+    if (Date.now() - started > NEW_SPECIES_DEADLINE_MS - COUNTRY_TIMEOUT_MS) {
+      nwRegions[region] = { error: 'skipped_budget' };
+      continue;
+    }
+    try {
+      const res = await ebirdGet(
+        `/data/obs/${region}/recent/notable?back=7&maxResults=10000&detail=simple`,
+        { timeoutMs: COUNTRY_TIMEOUT_MS },
+      );
+      if (!res.ok) {
+        nwRegions[region] = { error: 'HTTP ' + res.status };
+        continue;
+      }
+      let obs = JSON.parse(res.text);
+      if (!Array.isArray(obs)) obs = [];
+      const agg = aggregateNotable(obs, sevenDaysAgo);
+      let n = 0;
+      for (const [code, a] of Object.entries(agg)) {
+        if (codeToName[code]) continue;
+        candidates.push(toCandidate(code, a, region));
+        n++;
+      }
+      nwRegions[region] = { fetched: obs.length, candidates: n };
+    } catch (e) {
+      nwRegions[region] = { error: String((e && e.message) || e) };
+    }
+  }
+
+  // P104: hand unknown codes to europe-new-species within the time left; skipped codes come back next run.
+  let newSpecies = { candidates: candidates.length };
+  const nsBudget = NEW_SPECIES_DEADLINE_MS - (Date.now() - started);
+  if (candidates.length && nsBudget >= 3000) {
+    try {
+      const ns = await postEf(
+        'europe-new-species',
+        { 'x-webhook-secret': env('VAATLUSTE_WEBHOOK_SECRET') },
+        { candidates, dry_run: dry },
+        { timeoutMs: Math.min(NEW_SPECIES_TIMEOUT_MS, nsBudget), maxText: 200000 },
+      );
+      let parsed = null;
+      try { parsed = JSON.parse(ns.text); } catch { parsed = null; }
+      newSpecies = { candidates: candidates.length, status: ns.status, ok: ns.ok, result: parsed || ns.text.slice(0, 500) };
+      const handled = parsed && !dry ? [...(parsed.added || []), ...(parsed.linked || [])] : [];
+      const newRows = [];
+      for (const s of handled) {
+        if (!s || !s.code || !s.name) continue;
+        for (const [cc, agg] of Object.entries(aggByCountry)) {
+          if (agg[s.code]) newRows.push(toCacheRow(s.name, cc, agg[s.code]));
+        }
+      }
+      // Rows for just-added species: a second small insert if time allows, otherwise the next run adds them.
+      const rowBudget = NEW_SPECIES_DEADLINE_MS - (Date.now() - started);
+      if (newRows.length && rowBudget >= 2000) {
+        const ins2 = await postEf(
+          'insert-europe-ebird-cache',
+          { 'x-webhook-secret': env('VAATLUSTE_WEBHOOK_SECRET') },
+          { rows: newRows },
+          { timeoutMs: rowBudget },
+        );
+        newSpecies.rows = { count: newRows.length, status: ins2.status, ok: ins2.ok };
+      } else if (newRows.length) {
+        newSpecies.rows = { count: newRows.length, skipped: 'budget' };
+      }
+    } catch (e) {
+      newSpecies = { candidates: candidates.length, ok: false, error: String((e && e.message) || e) };
+    }
+  } else if (candidates.length) {
+    newSpecies = { candidates: candidates.length, skipped: 'budget' };
+  }
+
+  if (dry) {
     return {
-      job: 'europe', ok: true, rows: 0, skipped: true, reason: 'no_rows',
-      countries, errors, trackedCodeCount, partial, took_ms: Date.now() - started,
+      job: 'europe', ok: true, dry: true, rows: rows.length, countries, nwRegions, newSpecies,
+      errors, trackedCodeCount, partial, took_ms: Date.now() - started,
     };
   }
 
-  const ef = await postEf(
-    'insert-europe-ebird-cache',
-    { 'x-webhook-secret': env('VAATLUSTE_WEBHOOK_SECRET') },
-    { rows },
-  );
+  // n8n's "Have rows to insert?" IF node — the false leg skipped the POST.
+  if (!insert) {
+    return {
+      job: 'europe', ok: true, rows: 0, skipped: true, reason: 'no_rows',
+      countries, nwRegions, newSpecies, errors, trackedCodeCount, partial, took_ms: Date.now() - started,
+    };
+  }
+
   return {
-    job: 'europe', ok: ef.ok, stage: 'insert', status: ef.status, rows: rows.length,
-    countries, errors, trackedCodeCount, partial, ef: ef.text, took_ms: Date.now() - started,
+    job: 'europe', ok: insert.ok, stage: 'insert', status: insert.status, rows: rows.length,
+    countries, nwRegions, newSpecies, errors, trackedCodeCount, partial, ef: insert.text, took_ms: Date.now() - started,
   };
 }

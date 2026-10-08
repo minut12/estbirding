@@ -213,3 +213,6 @@ verify_jwt = false
 
 [functions.avatar-candidates]
 verify_jwt = false
+
+[functions.admin-user-status]
+verify_jwt = false

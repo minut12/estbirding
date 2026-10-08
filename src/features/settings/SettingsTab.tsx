@@ -22,6 +22,7 @@ import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
 import EventLog from './EventLog';
 import NotificationSettingsCard from './NotificationSettingsCard';
+import { LlmStatusCard } from './LlmStatusCard';
 import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import { getSupabaseConfigSource, isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
@@ -271,6 +272,11 @@ export default function SettingsTab() {
   };
   const renderSettingsEventLog = () => (
     <div className="flex flex-col gap-[22px]">
+      {isAdminUser && (
+        <SettingsSection label="Tehisintellekt">
+          <LlmStatusCard />
+        </SettingsSection>
+      )}
       <SettingsSection label="Teavitused selles seadmes">
         <NotificationSettingsCard variant="status" />
       </SettingsSection>

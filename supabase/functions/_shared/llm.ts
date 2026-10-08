@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-08 - P97f2 per-attempt llm_calls logging (source, provider, model, ok, error_class, tokens, latency, fallback)
 // redeploy-marker: 2026-10-01 - P89c drop thinkingConfig (400 INVALID_ARGUMENT on Gemini 3.x), 1024 output floor
 // redeploy-marker: 2026-10-01 - P89b Gemini model chain + retry on 429/503 (gemini-2.5-flash retired for new keys)
 // redeploy-marker: 2026-10-01 - P89 Anthropic Messages with Gemini fallback (reactive + LLM_FORCE_PROVIDER)
@@ -20,8 +21,262 @@
 // Gemini free tier returns 503 UNAVAILABLE "high demand" often; each model in
 // the chain is tried up to GEMINI_ATTEMPTS times with a short backoff before
 // moving to the next model. The last failure is what the caller sees.
+//
+// P97f2: every provider attempt writes one row to public.llm_calls (service
+// role, fire-and-forget via EdgeRuntime.waitUntil). Logging never awaits on
+// the caller's path, never reads the returned body (clones only) and never
+// throws; a missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY disables it.
+
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 export type LlmProvider = "anthropic" | "gemini";
+
+type LlmErrorClass =
+  | "credit"
+  | "rate_limit"
+  | "overload"
+  | "auth"
+  | "timeout"
+  | "network"
+  | "bad_request"
+  | "empty"
+  | "other";
+
+type LlmCallRow = {
+  provider: LlmProvider;
+  model: string;
+  ok: boolean;
+  http_status: number | null;
+  error_class: LlmErrorClass | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  latency_ms: number;
+  fallback: boolean;
+};
+
+type LogClient = SupabaseClient;
+
+const LOG_TIMEOUT_MS = 2000;
+const PRUNE_PROBABILITY = 0.02;
+
+let logClient: LogClient | null = null;
+let logClientTried = false;
+
+function getLogClient(): LogClient | null {
+  if (logClientTried) return logClient;
+  logClientTried = true;
+  try {
+    const url = (Deno.env.get("SUPABASE_URL") || "").trim();
+    const key = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+    if (!url || !key) {
+      console.log("[llm] llm_calls logging disabled: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+      return null;
+    }
+    logClient = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  } catch (e) {
+    logClient = null;
+    console.log("[llm] llm_calls client init failed: " + String(e).slice(0, 120));
+  }
+  return logClient;
+}
+
+// Keep a logging promise alive past the response without ever surfacing its
+// rejection. Never awaited by the caller.
+function background(p: Promise<unknown>): void {
+  const wrapped = p.catch((e: unknown) => {
+    try {
+      console.log("[llm] llm_calls log failed: " + String(e).slice(0, 120));
+    } catch {
+      // ignore
+    }
+  });
+  try {
+    const rt = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
+    if (rt && typeof rt.waitUntil === "function") rt.waitUntil(wrapped);
+  } catch {
+    // fire-and-forget: wrapped already swallows its own rejection
+  }
+}
+
+function logCall(row: LlmCallRow): void {
+  try {
+    const client = getLogClient();
+    if (!client) return;
+    const full = { source: LLM_SOURCE, ...row };
+    // Promise.resolve: postgrest builders are thenables (PromiseLike), not Promises.
+    background(
+      Promise.resolve(client.from("llm_calls").insert(full).abortSignal(AbortSignal.timeout(LOG_TIMEOUT_MS)))
+        .then((r) => {
+          if (r.error) console.log("[llm] llm_calls insert error: " + r.error.message.slice(0, 120));
+        }),
+    );
+    if (Math.random() < PRUNE_PROBABILITY) {
+      background(
+        Promise.resolve(client.rpc("llm_calls_prune").abortSignal(AbortSignal.timeout(LOG_TIMEOUT_MS)))
+          .then((r) => {
+            if (r.error) console.log("[llm] llm_calls_prune error: " + r.error.message.slice(0, 120));
+          }),
+      );
+    }
+  } catch {
+    // logging must never affect the caller
+  }
+}
+
+function functionNameFrom(s: string): string | null {
+  const p = s.replace(/\\/g, "/");
+  const a = /\/functions\/([A-Za-z0-9_-]+)\//.exec(p);
+  if (a && a[1] !== "_shared") return a[1];
+  const b = /\/([A-Za-z0-9_-]+)\/index\.ts/.exec(p);
+  if (b && b[1] !== "_shared") return b[1];
+  return null;
+}
+
+function sourceFromMainModule(): string | null {
+  try {
+    const m = Deno.mainModule;
+    return typeof m === "string" ? functionNameFrom(m) : null;
+  } catch {
+    return null;
+  }
+}
+
+function sourceFromStack(): string | null {
+  try {
+    const stack = new Error().stack || "";
+    for (const line of stack.split("\n")) {
+      if (line.replace(/\\/g, "/").includes("/_shared/")) continue;
+      const name = functionNameFrom(line);
+      if (name) return name;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function detectSource(): string {
+  try {
+    let via = "mainModule";
+    let name = sourceFromMainModule();
+    if (!name) {
+      via = "stack";
+      name = sourceFromStack();
+    }
+    if (!name) {
+      via = "default";
+      name = "unknown";
+    }
+    console.log("[llm] source=" + name + " via=" + via);
+    return name;
+  } catch {
+    return "unknown";
+  }
+}
+
+const LLM_SOURCE: string = detectSource();
+
+function isAbortError(e: unknown, signal?: AbortSignal): boolean {
+  return (e instanceof DOMException && e.name === "AbortError") || !!signal?.aborted;
+}
+
+function classifyAnthropic(status: number, body: string): LlmErrorClass {
+  if (status === 400 && /credit|billing|balance/i.test(body)) return "credit";
+  if (status === 402) return "credit";
+  if (status === 401 || status === 403) return "auth";
+  if (status === 429) return "rate_limit";
+  if (status >= 500) return "overload";
+  if (status >= 400 && status < 500) return "bad_request";
+  return "other";
+}
+
+function classifyGemini(status: number, body: string): LlmErrorClass {
+  if (body.startsWith("gemini empty")) return "empty";
+  if (body.startsWith("gemini non-JSON")) return "other";
+  if (status === 429) return "rate_limit";
+  if (status === 500 || status === 503) return "overload";
+  if (status === 401 || status === 403) return "auth";
+  if (status >= 400 && status < 500) return "bad_request";
+  return "other";
+}
+
+function tokenOf(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function anthropicRow(model: string, latency: number): LlmCallRow {
+  return {
+    provider: "anthropic",
+    model,
+    ok: false,
+    http_status: null,
+    error_class: null,
+    input_tokens: null,
+    output_tokens: null,
+    latency_ms: latency,
+    fallback: false,
+  };
+}
+
+// res.ok: read usage from a clone in the background; the original stays unread.
+function logAnthropicOk(res: Response, model: string, latency: number): void {
+  const base: LlmCallRow = { ...anthropicRow(model, latency), ok: true, http_status: res.status };
+  try {
+    const clone = res.clone();
+    background(
+      clone.json().then(
+        (j: unknown) => {
+          const u = j && typeof j === "object" ? (j as { usage?: unknown }).usage : undefined;
+          const usage = u && typeof u === "object" ? (u as { input_tokens?: unknown; output_tokens?: unknown }) : {};
+          logCall({ ...base, input_tokens: tokenOf(usage.input_tokens), output_tokens: tokenOf(usage.output_tokens) });
+        },
+        () => logCall(base),
+      ),
+    );
+  } catch {
+    logCall(base);
+  }
+}
+
+// Non-ok Claude Response returned unread: classify from a clone in the background.
+function logAnthropicFailUnread(res: Response, model: string, latency: number): void {
+  const status = res.status;
+  const write = (body: string) =>
+    logCall({ ...anthropicRow(model, latency), http_status: status, error_class: classifyAnthropic(status, body) });
+  try {
+    background(res.clone().text().then(write, () => write("")));
+  } catch {
+    write("");
+  }
+}
+
+function logAnthropicFail(status: number, body: string, model: string, latency: number): void {
+  logCall({ ...anthropicRow(model, latency), http_status: status, error_class: classifyAnthropic(status, body) });
+}
+
+function logGemini(
+  model: string,
+  latency: number,
+  fallback: boolean,
+  status: number | null,
+  failure: { body: string } | { error: LlmErrorClass } | null,
+  usage: { input_tokens: number; output_tokens: number } | null,
+): void {
+  let error_class: LlmErrorClass | null = null;
+  if (failure && "body" in failure) error_class = classifyGemini(status ?? 0, failure.body);
+  else if (failure) error_class = failure.error;
+  logCall({
+    provider: "gemini",
+    model,
+    ok: failure === null,
+    http_status: status,
+    error_class,
+    input_tokens: usage ? tokenOf(usage.input_tokens) : null,
+    output_tokens: usage ? tokenOf(usage.output_tokens) : null,
+    latency_ms: latency,
+    fallback,
+  });
+}
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -174,18 +429,30 @@ async function callGeminiOnce(
   req: AnthropicMessagesRequest,
   apiKey: string,
   model: string,
+  fallback: boolean,
   signal?: AbortSignal,
 ): Promise<Response> {
-  const res = await fetch(GEMINI_BASE + "/" + model + ":generateContent", {
-    method: "POST",
-    headers: { "x-goog-api-key": apiKey, "content-type": "application/json" },
-    body: JSON.stringify(toGeminiBody(req)),
-    signal,
-  });
-  const text = await res.text();
+  const t0 = Date.now();
+  let res: Response;
+  let text: string;
+  try {
+    res = await fetch(GEMINI_BASE + "/" + model + ":generateContent", {
+      method: "POST",
+      headers: { "x-goog-api-key": apiKey, "content-type": "application/json" },
+      body: JSON.stringify(toGeminiBody(req)),
+      signal,
+    });
+    text = await res.text();
+  } catch (e) {
+    logGemini(model, Date.now() - t0, fallback, null, { error: isAbortError(e, signal) ? "timeout" : "network" }, null);
+    throw e;
+  }
+  const latency = Date.now() - t0;
   if (!res.ok) {
     // Same contract as a failed Anthropic call: non-2xx Response, body = error text.
-    return new Response("gemini HTTP " + res.status + ": " + text.slice(0, 600), {
+    const msg = "gemini HTTP " + res.status + ": " + text.slice(0, 600);
+    logGemini(model, latency, fallback, res.status, { body: msg }, null);
+    return new Response(msg, {
       status: res.status,
       headers: { "content-type": "text/plain" },
     });
@@ -194,13 +461,18 @@ async function callGeminiOnce(
   try {
     parsed = JSON.parse(text) as GeminiResponse;
   } catch {
-    return new Response("gemini non-JSON body: " + text.slice(0, 300), { status: 502 });
+    const msg = "gemini non-JSON body: " + text.slice(0, 300);
+    logGemini(model, latency, fallback, 502, { body: msg }, null);
+    return new Response(msg, { status: 502 });
   }
   if (!parsed.candidates?.length) {
     const why = parsed.promptFeedback?.blockReason || parsed.error?.message || "no candidates";
-    return new Response("gemini empty: " + why, { status: 502 });
+    const msg = "gemini empty: " + why;
+    logGemini(model, latency, fallback, 502, { body: msg }, null);
+    return new Response(msg, { status: 502 });
   }
   const shaped = geminiToAnthropic(parsed, model);
+  logGemini(model, latency, fallback, 200, null, shaped.usage);
   console.log(
     "[llm] provider=gemini model=" + model + " stop_reason=" + shaped.stop_reason +
       " in=" + shaped.usage.input_tokens + " out=" + shaped.usage.output_tokens,
@@ -213,14 +485,20 @@ async function callGeminiOnce(
 
 // Walk the model chain; retry transient statuses per model; return the last
 // failure Response if every model is exhausted.
-async function callGemini(req: AnthropicMessagesRequest, signal?: AbortSignal): Promise<Response> {
+// `fallback` is true when Gemini serves because Claude failed or has no key,
+// false when LLM_FORCE_PROVIDER=gemini; it is only recorded in llm_calls.
+async function callGemini(
+  req: AnthropicMessagesRequest,
+  fallback: boolean,
+  signal?: AbortSignal,
+): Promise<Response> {
   const apiKey = (Deno.env.get("GEMINI_API_KEY") || "").trim();
   if (!apiKey) throw new Error("missing_env:GEMINI_API_KEY");
   let last: Response | null = null;
   for (const model of geminiModels()) {
     for (let attempt = 1; attempt <= GEMINI_ATTEMPTS; attempt++) {
       if (signal?.aborted) break;
-      const res = await callGeminiOnce(req, apiKey, model, signal);
+      const res = await callGeminiOnce(req, apiKey, model, fallback, signal);
       if (res.ok) return res;
       last = res;
       const retry = geminiRetryable(res.status);
@@ -247,18 +525,19 @@ export async function anthropicMessages(
   const forced = forcedProvider();
   if (forced === "gemini") {
     console.log("[llm] provider=gemini reason=LLM_FORCE_PROVIDER");
-    return callGemini(req, signal);
+    return callGemini(req, false, signal);
   }
 
   const apiKey = (Deno.env.get("ANTHROPIC_API_KEY") || "").trim();
   if (!apiKey) {
     if (forced !== "anthropic" && geminiConfigured()) {
       console.log("[llm] provider=gemini reason=missing_env:ANTHROPIC_API_KEY");
-      return callGemini(req, signal);
+      return callGemini(req, true, signal);
     }
     throw new Error("missing_env:ANTHROPIC_API_KEY");
   }
 
+  const t0 = Date.now();
   let res: Response;
   try {
     res = await fetch(ANTHROPIC_URL, {
@@ -273,18 +552,28 @@ export async function anthropicMessages(
     });
   } catch (e) {
     const aborted = (e instanceof DOMException && e.name === "AbortError") || signal?.aborted;
+    logCall({ ...anthropicRow(req.model, Date.now() - t0), error_class: aborted ? "timeout" : "network" });
     if (aborted || forced === "anthropic" || !geminiConfigured()) throw e;
     console.log("[llm] provider=gemini reason=anthropic_network:" + String(e).slice(0, 120));
-    return callGemini(req, signal);
+    return callGemini(req, true, signal);
+  }
+  const latency = Date.now() - t0;
+
+  if (res.ok) {
+    logAnthropicOk(res, req.model, latency);
+    return res;
+  }
+  if (forced === "anthropic" || !geminiConfigured()) {
+    logAnthropicFailUnread(res, req.model, latency);
+    return res;
   }
 
-  if (res.ok || forced === "anthropic" || !geminiConfigured()) return res;
-
   const body = await res.text();
+  logAnthropicFail(res.status, body, req.model, latency);
   if (!shouldFallback(res.status, body)) {
     // Re-wrap: the body was consumed to inspect it.
     return new Response(body, { status: res.status, headers: res.headers });
   }
   console.log("[llm] provider=gemini reason=anthropic_http_" + res.status + " " + body.slice(0, 160).replace(/\s+/g, " "));
-  return callGemini(req, signal);
+  return callGemini(req, true, signal);
 }

@@ -3111,7 +3111,11 @@ if (!DEV_DEBUG) {
   // hidden recent-obs placeholder; both are filled on popupopen. Aggregated card: nothing.
   var EU_RECENT_MAX = 5;
   function euCardExtras(isAgg, species, d){
-    if (isAgg) return "";
+    // P107b: aggregated card loads the location dots for its "viimati" country (d.rg); nothing visible in the card.
+    if (isAgg) {
+      var aCode = resolveEbirdCode(species) || "";
+      return (aCode && d.rg) ? '<div class="bm-sc-loc" hidden data-cc="' + esc(d.rg) + '" data-code="' + esc(aCode) + '"></div>' : "";
+    }
     var code = resolveEbirdCode(species) || "";
     var cc = d.rg || "";
     var out = "";
@@ -3312,6 +3316,11 @@ if (!DEV_DEBUG) {
       var pl = el.querySelector(".bm-sc-row-place");
       if (pl) pl.classList.add("is-off");
       euPopupUpdate();
+    });
+    var locEl = el.querySelector(".bm-sc-loc");
+    if (locEl) euRecentObs(locEl.getAttribute("data-cc"), locEl.getAttribute("data-code"), function(list){
+      if (!el.isConnected) return;
+      if (Array.isArray(list) && list.length) euLocDraw(list, locGen);
     });
   });
   // P107: deferred, so a dot click in the same event (which closes the card) can mark itself first.

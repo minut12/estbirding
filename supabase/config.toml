@@ -172,6 +172,9 @@ verify_jwt = false
 [functions.europe-new-species]
 verify_jwt = false
 
+[functions.run-ebird-job]
+verify_jwt = false
+
 [functions.insert-vaatluste-raport]
 verify_jwt = false
 

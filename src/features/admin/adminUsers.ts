@@ -102,12 +102,13 @@ export function isRecentSignIn(iso: string | null, now = Date.now()): boolean {
 export function formatSignIn(iso: string | null, now = Date.now()): string {
   const t = parseTime(iso);
   if (t === null) return NEVER_SIGNED_IN;
-  const rtf = new Intl.RelativeTimeFormat('et', { numeric: 'auto' });
   const days = Math.round((now - t) / DAY_MS);
   const absDays = Math.abs(days);
-  if (absDays < DAYS_PER_MONTH) return rtf.format(-days, 'day');
-  if (absDays < DAYS_PER_YEAR) return rtf.format(-Math.round(days / DAYS_PER_MONTH), 'month');
-  return rtf.format(-Math.round(days / DAYS_PER_YEAR), 'year');
+  // Days keep numeric 'auto' (yesterday/today words); months and years use 'always' so 1 month never reads as 'last month'.
+  if (absDays < DAYS_PER_MONTH) return new Intl.RelativeTimeFormat('et', { numeric: 'auto' }).format(-days, 'day');
+  const rtfAlways = new Intl.RelativeTimeFormat('et', { numeric: 'always' });
+  if (absDays < DAYS_PER_YEAR) return rtfAlways.format(-Math.round(days / DAYS_PER_MONTH), 'month');
+  return rtfAlways.format(-Math.round(days / DAYS_PER_YEAR), 'year');
 }
 
 export type AdminUserStatus = 'active' | 'disabled';

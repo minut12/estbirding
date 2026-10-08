@@ -96,6 +96,7 @@ describe('isRecentSignIn', () => {
 
 describe('formatSignIn', () => {
   const rtf = new Intl.RelativeTimeFormat('et', { numeric: 'auto' });
+  const rtfAlways = new Intl.RelativeTimeFormat('et', { numeric: 'always' });
 
   it('returns the never-signed-in text for null', () => {
     expect(formatSignIn(null, NOW)).toBe('pole sisse loginud');
@@ -107,16 +108,22 @@ describe('formatSignIn', () => {
     expect(out).toBe(rtf.format(-3, 'day'));
   });
 
+  it('formats 35 days ago as a numeric month', () => {
+    const out = formatSignIn(daysAgo(35), NOW);
+    expect(out).not.toBe('');
+    expect(out).toBe(rtfAlways.format(-1, 'month'));
+  });
+
   it('formats 45 days ago in months', () => {
     const out = formatSignIn(daysAgo(45), NOW);
     expect(out).not.toBe('');
-    expect(out).toBe(rtf.format(-2, 'month'));
+    expect(out).toBe(rtfAlways.format(-2, 'month'));
   });
 
   it('formats 400 days ago in years', () => {
     const out = formatSignIn(daysAgo(400), NOW);
     expect(out).not.toBe('');
-    expect(out).toBe(rtf.format(-1, 'year'));
+    expect(out).toBe(rtfAlways.format(-1, 'year'));
   });
 });
 

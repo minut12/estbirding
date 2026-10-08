@@ -10,7 +10,7 @@ import {
 } from '@/features/admin/adminUsers';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { UserDetail, UserDetailHeader } from '@/features/admin/UserDetail';
+import { UserDetail, UserDetailHeader, type UserDetailLayout } from '@/features/admin/UserDetail';
 
 type RoleFilter = 'all' | AdminRole;
 
@@ -130,7 +130,7 @@ export default function AdminUsersScreen() {
   }
 
   const chips: { key: RoleFilter; label: string; count: number }[] = [
-    { key: 'all', label: 'K\u00f5ik', count: users.length },
+    { key: 'all' as const, label: 'K\u00f5ik', count: users.length },
     ...FILTER_ROLES.map((role) => ({ key: role, label: ROLE_LABEL[role], count: roleCounts[role] })),
   ].filter((c) => c.key === 'all' || c.count > 0);
 
@@ -149,13 +149,37 @@ export default function AdminUsersScreen() {
     </header>
   );
 
-  const listContent = (
-    <div className="flex flex-col gap-3.5 px-4 pb-6 pt-4">
-      <div className="grid grid-cols-3 gap-2">
-        <StatCell value={users.length} label="kasutajat" />
-        <StatCell value={recentCount} label="sisse loginud 30 p" />
-        <StatCell value={roleCounts.admin} label="adminit" />
+  const desktopHeader = (
+    <header className="sticky top-0 z-10 border-b border-[#DFE6E1] bg-white">
+      <div className="mx-auto flex h-[60px] max-w-[1080px] items-center gap-4 px-6">
+        <button
+          type="button"
+          onClick={() => navigate('/', { state: { estbirding: { activeTab: 'seaded' } } })}
+          className="inline-flex h-11 items-center gap-0.5 text-[15px] text-[#2D764B]"
+        >
+          <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+          Seaded
+        </button>
+        <h1 className="text-[18px] font-semibold">Kasutajad</h1>
       </div>
+    </header>
+  );
+
+  const renderListContent = (variant: RowVariant) => (
+    <div className={variant === 'phone' ? 'flex flex-col gap-3.5 px-4 pb-6 pt-4' : 'flex min-w-0 flex-col gap-3.5'}>
+      {variant === 'phone' ? (
+        <div className="grid grid-cols-3 gap-2">
+          <StatCell value={users.length} label="kasutajat" />
+          <StatCell value={recentCount} label="sisse loginud 30 p" />
+          <StatCell value={roleCounts.admin} label="adminit" />
+        </div>
+      ) : (
+        <div className="flex gap-[18px] rounded-[14px] border border-[#DFE6E1] bg-white px-3.5 py-3">
+          <DesktopStat value={users.length} label="kasutajat" />
+          <DesktopStat value={recentCount} label="sisse loginud 30 p" />
+          <DesktopStat value={roleCounts.admin} label="adminit" />
+        </div>
+      )}
 
       <label className="flex h-11 items-center gap-2 rounded-xl border border-[#DFE6E1] bg-white px-3 text-[#5B6B62]">
         <Search className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
@@ -216,6 +240,7 @@ export default function AdminUsersScreen() {
               index={index}
               isSelf={u.id === currentUser?.id}
               selected={u.id === userId}
+              variant={variant}
             />
           ))}
         </div>
@@ -237,6 +262,7 @@ export default function AdminUsersScreen() {
       onUserChange={onUserChange}
       showBackHeader={!isDesktop}
       onBack={backToList}
+      layout={isDesktop ? 'card' : 'page'}
     />
   );
 
@@ -246,7 +272,7 @@ export default function AdminUsersScreen() {
         {userId ? detailPane : (
           <>
             {header}
-            {listContent}
+            {renderListContent('phone')}
           </>
         )}
       </div>
@@ -254,19 +280,23 @@ export default function AdminUsersScreen() {
   }
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-[#F3F6F2] text-[15px] leading-[1.4] text-[#1F2723]">
-      {header}
-      <div className="flex min-h-0 flex-1">
-        <div className="w-[380px] shrink-0 overflow-y-auto border-r border-[#DFE6E1]">{listContent}</div>
-        <div className="min-w-0 flex-1 overflow-y-auto">
+    <div className="min-h-[100dvh] bg-[#F3F6F2] text-[15px] leading-[1.4] text-[#1F2723]">
+      {desktopHeader}
+      <div className="mx-auto grid max-w-[1080px] grid-cols-[420px_minmax(0,1fr)] items-start gap-6 px-6 py-6">
+        {renderListContent('desktop')}
+        <div className="min-w-0">
           {userId ? detailPane : (
-            <div className="flex h-full items-center justify-center text-[15px] text-[#5B6B62]">Vali kasutaja</div>
+            <div className={`${DESKTOP_CARD_CLASS} text-[15px] text-[#5B6B62]`}>Vali kasutaja</div>
           )}
         </div>
       </div>
     </div>
   );
 }
+
+type RowVariant = 'phone' | 'desktop';
+
+const DESKTOP_CARD_CLASS = 'max-w-[620px] rounded-2xl border border-[#DFE6E1] bg-white px-6 py-[22px]';
 
 type DetailPaneProps = {
   user: AdminUser | null;
@@ -277,6 +307,7 @@ type DetailPaneProps = {
   onUserChange: (updated: AdminUser) => void;
   showBackHeader: boolean;
   onBack: () => void;
+  layout: UserDetailLayout;
 };
 
 function DetailPane({
@@ -288,6 +319,7 @@ function DetailPane({
   onUserChange,
   showBackHeader,
   onBack,
+  layout,
 }: DetailPaneProps) {
   if (user) {
     return (
@@ -297,6 +329,7 @@ function DetailPane({
         onUserChange={onUserChange}
         showBackHeader={showBackHeader}
         onBack={onBack}
+        layout={layout}
       />
     );
   }
@@ -308,7 +341,7 @@ function DetailPane({
           <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-[#2D764B]" />
         </div>
       ) : loadError ? (
-        <div className="m-4 flex flex-col items-start gap-2 rounded-[14px] border border-[#DFE6E1] bg-white p-3.5">
+        <div className={`${layout === 'card' ? '' : 'm-4 '}flex flex-col items-start gap-2 rounded-[14px] border border-[#DFE6E1] bg-white p-3.5`}>
           <p className="text-[13px] text-[#5B6B62]">
             Kasutajate laadimine eba&otilde;nnestus: {loadError}
           </p>
@@ -346,23 +379,39 @@ function StatCell({ value, label }: StatCellProps) {
   );
 }
 
+function DesktopStat({ value, label }: StatCellProps) {
+  return (
+    <div className="flex min-w-0 flex-col">
+      <span className="text-xl font-bold tabular-nums leading-tight">{value}</span>
+      <span className="text-[13px] text-[#5B6B62]">{label}</span>
+    </div>
+  );
+}
+
 type UserRowProps = {
   user: AdminUser;
   index: number;
   isSelf: boolean;
   selected: boolean;
+  variant: RowVariant;
 };
 
-function UserRow({ user: u, index, isSelf, selected }: UserRowProps) {
+const ROW_SELECTED_CLASS: Record<RowVariant, string> = {
+  phone: 'bg-[#E6F0E9]',
+  desktop: 'bg-[#E6F0E9] shadow-[inset_3px_0_0_#2D764B]',
+};
+
+function UserRow({ user: u, index, isSelf, selected, variant }: UserRowProps) {
   const avatarClass = isSelf ? AVATAR_SELF_CLASS : AVATAR_ALT_CLASSES[index % AVATAR_ALT_CLASSES.length];
   const recent = isRecentSignIn(u.lastSignInAt);
   const disabled = u.status !== 'active';
+  const signInText = u.lastSignInAt ? formatSignIn(u.lastSignInAt) : 'Pole sisse loginud';
   return (
     <Link
       to={`/admin/users/${u.id}`}
       aria-current={selected ? 'page' : undefined}
       className={`flex min-h-[68px] items-center gap-3 px-3.5 py-2.5 text-inherit no-underline ${
-        selected ? 'bg-[#E6F0E9]' : 'hover:bg-[#F6F9F7]'
+        selected ? ROW_SELECTED_CLASS[variant] : 'hover:bg-[#F6F9F7]'
       } ${disabled ? 'opacity-60' : ''}`}
     >
       <span className={`relative grid h-[42px] w-[42px] shrink-0 place-items-center rounded-full text-base font-semibold ${avatarClass}`}>
@@ -383,12 +432,20 @@ function UserRow({ user: u, index, isSelf, selected }: UserRowProps) {
             </span>
           )}
         </span>
-        {u.displayName && u.email && (
-          <span className="truncate text-[13px] text-[#5B6B62]">{u.email}</span>
+        {variant === 'phone' ? (
+          <>
+            {u.displayName && u.email && (
+              <span className="truncate text-[13px] text-[#5B6B62]">{u.email}</span>
+            )}
+            <span className="text-[13px] text-[#5B6B62]">
+              {u.lastSignInAt ? <>Viimati sisse loginud {formatSignIn(u.lastSignInAt)}</> : 'Pole sisse loginud'}
+            </span>
+          </>
+        ) : (
+          <span className="truncate text-[13px] text-[#5B6B62]">
+            {u.displayName && u.email ? `${u.email} \u00b7 ${signInText}` : signInText}
+          </span>
         )}
-        <span className="text-[13px] text-[#5B6B62]">
-          {u.lastSignInAt ? <>Viimati sisse loginud {formatSignIn(u.lastSignInAt)}</> : 'Pole sisse loginud'}
-        </span>
       </span>
       {disabled && <span className={`${CHIP_BASE_CLASS} bg-[#FBE9E7] text-[#9B2C1F]`}>Keelatud</span>}
       <span className={`${CHIP_BASE_CLASS} ${ROLE_CHIP_CLASS[u.role]}`}>{ROLE_LABEL[u.role]}</span>

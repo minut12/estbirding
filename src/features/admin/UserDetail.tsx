@@ -65,9 +65,20 @@ export type UserDetailProps = {
   onUserChange: (updated: AdminUser) => void;
   showBackHeader?: boolean;
   onBack?: () => void;
+  /** 'page' = phone/full-page rendering (default); 'card' = desktop white card next to the list. */
+  layout?: UserDetailLayout;
 };
 
-export function UserDetail({ user, isSelf, onUserChange, showBackHeader = false, onBack }: UserDetailProps) {
+export type UserDetailLayout = 'page' | 'card';
+
+export function UserDetail({
+  user,
+  isSelf,
+  onUserChange,
+  showBackHeader = false,
+  onBack,
+  layout = 'page',
+}: UserDetailProps) {
   // Keyed by user id so a save still in flight for another user never locks this one.
   const [savingId, setSavingId] = useState<string | null>(null);
   const saving = savingId === user.id;
@@ -112,6 +123,119 @@ export function UserDetail({ user, isSelf, onUserChange, showBackHeader = false,
   const isActive = user.status === 'active';
   const radiosDisabled = isSelf || saving;
 
+  const avatarClass = isSelf ? AVATAR_SELF_CLASS : AVATAR_OTHER_CLASS;
+  const statusLabel = isActive ? <>M&auml;rgi keelatuks</> : <>M&auml;rgi aktiivseks</>;
+  const statusNote = 'Ei blokeeri veel sisselogimist.';
+
+  const roleChips = (
+    <>
+      <span className={`${CHIP_BASE_CLASS} ${ROLE_CHIP_CLASS[user.role]}`}>{ROLE_LABEL[user.role]}</span>
+      {isSelf && <span className={`${CHIP_BASE_CLASS} bg-[#E6F0E9] text-[#24603D]`}>Sina</span>}
+    </>
+  );
+
+  const kontoSection = (
+    <section>
+      <h2 className={LABEL_CLASS}>Konto</h2>
+      <div className={`${GROUP_CLASS} divide-y divide-[#E8EEEA]`}>
+        <div className={KV_CLASS}>
+          <span className="text-[#3E4C44]">Liitus</span>
+          <span className="font-medium tabular-nums">{formatJoined(user.createdAt)}</span>
+        </div>
+        <div className={KV_CLASS}>
+          <span className="text-[#3E4C44]">Viimati sisse loginud</span>
+          <span className="text-right font-medium tabular-nums">
+            {user.lastSignInAt ? formatSignIn(user.lastSignInAt) : 'Pole sisse loginud'}
+          </span>
+        </div>
+        <div className={KV_CLASS}>
+          <span className="text-[#3E4C44]">Olek</span>
+          <span className={`font-medium ${isActive ? 'text-[#24603D]' : 'text-[#B42318]'}`}>
+            {isActive ? 'Aktiivne' : 'Keelatud'}
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+
+  const rollSection = (
+    <section>
+      <h2 className={LABEL_CLASS}>Roll</h2>
+      <div role="radiogroup" aria-label="Roll" className={`${GROUP_CLASS} divide-y divide-[#E8EEEA]`}>
+        {ROLE_ORDER.map((role) => {
+          const on = user.role === role;
+          return (
+            <button
+              key={role}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              disabled={radiosDisabled}
+              onClick={() => void changeRole(role)}
+              className="flex w-full items-start gap-3 px-3.5 py-3 text-left disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span
+                className={`mt-px grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full border-2 ${
+                  on ? 'border-[#2D764B]' : 'border-[#AEBBB3]'
+                }`}
+                aria-hidden="true"
+              >
+                {on && <span className="h-2.5 w-2.5 rounded-full bg-[#2D764B]" />}
+              </span>
+              <span className="flex-1 font-semibold">{ROLE_LABEL[role]}</span>
+            </button>
+          );
+        })}
+      </div>
+      {isSelf && <p className="mx-1 mt-2 text-[13px] text-[#5B6B62]">Oma rolli ei saa muuta.</p>}
+    </section>
+  );
+
+  if (layout === 'card') {
+    return (
+      <div className="text-[15px] leading-[1.4] text-[#1F2723]">
+        {showBackHeader && onBack && <UserDetailHeader onBack={onBack} />}
+        <div className="flex max-w-[620px] flex-col gap-[22px] rounded-2xl border border-[#DFE6E1] bg-white px-6 py-[22px]">
+          <div className="flex items-center gap-4">
+            <div
+              className={`grid h-[60px] w-[60px] shrink-0 place-items-center rounded-full text-[24px] font-semibold ${avatarClass}`}
+              aria-hidden="true"
+            >
+              {initial}
+            </div>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <div className="break-all text-[20px] font-semibold">{name}</div>
+              {user.displayName && user.email && (
+                <div className="break-all text-[13px] text-[#5B6B62]">{user.email}</div>
+              )}
+            </div>
+            <div className="ml-auto flex shrink-0 flex-wrap justify-end gap-1.5">{roleChips}</div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            {kontoSection}
+            {rollSection}
+          </div>
+
+          {!isSelf && (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[13px] text-[#5B6B62]">{statusNote}</p>
+              <button
+                type="button"
+                onClick={() => void toggleStatus()}
+                disabled={saving}
+                className="flex h-[38px] shrink-0 items-center justify-center gap-2 rounded-xl border border-[#F1C9C5] bg-white px-4 font-semibold text-[#B42318] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <UserX className="h-[18px] w-[18px]" aria-hidden="true" />
+                {statusLabel}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="text-[15px] leading-[1.4] text-[#1F2723]">
       {showBackHeader && onBack && <UserDetailHeader onBack={onBack} />}
@@ -119,7 +243,7 @@ export function UserDetail({ user, isSelf, onUserChange, showBackHeader = false,
         <div className="flex flex-col items-center gap-2 text-center">
           <div
             className={`grid h-[76px] w-[76px] place-items-center rounded-full text-[30px] font-semibold ${
-              isSelf ? AVATAR_SELF_CLASS : AVATAR_OTHER_CLASS
+              avatarClass
             }`}
             aria-hidden="true"
           >
@@ -130,63 +254,13 @@ export function UserDetail({ user, isSelf, onUserChange, showBackHeader = false,
             <div className="break-all text-[13px] text-[#5B6B62]">{user.email}</div>
           )}
           <div className="flex flex-wrap justify-center gap-1.5">
-            <span className={`${CHIP_BASE_CLASS} ${ROLE_CHIP_CLASS[user.role]}`}>{ROLE_LABEL[user.role]}</span>
-            {isSelf && <span className={`${CHIP_BASE_CLASS} bg-[#E6F0E9] text-[#24603D]`}>Sina</span>}
+            {roleChips}
           </div>
         </div>
 
-        <section>
-          <h2 className={LABEL_CLASS}>Konto</h2>
-          <div className={`${GROUP_CLASS} divide-y divide-[#E8EEEA]`}>
-            <div className={KV_CLASS}>
-              <span className="text-[#3E4C44]">Liitus</span>
-              <span className="font-medium tabular-nums">{formatJoined(user.createdAt)}</span>
-            </div>
-            <div className={KV_CLASS}>
-              <span className="text-[#3E4C44]">Viimati sisse loginud</span>
-              <span className="text-right font-medium tabular-nums">
-                {user.lastSignInAt ? formatSignIn(user.lastSignInAt) : 'Pole sisse loginud'}
-              </span>
-            </div>
-            <div className={KV_CLASS}>
-              <span className="text-[#3E4C44]">Olek</span>
-              <span className={`font-medium ${isActive ? 'text-[#24603D]' : 'text-[#B42318]'}`}>
-                {isActive ? 'Aktiivne' : 'Keelatud'}
-              </span>
-            </div>
-          </div>
-        </section>
+        {kontoSection}
 
-        <section>
-          <h2 className={LABEL_CLASS}>Roll</h2>
-          <div role="radiogroup" aria-label="Roll" className={`${GROUP_CLASS} divide-y divide-[#E8EEEA]`}>
-            {ROLE_ORDER.map((role) => {
-              const on = user.role === role;
-              return (
-                <button
-                  key={role}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  disabled={radiosDisabled}
-                  onClick={() => void changeRole(role)}
-                  className="flex w-full items-start gap-3 px-3.5 py-3 text-left disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <span
-                    className={`mt-px grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full border-2 ${
-                      on ? 'border-[#2D764B]' : 'border-[#AEBBB3]'
-                    }`}
-                    aria-hidden="true"
-                  >
-                    {on && <span className="h-2.5 w-2.5 rounded-full bg-[#2D764B]" />}
-                  </span>
-                  <span className="flex-1 font-semibold">{ROLE_LABEL[role]}</span>
-                </button>
-              );
-            })}
-          </div>
-          {isSelf && <p className="mx-1 mt-2 text-[13px] text-[#5B6B62]">Oma rolli ei saa muuta.</p>}
-        </section>
+        {rollSection}
 
         {!isSelf && (
           <div className="flex flex-col gap-2">
@@ -197,9 +271,9 @@ export function UserDetail({ user, isSelf, onUserChange, showBackHeader = false,
               className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-[#F1C9C5] bg-white font-semibold text-[#B42318] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <UserX className="h-[18px] w-[18px]" aria-hidden="true" />
-              {isActive ? <>M&auml;rgi keelatuks</> : <>M&auml;rgi aktiivseks</>}
+              {statusLabel}
             </button>
-            <p className="mx-1 text-[13px] text-[#5B6B62]">Ei blokeeri veel sisselogimist.</p>
+            <p className="mx-1 text-[13px] text-[#5B6B62]">{statusNote}</p>
           </div>
         )}
       </div>

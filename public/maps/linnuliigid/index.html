@@ -1866,11 +1866,27 @@ function formatDateTimeEE(v){
     }).format(new Date(ts));
   }catch(e){ return String(v || '-'); }
 }
+function _eluHm(v){
+  var ts = Date.parse(v); if(!Number.isFinite(ts)) return '-';
+  try{
+    var dayOf = function(t){ return new Intl.DateTimeFormat('et-EE', { timeZone: EE_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(t)); };
+    var hm = new Intl.DateTimeFormat('et-EE', { timeZone: EE_TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(ts));
+    return dayOf(ts) === dayOf(Date.now()) ? hm : (dayOf(ts) + ' ' + hm);
+  }catch(e){ return '-'; }
+}
 function _renderEluUpdated(){
   try{
     var el = document.getElementById('eluUpdated'); if(!el) return;
-    var v = __snapshotMeta && __snapshotMeta.generated_at;
+    // P103: prefer the real server fetch time (cron_runs via get_elurikkus_fetch_status); fall back to snapshot time.
+    var fs = window.__eluFetchStatus || null;
+    var v = (fs && fs.last_fetch_at) || (__snapshotMeta && __snapshotMeta.generated_at);
     var txt = 'Andmed viimati uuendatud: ' + (v ? formatDateTimeEE(v) + ' (server)' : String.fromCharCode(8211));
+    if(fs && (fs.last_full_at || fs.next_full_at)){
+      var parts = [];
+      if(fs.last_full_at) parts.push('T' + String.fromCharCode(228) + 'ielik uuendus: ' + _eluHm(fs.last_full_at));
+      if(fs.next_full_at) parts.push('j' + String.fromCharCode(228) + 'rgmine ' + _eluHm(fs.next_full_at));
+      txt += '\n' + parts.join(' ' + String.fromCharCode(183) + ' ');
+    }
     var m = null; try{ m = localStorage.getItem('bm_elu_manual_refresh_at_v1'); }catch(e){}
     var mTs = m ? Date.parse(m) : NaN, vTs = v ? Date.parse(v) : NaN;
     if(Number.isFinite(mTs) && (!Number.isFinite(vTs) || mTs > vTs)){
@@ -1879,6 +1895,26 @@ function _renderEluUpdated(){
     el.textContent = txt;
   }catch(e){}
 }
+// P103: load server fetch status for the Filtrid label (first call after 1.5 s, then every 10 min).
+(function(){
+  var tries = 0;
+  async function load(){
+    try{
+      var cfg = resolveSupabaseConfig();
+      if(!cfg || !cfg.supabaseUrl || !cfg.anonKey){ if(tries++ < 10) setTimeout(load, 3000); return; }
+      var res = await fetch(cfg.supabaseUrl + '/rest/v1/rpc/get_elurikkus_fetch_status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey },
+        body: '{}'
+      });
+      if(!res.ok){ console.warn('[elu-fetch-status] HTTP', res.status); return; }
+      var s = await res.json();
+      if(s && typeof s === 'object' && !Array.isArray(s)){ window.__eluFetchStatus = s; _renderEluUpdated(); }
+    }catch(e){ console.warn('[elu-fetch-status]', e); }
+  }
+  setTimeout(load, 1500);
+  setInterval(load, 10 * 60 * 1000);
+})();
 function _speciesKey(name){
   return String(name || '').trim().toLowerCase();
 }

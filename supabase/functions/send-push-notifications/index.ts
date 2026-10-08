@@ -1,3 +1,4 @@
+// redeploy-marker: P104b broadcast 2026-10-08
 // Web Push via npm:web-push (battle-tested, handles aes128gcm + VAPID).
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
@@ -31,6 +32,7 @@ Deno.serve(async (req) => {
       notification_body,
       notification_url,
       notification_tag,
+      broadcast,
     } = await req.json();
     if (!Array.isArray(species) || species.length === 0) {
       return new Response(JSON.stringify({ error: "species array required" }), {
@@ -68,10 +70,11 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: subscriptions, error } = await supabase.rpc(
-      "get_subscriptions_for_species",
-      { species_list: species },
-    );
+    // P104: broadcast=true sends species[0] to every subscription (a brand-new species nobody is subscribed to yet).
+    const isBroadcast = broadcast === true;
+    const { data: subscriptions, error } = isBroadcast
+      ? await supabase.from("push_subscriptions").select("endpoint, key_p256dh, key_auth, subscribed_species")
+      : await supabase.rpc("get_subscriptions_for_species", { species_list: species });
     if (error) throw error;
 
     if (!subscriptions || subscriptions.length === 0) {
@@ -89,7 +92,7 @@ Deno.serve(async (req) => {
     const errorDetails: Array<Record<string, string | number | null>> = [];
 
     for (const sub of subscriptions) {
-      const matchingSpecies = species.filter((s: string) =>
+      const matchingSpecies = isBroadcast ? [String(species[0])] : species.filter((s: string) =>
         (sub.subscribed_species || []).includes(s),
       );
       let dead = false;

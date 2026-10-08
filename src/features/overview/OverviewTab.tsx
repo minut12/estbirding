@@ -489,6 +489,12 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId, hasMedia, onShow
             <span>{entry.region}</span>
           </>
         )}
+        {typeof entry.count === 'number' && entry.count > 0 && (
+          <>
+            <span>&middot;</span>
+            <span>{formatIsendid(entry.count)}</span>
+          </>
+        )}
         {(() => {
           const src = getSourceDisplay(entry.source);
           if (!src) return null;
@@ -534,12 +540,6 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId, hasMedia, onShow
       )}
       {subId && (entry.source === 'ebird' || entry.source === 'et_rarity_topup') && (
         <ChecklistDetails subId={subId} ebirdCode={ebirdCode} />
-      )}
-      {typeof entry.count === 'number' && entry.count > 1 && (
-        <div className="text-sm">
-          <span className="text-muted-foreground">Arv: </span>
-          {entry.count} isendit
-        </div>
       )}
       {!isUnverified && entry.documented && entry.documented.length > 0 && (
         <div className="flex flex-wrap gap-1">
@@ -917,6 +917,11 @@ function readEstbirdingState(state: unknown): EstbirdingNavState | null {
   return nested as EstbirdingNavState;
 }
 
+// P102: individual count label, shown for every count > 0 (null/0 hidden).
+function formatIsendid(n: number): string {
+  return n === 1 ? '1 isend' : `${n} isendit`;
+}
+
 // P98/P98b: one Ulevaade (Eesti + Euroopa) card per species when it has 2+ entries. Rows are newest first.
 function SpeciesObsRow({ entry, subId, hasMedia, ebirdCode }: { entry: VaatlusEntry; subId?: string; hasMedia: boolean; ebirdCode?: string }) {
   const obs = formatObservers(entry.observers);
@@ -935,8 +940,8 @@ function SpeciesObsRow({ entry, subId, hasMedia, ebirdCode }: { entry: VaatlusEn
           {entry.region ? <> &middot; {entry.region}</> : null}
           {!obs.unknown ? <> &middot; {obs.text}</> : null}
         </span>
-        {typeof entry.count === 'number' && entry.count > 1 && (
-          <span className="text-xs text-muted-foreground">{entry.count} isendit</span>
+        {typeof entry.count === 'number' && entry.count > 0 && (
+          <span className="text-xs text-muted-foreground">{formatIsendid(entry.count)}</span>
         )}
         {src && (
           <span className="inline-flex items-center gap-1 text-xs">

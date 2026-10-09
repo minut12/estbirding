@@ -1,4 +1,4 @@
-// redeploy-marker: P105c 2026-10-09
+// redeploy-marker: P105c3 2026-10-09
 // movebank-refresh (P105c)
 // pg_cron -> pg_net -> public.m7_call_ef('movebank-refresh', '{"mode":...}') -> here.
 //
@@ -6,13 +6,15 @@
 //   discover  202 + background: list Movebank studies we can read, keep recent
 //             GPS studies in the Europe box, upsert movebank_studies.
 //   refresh   202 + background: per study, find recent bird individuals, resolve
-//             taxa, read the newest fix via the ANONYMOUS public/json endpoint and
-//             upsert gps_tracked_birds. Sensitive taxa are rounded to 0.1 deg.
-//   probe     synchronous dry run for one studyId, NO DB access at all.
+//             taxa, read the newest fix via the authenticated json-auth endpoint
+//             and upsert gps_tracked_birds. Sensitive taxa are rounded to 0.1 deg.
+//   probe     synchronous dry run for one studyId, NO DB access at all; returns
+//             extra diagnostics (individual counts, raw timestamp_end samples,
+//             per-chunk json-auth fetch info).
 //
 // Movebank etiquette: one request at a time, 400 ms between calls, one retry
-// after 5 s on HTTP 429 / "concurrent". Basic auth is sent ONLY on direct-read;
-// public/json is always anonymous so only public data can reach the map.
+// after 5 s on HTTP 429 / "concurrent". Both direct-read and json-auth are
+// called WITH the account (Basic auth, MOVEBANK_USER / MOVEBANK_PASS).
 //
 // Auth on this function: X-Webhook-Secret must equal VAATLUSTE_WEBHOOK_SECRET.
 
@@ -66,6 +68,21 @@ interface BirdRow {
   fetched_at: string;
 }
 
+interface FetchDiag {
+  chunk: number; // 0-based json-auth chunk index
+  http_status: number;
+  bytes: number;
+  head: string; // first 200 chars of the body
+}
+
+// Diagnostics only (returned by probe); never used for refresh decisions.
+interface StudyDiag {
+  individuals_total: number;
+  individuals_after_filter: number;
+  sample_timestamp_end: string[]; // first 5 raw values, before filtering
+  fetch: FetchDiag[];
+}
+
 interface StudyResult {
   status: StudyStatus;
   lastError: string | null;
@@ -73,6 +90,7 @@ interface StudyResult {
   taxa: TaxonInfo[];
   newTaxa: TaxonInfo[]; // resolved now, not yet in movebank_taxa (unique by taxon_latin)
   rows: BirdRow[];
+  diag: StudyDiag;
 }
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -87,7 +105,7 @@ const PAUSE_MS = 400;
 const RETRY_WAIT_MS = 5_000;
 const LOOP_BUDGET_MS = 300_000;
 const DEFAULT_MAX_STUDIES = 25;
-const PUBLIC_CHUNK = 20;
+const JSON_CHUNK = 20;
 const DB_CHUNK = 200;
 
 const corsHeaders = {
@@ -221,6 +239,7 @@ async function collectStudy(
     taxa: [],
     newTaxa: [],
     rows: [],
+    diag: { individuals_total: 0, individuals_after_filter: 0, sample_timestamp_end: [], fetch: [] },
   };
 
   // 1. individuals (authenticated CSV)
@@ -237,16 +256,21 @@ async function collectStudy(
     const bad = classifyBadBody(indRes);
     return { ...result, status: bad.status, lastError: "individuals HTTP " + indRes.status + ": " + bad.lastError };
   }
-  const individuals = csvToObjects(indRes.text)
-    .map((o) => ({
-      local_identifier: o.local_identifier ?? "",
-      taxon_canonical_name: o.taxon_canonical_name ?? "",
-      timestamp_end: o.timestamp_end ?? "",
-    }))
-    .filter((o) => {
-      const t = parseMovebankTime(o.timestamp_end);
-      return o.local_identifier !== "" && t !== null && t >= now - RECENT_MS;
-    });
+  const allIndividuals = csvToObjects(indRes.text).map((o) => ({
+    local_identifier: o.local_identifier ?? "",
+    taxon_canonical_name: o.taxon_canonical_name ?? "",
+    timestamp_end: o.timestamp_end ?? "",
+  }));
+  // Drop only when timestamp_end parses AND is older than now-7d; an empty or
+  // unparseable timestamp_end keeps the individual (json-auth decides).
+  const individuals = allIndividuals.filter((o) => {
+    if (o.local_identifier === "") return false;
+    const t = parseMovebankTime(o.timestamp_end);
+    return t === null || t >= now - RECENT_MS;
+  });
+  result.diag.individuals_total = allIndividuals.length;
+  result.diag.individuals_after_filter = individuals.length;
+  result.diag.sample_timestamp_end = allIndividuals.slice(0, 5).map((o) => o.timestamp_end);
   result.individuals = individuals;
   if (individuals.length === 0) return { ...result, status: "empty" };
 
@@ -269,10 +293,11 @@ async function collectStudy(
   const birds = individuals.filter((i) => taxa.get(binomial(i.taxon_canonical_name))?.is_bird === true);
   if (birds.length === 0) return { ...result, status: "not_birds" };
 
-  // 3. public/json (ANONYMOUS)
+  // 3. json-auth (authenticated, same Basic auth as direct-read)
   const taxonById = new Map(birds.map((b) => [b.local_identifier, binomial(b.taxon_canonical_name)]));
   const fetchedAt = new Date().toISOString();
-  for (const group of chunk(birds.map((b) => b.local_identifier), PUBLIC_CHUNK)) {
+  const groups = chunk(birds.map((b) => b.local_identifier), JSON_CHUNK);
+  for (const [chunkIndex, group] of groups.entries()) {
     const qs = new URLSearchParams({
       study_id: String(studyId),
       sensor_type: "gps",
@@ -280,7 +305,13 @@ async function collectStudy(
       timestamp_start: String(now - RECENT_MS),
     });
     for (const id of group) qs.append("individual_local_identifiers", id);
-    const pub = await mbFetch(MB + "/public/json?" + qs.toString(), null);
+    const pub = await mbFetch(MB + "/json-auth?" + qs.toString(), creds);
+    result.diag.fetch.push({
+      chunk: chunkIndex,
+      http_status: pub.status,
+      bytes: new TextEncoder().encode(pub.text).length,
+      head: pub.text.slice(0, 200),
+    });
     let payload: unknown;
     try {
       payload = JSON.parse(pub.text);
@@ -480,10 +511,17 @@ async function runRefresh(creds: Creds, maxStudies: number): Promise<void> {
   };
   try {
     const sb = serviceClient();
+    // candidate/public always; non-success statuses are retried once per 24 h.
+    // The ISO timestamp contains ':' and '.', so it is double-quoted for PostgREST.
+    const recheckBefore = new Date(Date.now() - DAY_MS).toISOString();
     const { data, error } = await sb
       .from("movebank_studies")
       .select("study_id")
-      .in("status", ["candidate", "public"])
+      .or(
+        "status.in.(candidate,public)," +
+          "and(status.in.(empty,licence_required,no_access,error)," +
+          'or(last_checked_at.is.null,last_checked_at.lt."' + recheckBefore + '"))',
+      )
       .gte("last_fix_at", new Date(Date.now() - RECENT_MS).toISOString())
       .order("last_checked_at", { ascending: true, nullsFirst: true })
       .limit(maxStudies);
@@ -588,6 +626,10 @@ Deno.serve(async (req) => {
       individuals: res.individuals,
       taxa: res.taxa,
       rows: res.rows,
+      individuals_total: res.diag.individuals_total,
+      individuals_after_filter: res.diag.individuals_after_filter,
+      sample_timestamp_end: res.diag.sample_timestamp_end,
+      fetch: res.diag.fetch,
       took_ms: Date.now() - started,
     });
   } catch (e) {

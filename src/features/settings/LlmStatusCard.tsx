@@ -117,7 +117,7 @@ function CreditBanner({ since, fallbacks }: { since: string; fallbacks: number }
       <div className="flex flex-col gap-0.5">
         <div className="font-semibold">{`Claude'i krediit on otsas alates ${formatDateTime(since)}.`}</div>
         {fallbacks > 0 && (
-          <div>{`Gemini asendas Claude'i 24 tunni jooksul ${fallbacks.toLocaleString('et-EE')} korda.`}</div>
+          <div>{`Varumudelid asendasid Claude'i 24 tunni jooksul ${fallbacks.toLocaleString('et-EE')} korda.`}</div>
         )}
       </div>
     </div>
@@ -131,6 +131,7 @@ function ReadyBody({ status }: { status: LlmStatus }) {
       {since && <CreditBanner since={since} fallbacks={status.fallbacks24h} />}
       <ProviderBlock name="Claude" provider={status.providers.anthropic} creditOutSince={since} />
       <ProviderBlock name="Gemini" sub="tasuta tase" provider={status.providers.gemini} creditOutSince={since} />
+      <ProviderBlock name="Mistral" sub="tasuta tase" provider={status.providers.mistral} creditOutSince={since} />
       <div className="px-3.5 py-2.5 flex items-center justify-between gap-2 text-[12.5px] text-muted-foreground">
         <span>Saldot API kaudu ei n&auml;e.</span>
         <a href={BILLING_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-primary hover:underline">

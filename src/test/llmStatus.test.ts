@@ -71,6 +71,15 @@ describe('parseLlmStatus', () => {
     expect(result.providers.gemini.tokensIn24h).toBe(1200);
     expect(result.providers.gemini.lastErrorStatus).toBe(429);
     expect(result.providers.gemini.lastErrorAt).toBeNull();
+    expect(result.providers.mistral).toEqual(emptyProviderStatus('mistral'));
+  });
+
+  it('parses the mistral row (P108)', () => {
+    const result = parseLlmStatus({ providers: [row('mistral', { calls_24h: 4, last_error_class: 'rate_limit' })] });
+    expect(result.providers.mistral.provider).toBe('mistral');
+    expect(result.providers.mistral.calls24h).toBe(4);
+    expect(result.providers.mistral.lastErrorClass).toBe('rate_limit');
+    expect(result.providers.anthropic).toEqual(emptyProviderStatus('anthropic'));
   });
 
   it('fills a missing provider and missing fallbacks with empty values', () => {
@@ -89,6 +98,7 @@ describe('parseLlmStatus', () => {
       expect(result.anthropicCreditOutSince).toBeNull();
       expect(result.providers.anthropic).toEqual(emptyProviderStatus('anthropic'));
       expect(result.providers.gemini).toEqual(emptyProviderStatus('gemini'));
+      expect(result.providers.mistral).toEqual(emptyProviderStatus('mistral'));
     }
   });
 

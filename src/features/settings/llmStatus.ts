@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 
-export type LlmProviderId = 'anthropic' | 'gemini';
+export type LlmProviderId = 'anthropic' | 'gemini' | 'mistral';
 
 export interface LlmProviderStatus {
   provider: LlmProviderId;
@@ -20,7 +20,7 @@ export interface LlmStatus {
   generatedAt: string;
   fallbacks24h: number;
   anthropicCreditOutSince: string | null;
-  providers: { anthropic: LlmProviderStatus; gemini: LlmProviderStatus };
+  providers: { anthropic: LlmProviderStatus; gemini: LlmProviderStatus; mistral: LlmProviderStatus };
 }
 
 export type LlmProviderState = 'ok' | 'credit' | 'rate_limit' | 'overload' | 'auth' | 'error' | 'nodata';
@@ -75,7 +75,7 @@ function str(value: unknown): string | null {
 }
 
 function isProviderId(value: unknown): value is LlmProviderId {
-  return value === 'anthropic' || value === 'gemini';
+  return value === 'anthropic' || value === 'gemini' || value === 'mistral';
 }
 
 function parseProvider(provider: LlmProviderId, r: Record<string, unknown>): LlmProviderStatus {
@@ -110,6 +110,7 @@ export function parseLlmStatus(data: unknown): LlmStatus {
     providers: {
       anthropic: found.anthropic ?? emptyProviderStatus('anthropic'),
       gemini: found.gemini ?? emptyProviderStatus('gemini'),
+      mistral: found.mistral ?? emptyProviderStatus('mistral'),
     },
   };
 }

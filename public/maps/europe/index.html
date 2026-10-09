@@ -457,10 +457,11 @@ html:not(.sb-classic) .bm-sc-media svg{width:15px;height:15px;flex:0 0 auto}
 html:not(.sb-classic) .bm-sc-media .mc{display:inline-flex;align-items:center;gap:4px;font-weight:600;white-space:nowrap}
 html:not(.sb-classic) .bm-sc-media a{margin-left:auto;color:#155e75;font-weight:600;text-decoration:none;white-space:nowrap}
 html:not(.sb-classic) .bm-sc-media.is-off{display:none}
-/* P107: mini card of a 7-day location dot */
-.bm-loc-pop{font:13px/1.35 system-ui,Arial,sans-serif;min-width:150px;color:#1f2a25}
-.bm-loc-pop b{display:block;font-variant-numeric:tabular-nums}
-.bm-loc-pop a{display:inline-block;margin-top:4px}
+/* P107c: eBird single-observation marker (26px avatar, eBird teal ring) + its card's row icons */
+.bm-eo-mk{position:relative;width:26px;height:26px}
+.bm-eo-av{width:26px;height:26px;border-radius:50%;border:1.5px solid #0e7490;box-sizing:border-box;background:#94a3b8 center/cover no-repeat;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.bm-eo-rar{position:absolute;top:-5px;right:-10px;min-width:14px;height:14px;padding:0 3px;box-sizing:border-box;border-radius:999px;background:#fff;border:1.5px solid #222;font:800 9px/11px system-ui,Arial,sans-serif;text-align:center}
+html:not(.sb-classic) .bm-sc--obs .bm-sc-row svg{flex:0 0 auto;margin-top:2px;color:var(--sc)}
 html:not(.sb-classic) .bm-sc-media{margin-top:8px;background:#fff4e0;border-color:#f2c78a;color:#8a4b06}
 html:not(.sb-classic) .bm-sc-media b{font-weight:800;color:#8a4b06;margin-right:2px}
 html:not(.sb-classic) .bm-sc-acts{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:12px}
@@ -493,7 +494,7 @@ html:not(.sb-classic) .bm-sc-ft .is-ok{color:#2d7a4b;font-weight:700}
     <aside id="sidebar" aria-label="Sidebar">
       <div class="panel-header">
       <div id="stickyPanel">
-      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa" data-title-checklist="Kontrollnimekiri" data-title-species="Liigi leht" data-spring="kevad" data-autumn="s&uuml;gis" data-unknown="teadmata" data-unknown-title="R&auml;ndeaja andmed puuduvad (v&auml;he Eesti vaatlusi)" data-unknown-title-2="R&auml;ndeaja andmed puuduvad" data-comment="eBirdi m&auml;rkus" data-recent="Viimased eBirdi vaatlused" data-priv-title="Privaatne asukoht" data-days7="7 p" data-loc7="asukohta 7 p" data-ind1="isend" data-photos1="1 foto" data-photos-n="fotot" data-audio1="1 heli" data-audio-n="heli" data-video1="1 video" data-video-n="videot" data-view-ebird="Vaata eBirdis" data-media-photo="Fotoga vaatlus" data-media-audio="Heliga vaatlus" data-media-video="Videoga vaatlus"></template>
+      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa" data-title-checklist="Kontrollnimekiri" data-title-species="Liigi leht" data-spring="kevad" data-autumn="s&uuml;gis" data-unknown="teadmata" data-unknown-title="R&auml;ndeaja andmed puuduvad (v&auml;he Eesti vaatlusi)" data-unknown-title-2="R&auml;ndeaja andmed puuduvad" data-comment="eBirdi m&auml;rkus" data-recent="Viimased eBirdi vaatlused" data-priv-title="Privaatne asukoht" data-days7="7 p" data-loc7="asukohta 7 p" data-ind1="isend" data-single="&uuml;ksikvaatlus" data-photos1="1 foto" data-photos-n="fotot" data-audio1="1 heli" data-audio-n="heli" data-video1="1 video" data-video-n="videot" data-view-ebird="Vaata eBirdis" data-media-photo="Fotoga vaatlus" data-media-audio="Heliga vaatlus" data-media-video="Videoga vaatlus"></template>
       <div class="sb-titlebar" hidden>
         <div class="sb-brand"><img class="sb-brand-ico" src="/icons/estbirds-96.png" alt="" width="44" height="44"><div class="sb-brand-txt"><h2>EstBirds</h2><div class="sb-counts" id="euCounts"></div></div></div>
         <div class="sb-title-r"><span class="sb-src">eBird &middot; 7 p</span></div>
@@ -2789,34 +2790,90 @@ if (!DEV_DEBUG) {
     if (euRecentObsCache.has(key)) { euChecklistCommentCall(cb, euRecentObsCache.get(key)); return; }
     euRecentObsLoad(c, code, key).then(function(list){ euChecklistCommentCall(cb, list); });
   }
-  // P107: all 7-day locations of the opened species in the card's country, as small ring dots.
-  // gen: bumped on every species-card open; a stale load or a deferred clear checks it.
-  // hitAt: set by a dot click, so the card closing because of that click keeps the dots.
-  var euLoc = { layer: null, gen: 0, hitAt: 0, card: null };
+  // P107/P107c: all 7-day locations of the opened species in the card's country, as small avatar
+  // markers (like the Linnuliigid Elurikkus single-observation pins). gen: bumped on every species-card
+  // open, so a stale load cannot draw. They stay until another species card opens or the empty map is tapped.
+  var euLoc = { layer: null, gen: 0 };
   function euLocClear(){
     if (euLoc.layer) { try { map.removeLayer(euLoc.layer); } catch(e){} }
     euLoc.layer = null;
   }
-  function euLocPopHtml(o){
-    var n = (o && o.n != null && Number.isFinite(Number(o.n))) ? Number(o.n) : null;
-    return '<div class="bm-loc-pop"><b>' + euFmtDt(o && o.dt) + '</b>' +
-      '<div>' + esc((o && o.loc) || "") + '</div>' +
-      (n != null ? '<div>' + n + ' ' + esc(n === 1 ? (STR.ind1 || "") : (STR.ind || "")) + '</div>' : '') +
-      (o && o.subId ? '<a href="https://ebird.org/checklist/' + esc(o.subId) + '" target="_blank" rel="noopener">' + esc(STR.openEbird) + ' &#8599;</a>' : '') +
-      '</div>';
+  function euObsIcon(species){
+    var av = euAvatar(species);
+    var rar = euRarity(species);
+    var html = '<div class="bm-eo-mk"><div class="bm-eo-av"' + (av ? ' style="background-image:url(\'' + esc(av) + '\')"' : '') + '></div>' +
+      (rar.text ? '<b class="bm-eo-rar" style="border-color:' + rar.color + ';color:' + rar.color + '">' + esc(rar.text) + '</b>' : '') + '</div>';
+    return L.divIcon({ html: html, className: "", iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -13] });
   }
-  function euLocDraw(list, gen){
+  var EU_OBS_SVG = '<svg width="15" height="15" viewBox="0 0 16 16" ';
+  var EU_OBS_ICO_PIN = EU_OBS_SVG + 'fill="currentColor" aria-hidden="true"><path d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3.3 4.5 8.5 4.5 8.5s4.5-5.2 4.5-8.5A4.5 4.5 0 0 0 8 1.5Zm0 6.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4Z"/></svg>';
+  var EU_OBS_ICO_HASH = EU_OBS_SVG + 'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6.2 2.2 4.6 13.8M11.4 2.2 9.8 13.8M2.4 5.6h11.2M1.8 10.4h11.2"/></svg>';
+  var EU_OBS_ICO_FLAG = EU_OBS_SVG + 'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14.5V2"/><path d="M3 2.5h9l-2 3 2 3H3"/></svg>';
+  // Card for one eBird observation (o: {dt, loc, n, subId, priv, lat, lng}) in country cc.
+  function euObsCardHtml(species, o, cc){
+    var rar = euRarity(species);
+    var sci = String((getSpeciesMeta(species) || {}).scientificName || "");
+    var displayName = window.normalizeUiText ? window.normalizeUiText(species) : species;
+    var av = euAvatar(species);
+    var avStyle = av ? "background-image:url('" + esc(av) + "');" : "";
+    var ringStyle = rar.color ? "box-shadow:0 0 0 2px " + rar.color + ",0 4px 10px rgba(20,40,30,.18);" : "";
+    var rtag = rar.text ? '<span class="bm-sc-rtag" style="background:' + rar.color + '">' + esc(rar.text) + '</span>' : '';
+    var dt = String((o && o.dt) || "");
+    var ymd = dt.slice(0, 10);
+    var rel = relDay(ymd);
+    var when = ymd
+      ? '<div class="bm-sc-when">' + (rel ? '<b class="bm-sc-rel">' + esc(rel) + '</b> &middot; ' : '') + esc(formatDateEt(ymd)) +
+        (dt.length >= 16 ? ' ' + esc(dt.slice(11, 16)) : '') + '</div>'
+      : '';
+    var n = (o && o.n != null && Number.isFinite(Number(o.n))) ? Number(o.n) : null;
+    var loc = String((o && o.loc) || "");
+    var rows = (loc ? '<div class="bm-sc-row"' + (o.priv ? ' title="' + esc(STR.privTitle) + '"' : '') + '>' + EU_OBS_ICO_PIN + '<span>' + esc(loc) + '</span></div>' : '') +
+      (n != null ? '<div class="bm-sc-row">' + EU_OBS_ICO_HASH + '<span>' + n + ' ' + esc(n === 1 ? (STR.ind1 || "") : (STR.ind || "")) + '</span></div>' : '') +
+      '<div class="bm-sc-row">' + EU_OBS_ICO_FLAG + '<span><span class="bm-sc-m">' + esc(STR.country) + ':</span> ' + esc(STR[String(cc).toLowerCase()] || cc) + ' (' + esc(cc) + ')</span></div>';
+    var lat = Number(o && o.lat);
+    var lon = Number(o && o.lng);
+    var hasXY = Number.isFinite(lat) && Number.isFinite(lon);
+    var coordTxt = hasXY ? (lat.toFixed(5) + ", " + lon.toFixed(5)) : "";
+    var acts = (o && o.subId ? '<a class="bm-sc-btn" href="https://ebird.org/checklist/' + esc(o.subId) + '" title="' + esc(STR.titleChecklist) + '" target="_blank" rel="noopener">' + esc(STR.openEbird) + '</a>' : '') +
+      (hasXY ? '<button type="button" class="bm-sc-ico bm-sc-copy" data-coords="' + coordTxt + '" title="' + esc(STR.copy) + '" aria-label="' + esc(STR.copy) + '">' + ICO_COPY + '</button>' : '');
+    var ft = hasXY
+      ? '<div class="bm-sc-ft"><code class="bm-sc-coords">' + coordTxt + '</code><span class="bm-sc-ftnote" data-note="' + esc(STR.site) + '">' + esc(STR.site) + '</span></div>'
+      : '';
+    return '<div class="bm-sc bm-sc--ebird bm-sc--obs">' +
+      '<div class="bm-sc-band">' + (av ? '<div class="bm-sc-wash" style="' + avStyle + '"></div>' : '') +
+        '<span class="bm-sc-tag">eBird &middot; ' + esc(STR.single) + '</span>' + rtag + '</div>' +
+      '<div class="bm-sc-body">' +
+        '<div class="bm-sc-head"><div class="bm-sc-av" style="' + avStyle + ringStyle + '"></div>' +
+          '<div class="bm-sc-id"><div class="bm-sc-name">' + esc(displayName) + '</div>' +
+          (sci ? '<div class="bm-sc-sci">' + esc(sci) + '</div>' : '') + '</div></div>' +
+        when +
+        '<div class="bm-sc-rows">' + rows + '</div>' +
+        (acts ? '<div class="bm-sc-acts">' + acts + '</div>' : '') +
+        ft +
+        euAvatarCreditHtml(av) +
+      '</div></div>';
+  }
+  // src: the element carrying data-sp / data-cc / data-sub / data-ll of the species card that loaded the list.
+  // The pin's own observation (same checklist, or the same spot) is not drawn twice.
+  function euLocDraw(list, gen, src){
     if (gen !== euLoc.gen) return;
     euLocClear();
+    var species = src.getAttribute("data-sp") || "";
+    var cc = src.getAttribute("data-cc") || "";
+    var pinSub = src.getAttribute("data-sub") || "";
+    var ll = String(src.getAttribute("data-ll") || "").split(",");
+    var pLat = Number(ll[0]);
+    var pLon = Number(ll[1]);
     var lg = L.layerGroup();
     (Array.isArray(list) ? list : []).forEach(function(o){
       var lat = Number(o && o.lat);
       var lng = Number(o && o.lng);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-      var dot = L.circleMarker([lat, lng], { radius: 6, color: "#c8242f", weight: 3, fillColor: "#ffffff", fillOpacity: 1, bubblingMouseEvents: false });
-      dot.on("click", function(){ euLoc.hitAt = Date.now(); });
-      dot.bindPopup(euLocPopHtml(o), { maxWidth: 260, closeButton: true, autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) });
-      lg.addLayer(dot);
+      if (pinSub && o.subId === pinSub) return;
+      if (Number.isFinite(pLat) && Number.isFinite(pLon) && Math.abs(lat - pLat) < 0.0002 && Math.abs(lng - pLon) < 0.0002) return;
+      var mk = L.marker([lat, lng], { icon: euObsIcon(species), keyboard: false });
+      mk.bindPopup(function(){ return euObsCardHtml(species, o, cc); }, EU_POPUP_OPTS);
+      lg.addLayer(mk);
     });
     euLoc.layer = lg.addTo(map);
   }
@@ -3110,11 +3167,18 @@ if (!DEV_DEBUG) {
   // P77c: per-country card extras (after the Riik/Koht rows): eBird comment box (subId) and the
   // hidden recent-obs placeholder; both are filled on popupopen. Aggregated card: nothing.
   var EU_RECENT_MAX = 5;
+  // P107c: what euLocDraw needs from the species card (species name, the pin's checklist and spot).
+  function euLocAttrs(species, d){
+    var lat = Number(d.lat);
+    var lon = Number(d.lon);
+    return ' data-sp="' + esc(species) + '"' + (d.subId ? ' data-sub="' + esc(d.subId) + '"' : '') +
+      (Number.isFinite(lat) && Number.isFinite(lon) ? ' data-ll="' + lat + ',' + lon + '"' : '');
+  }
   function euCardExtras(isAgg, species, d){
     // P107b: aggregated card loads the location dots for its "viimati" country (d.rg); nothing visible in the card.
     if (isAgg) {
       var aCode = resolveEbirdCode(species) || "";
-      return (aCode && d.rg) ? '<div class="bm-sc-loc" hidden data-cc="' + esc(d.rg) + '" data-code="' + esc(aCode) + '"></div>' : "";
+      return (aCode && d.rg) ? '<div class="bm-sc-loc" hidden data-cc="' + esc(d.rg) + '" data-code="' + esc(aCode) + '"' + euLocAttrs(species, d) + '></div>' : "";
     }
     var code = resolveEbirdCode(species) || "";
     var cc = d.rg || "";
@@ -3124,7 +3188,7 @@ if (!DEV_DEBUG) {
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
         '<div><b>' + esc(STR.comment) + '</b><span class="bm-sc-cmt-t">&hellip;</span></div></div>';
     }
-    if (code && cc) out += '<div class="bm-sc-recent is-off" data-cc="' + esc(cc) + '" data-code="' + esc(code) + '"></div>';
+    if (code && cc) out += '<div class="bm-sc-recent is-off" data-cc="' + esc(cc) + '" data-code="' + esc(code) + '"' + euLocAttrs(species, d) + '></div>';
     return out;
   }
   // P78a: media counts strip. Leading icon = first non-zero type; each later type carries its own icon.
@@ -3303,13 +3367,13 @@ if (!DEV_DEBUG) {
       med.classList.remove("is-off");
       euPopupUpdate();
     });
-    // P107: only a species card (not a dot mini card) resets the location dots.
-    if (el.querySelector(".bm-sc")) { euLoc.gen++; euLoc.card = popup; euLocClear(); }
+    // P107: only a species card (not an observation card) resets the location markers.
+    if (el.querySelector(".bm-sc:not(.bm-sc--obs)")) { euLoc.gen++; euLocClear(); }
     var locGen = euLoc.gen;
     var rec = el.querySelector(".bm-sc-recent");
     if (rec) euRecentObs(rec.getAttribute("data-cc"), rec.getAttribute("data-code"), function(list){
       if (!el.isConnected) return;
-      if (Array.isArray(list) && list.length) { euLocStat(el, list.length); euLocDraw(list, locGen); euPopupUpdate(); }
+      if (Array.isArray(list) && list.length) { euLocStat(el, list.length); euLocDraw(list, locGen, rec); euPopupUpdate(); }
       if (!Array.isArray(list) || list.length < 2) return;
       rec.innerHTML = euRecentHtml(list, rec.getAttribute("data-cc"));
       rec.classList.remove("is-off");
@@ -3320,18 +3384,10 @@ if (!DEV_DEBUG) {
     var locEl = el.querySelector(".bm-sc-loc");
     if (locEl) euRecentObs(locEl.getAttribute("data-cc"), locEl.getAttribute("data-code"), function(list){
       if (!el.isConnected) return;
-      if (Array.isArray(list) && list.length) euLocDraw(list, locGen);
+      if (Array.isArray(list) && list.length) euLocDraw(list, locGen, locEl);
     });
   });
-  // P107: deferred, so a dot click in the same event (which closes the card) can mark itself first.
-  map.on("popupclose", function(e){
-    if (!e || e.popup !== euLoc.card) return;
-    var g = euLoc.gen;
-    setTimeout(function(){
-      if (g !== euLoc.gen || Date.now() - euLoc.hitAt < 500) return;
-      euLocClear();
-    }, 0);
-  });
+  // P107c: the location markers stay after the card closes; an empty-map tap clears them.
   map.on("click", function(){ euLocClear(); });
   // Classic rebuilt every marker on zoomend (scheduleRefreshMarkerIcons), which also re-synced their
   // positions. With that guarded off, a flyTo interrupted by popup autoPan (row locate opens the popup

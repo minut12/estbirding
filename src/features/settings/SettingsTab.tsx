@@ -12,7 +12,7 @@ import { clearAppCaches, fullReset, doSoftReload, doHardReload, type ResetReport
 import { APP_VERSION } from '@/lib/version';
 import {
   Trash2, RotateCcw, LogOut, Users, MapPin, Bird, Rss, Activity, LifeBuoy, ChevronRight, Wrench,
-  Settings,
+  Settings, History,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -23,13 +23,15 @@ import NewsSourcesSettings from './NewsSourcesSettings';
 import EventLog from './EventLog';
 import NotificationSettingsCard from './NotificationSettingsCard';
 import { LlmStatusCard } from './LlmStatusCard';
+import { FeatureVersionsPage, formatShortDate, latestFeatureChangeDate } from './FeatureVersionsPage';
+import { FEATURES } from '@/lib/featureVersions';
 import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import { getSupabaseConfigSource, isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 import { broadcastGpsConfigToMapIframes } from '@/config/gpsConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
-type SettingsPage = 'home' | 'news' | 'species' | 'event_log';
+type SettingsPage = 'home' | 'news' | 'species' | 'event_log' | 'versions';
 
 const SETTINGS_GROUP_CLASS = 'rounded-[14px] border border-border bg-card overflow-hidden divide-y divide-border';
 const SETTINGS_ROW_CLASS = 'min-h-[58px] px-3.5 py-2.5 flex items-center gap-3 w-full text-left disabled:opacity-50';
@@ -404,6 +406,17 @@ export default function SettingsTab() {
         </SettingsSection>
       )}
 
+      <SettingsSection label="Rakendus">
+        <div className={SETTINGS_GROUP_CLASS}>
+          <SettingsLinkRow
+            icon={History}
+            title={<>Versioonid</>}
+            sub={<>{FEATURES.length} osa &middot; viimati muudetud {formatShortDate(latestFeatureChangeDate())}</>}
+            onClick={() => setSettingsPage('versions')}
+          />
+        </div>
+      </SettingsSection>
+
       {canManageSettings && (
         <SettingsSection label="Haldus">
           <div className={SETTINGS_GROUP_CLASS}>
@@ -448,14 +461,19 @@ export default function SettingsTab() {
         </button>
       </div>
 
-      <p className="text-center text-xs text-muted-foreground cursor-default select-none" onClick={onVersionTap}>
-        EstBirds &middot; versioon {APP_VERSION}
+      <p className="text-center text-xs text-muted-foreground select-none">
+        <span className="cursor-default" onClick={onVersionTap}>EstBirds &middot; ehitus {APP_VERSION}</span>
+        {' '}&middot;{' '}
+        <button type="button" className="font-semibold text-primary" onClick={() => setSettingsPage('versions')}>
+          Versioonid
+        </button>
       </p>
     </div>
   );
 
   const renderSettings = () => {
     if (settingsPage === 'home') return renderSettingsHome();
+    if (settingsPage === 'versions') return <>{renderSettingsHeader('Versioonid')}<FeatureVersionsPage /></>;
     if (!canManageSettings) return renderSettingsHome();
     if (settingsPage === 'news') return <>{renderSettingsHeader('Uudiste allikad')}{renderSettingsNews()}</>;
     if (settingsPage === 'species') return <>{renderSettingsHeader('Liigid')}{renderSettingsSpecies()}</>;
@@ -472,6 +490,7 @@ export default function SettingsTab() {
 
   const renderDesktopContent = () => {
     if (settingsPage === 'home') return renderSettingsHome({ showProfile: false });
+    if (settingsPage === 'versions') return renderDesktopPage('Versioonid', <FeatureVersionsPage />);
     if (!canManageSettings) return renderSettingsHome({ showProfile: false });
     if (settingsPage === 'news') return renderDesktopPage('Uudiste allikad', renderSettingsNews());
     if (settingsPage === 'species') return renderDesktopPage('Liigid', renderSettingsSpecies());
@@ -488,6 +507,12 @@ export default function SettingsTab() {
           label={<>&Uuml;ldine</>}
           isActive={settingsPage === 'home'}
           onClick={() => setSettingsPage('home')}
+        />
+        <DesktopNavItem
+          icon={History}
+          label={<>Versioonid</>}
+          isActive={settingsPage === 'versions'}
+          onClick={() => setSettingsPage('versions')}
         />
       </div>
       <div className="flex flex-col">

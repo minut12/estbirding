@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { FeatureVersionBadge } from "@/components/FeatureVersionBadge";
 import { RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { et, formatEventMonthLabel } from "@/localization/et";
@@ -244,7 +245,7 @@ export default function EventsScreen() {
     );
   }
 
-  const titleEl = <h2 className="text-lg font-semibold text-foreground">{et.eventsTitle}</h2>;
+  const titleEl = <h2 className="text-lg font-semibold text-foreground">{et.eventsTitle}<FeatureVersionBadge id="uritused" /></h2>;
 
   const addButtonEl = canManage ? (
     <Button size="sm" onClick={openCreate}>

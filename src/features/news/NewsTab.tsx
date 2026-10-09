@@ -1,4 +1,5 @@
 ﻿import { Fragment, useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { FeatureVersionBadge } from '@/components/FeatureVersionBadge';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/config/supabaseClient';
 import {
@@ -1050,7 +1051,7 @@ export default function NewsTab() {
     <span data-utf8-probe="news-tab" className="sr-only">{utf8Probe}</span>
   );
 
-  const titleEl = <h2 className="font-semibold text-foreground text-lg">Uudised</h2>;
+  const titleEl = <h2 className="font-semibold text-foreground text-lg">Uudised<FeatureVersionBadge id="uudised" /></h2>;
 
   const segmentButtonClass = (active: boolean) => cn(
     isDesktop ? 'px-3' : 'flex-1',

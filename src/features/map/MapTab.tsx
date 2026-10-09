@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/lib/version';
+import { featureVersionParam, type FeatureId } from '@/lib/featureVersions';
 import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar-storage';
 import { LINNULIIGID_SCOPE, RARILIIN_SCOPE, USA_CO_SCOPE, USA_PA_SCOPE, USA_I70_SCOPE, SPECIES_SCOPES, type SpeciesScopeConfig, type SpeciesScopeId } from '@/lib/mapScope';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
@@ -46,6 +47,12 @@ import {
 
 /* P40: half the iframe sidebar width per map, so the floating selector centres over the map area on desktop. */
 const SIDEBAR_HALF: Record<string, number> = { 'linnuliigid-ee': 180, rariliin: 180, europe: 210 };
+// P109: feature versions passed to each map iframe as ?fv= (first id = the map itself, shown in the sidebar footer).
+const MAP_FEATURE_IDS: Record<string, readonly FeatureId[]> = {
+  'linnuliigid-ee': ['linnuliigid', 'ebird-ee', 'tuulekaart', 'kevadranne', 'toenaosus', 'toenaosus-ruudud', 'randeajad', 'ennustus', 'trektellen', 'juhend'],
+  europe: ['euroopa'],
+  rariliin: ['rariliin', 'ebird-ee', 'juhend'],
+};
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -133,10 +140,12 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     const params = new URLSearchParams();
     params.set('v', APP_VERSION);
     params.set('spv', speciesPredictionRuntimeMarker);
+    const featureVersions = featureVersionParam(MAP_FEATURE_IDS[current.id] ?? []);
+    if (featureVersions) params.set('fv', featureVersions);
     if (proxyBase) params.set('proxyBase', proxyBase);
     const sep = current.source.includes('?') ? '&' : '?';
     return `${current.source}${sep}${params.toString()}`;
-  }, [current.source, speciesPredictionRuntimeMarker]);
+  }, [current.id, current.source, speciesPredictionRuntimeMarker]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string | null>(null);
   const iframeReadyRef = useRef(false);

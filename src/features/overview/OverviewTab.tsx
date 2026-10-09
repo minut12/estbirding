@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { FeatureVersionBadge } from '@/components/FeatureVersionBadge';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
@@ -1391,7 +1392,7 @@ export default function OverviewTab() {
       <div className="max-w-2xl mx-auto p-4 space-y-4">
         <header className="flex items-start justify-between gap-3">
           <div className="space-y-1 min-w-0">
-            <h1 className="text-2xl font-semibold">Ülevaade</h1>
+            <h1 className="text-2xl font-semibold">&Uuml;levaade<FeatureVersionBadge id="ulevaade" /></h1>
             {report && periodStart && periodEnd && (
               <>
                 <p className="text-sm text-muted-foreground">

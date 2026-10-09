@@ -52,3 +52,21 @@ call the delete tool anywhere in the vault. Never commit the bearer token or `.m
 - **Paths are vault-relative from vault ROOT.** The repo is nested at `estbirding/`, so repo files are `/vault/estbirding/...` via REST.
 - **Sink lives OUTSIDE the repo tree** at vault root `estbirding-memory/` (a sibling of `estbirding/`, so Lovable's auto-commit never sweeps it). It is *not* git-tracked — canonical/versioned ADRs still belong in repo `decisions/`. Layout: `estbirding-memory/adr/` (drafts/mirrors), `.../notes/` (WIP, handoffs), `.../_meta/` (self-documenting connection facts).
 - **Helper:** `scripts/obsidian.sh {put|get|ls|rm} <vault-path> [file] [--force]` — `put` expects 204, overwrite-per-slug, and refuses writes under `estbirding/*` without `--force` so the git-tracked mirror can't be clobbered via REST.
+
+## Feature versions (P109) - bump on every feature change
+
+`src/lib/featureVersions.ts` holds the version and changelog of every user-facing
+feature (shown in Seaded > Versioonid, in the map sidebar footers via `?fv=`, and
+after the Ulevaade / Uudised / Uritused titles).
+
+- Any commit that changes a feature's behaviour or UI appends ONE change to that
+  feature's `changes` list (oldest -> newest): `{ date, ref, kind, text }`.
+  - `date`: today, Europe/Tallinn, `YYYY-MM-DD`. `ref`: the P-number (e.g. `P110b`).
+  - `kind`: `major` = rework / new UI, `minor` = new capability, `patch` = fix.
+  - `text`: one short Estonian line, written as `\u` escapes (file must stay ASCII).
+- Never type a version number: it is derived from the list.
+- Touching several features -> one change per feature. Infra-only commits with no
+  user-visible effect get no entry.
+- New feature -> new `FeatureId` + entry whose first change is `major`. For a map
+  feature also add its id to `MAP_FEATURE_IDS` in `src/features/map/MapTab.tsx`.
+- `npx vitest run src/lib/featureVersions.test.ts` must pass (order, kinds, ASCII).

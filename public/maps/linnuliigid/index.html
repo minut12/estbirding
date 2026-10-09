@@ -817,6 +817,8 @@ html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);paddi
 <div id="debugContent" style="display:none"></div>
 <div id="debugProContent" style="display:none"></div>
     <div id="list"></div>
+    <div id="sbVersion" class="sb-version hidden-in-export" style="padding:12px 12px 16px;font-size:11px;line-height:1.4;color:#6b7a72;text-align:center"></div>
+    <script>/* P109 feature version footer (reads ?fv= from MapTab) */(function(){try{var el=document.getElementById('sbVersion');if(!el)return;var fv=new URLSearchParams(location.search).get('fv')||'';if(!fv)return;var N={'linnuliigid':'Linnuliigid','euroopa':'Euroopa','rariliin':'Rariliin','ebird-ee':'eBird EE kiht','tuulekaart':'Tuulekaart','kevadranne':'Kevadr\u00e4nne','toenaosus':'T\u00f5en\u00e4osus','toenaosus-ruudud':'T\u00f5en\u00e4osuse ruudud','randeajad':'R\u00e4ndeajad','ennustus':'Ennustus','trektellen':'Trektellen','juhend':'Juhend'};var parts=fv.split(',').map(function(x){var i=x.lastIndexOf(':');return {id:x.slice(0,i),v:x.slice(i+1)};}).filter(function(p){return p.id&&p.v;});if(!parts.length)return;el.textContent=(N[parts[0].id]||parts[0].id)+' v'+parts[0].v;el.title=parts.map(function(p){return (N[p.id]||p.id)+' v'+p.v;}).join('\n');}catch(e){}})()</script>
     </div>
   </aside>
   <main id="mapWrap"><div id="map"></div></main>

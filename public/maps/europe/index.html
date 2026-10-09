@@ -461,6 +461,30 @@ html:not(.sb-classic) .bm-sc-media.is-off{display:none}
 .bm-eo-mk{position:relative;width:26px;height:26px}
 .bm-eo-av{width:26px;height:26px;border-radius:50%;border:1.5px solid #0e7490;box-sizing:border-box;background:#94a3b8 center/cover no-repeat;box-shadow:0 1px 4px rgba(0,0,0,.25)}
 .bm-eo-rar{position:absolute;top:-5px;right:-10px;min-width:14px;height:14px;padding:0 3px;box-sizing:border-box;border-radius:999px;background:#fff;border:1.5px solid #222;font:800 9px/11px system-ui,Arial,sans-serif;text-align:center}
+/* P105d: GPS-tracked birds layer (Movebank) - marker, legend, card accent, Filtrid row */
+.eu-gps-mk{position:relative;width:34px;height:34px}
+.eu-gps-mk.is-old{opacity:.75}
+.eu-gps-av{width:34px;height:34px;border-radius:50%;border:3px solid #1e3a8a;box-sizing:border-box;background:#cbd5e1 center/cover no-repeat;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.eu-gps-mk.is-old .eu-gps-av{border-color:#9aa9a0}
+.eu-gps-bd{position:absolute;right:-3px;bottom:-3px;width:17px;height:17px;border-radius:50%;border:1.5px solid #fff;box-sizing:border-box;background:#1e3a8a;color:#fff;display:flex;align-items:center;justify-content:center}
+.eu-gps-mk.is-old .eu-gps-bd{background:#9aa9a0}
+.eu-gps-bd svg{width:10px;height:10px;display:block}
+.eu-gps-legend{background:rgba(255,255,255,.95);border-radius:10px;padding:7px 10px;box-shadow:0 1px 5px rgba(0,0,0,.2);font:500 11.5px/1.35 system-ui,Arial,sans-serif;color:#222a26}
+.eu-gps-legend div{display:flex;align-items:center;gap:7px}
+.eu-gps-legend div+div{margin-top:4px}
+.eu-gps-legend i{flex:0 0 auto;width:12px;height:12px;border-radius:50%;box-sizing:border-box;border:2.5px solid #1e3a8a;background:#cbd5e1}
+.eu-gps-legend i.is-old{border-color:#9aa9a0;opacity:.75}
+.eu-gps-legend i.is-sens{border:1.5px dashed #1e3a8a;background:rgba(30,58,138,.12)}
+html:not(.sb-classic) .bm-sc.bm-sc--gps{--sc:#1e3a8a;--sc-soft:#e8edf8;--sc-ink:#1e3a8a}
+html:not(.sb-classic) .bm-sc--gps .bm-sc-rtag.is-fresh{background:#1e3a8a}
+html:not(.sb-classic) .bm-sc--gps .bm-sc-rtag.is-sens{background:#b45309}
+html:not(.sb-classic) .bm-sc--gps .eu-gps-note{margin-top:10px;background:#fbeedd;border:1px solid #f0d9b8;color:#5b4423;border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.4}
+html:not(.sb-classic) .bm-sc--gps .bm-sc-coords{font:600 12px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+html:not(.sb-classic) .sb-gps{padding:8px 10px;border-radius:9px;background:#eef2fb;border:1px solid #d6def0}
+html:not(.sb-classic) .sb-gps .sb-sw.on{background:#1e3a8a}
+html:not(.sb-classic) .sb-gps-new{display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;background:#1e3a8a;color:#fff;font:700 10px/1.6 system-ui,Arial,sans-serif;vertical-align:1px}
+html:not(.sb-classic) .sb-gps-meta{margin-top:4px;font-size:11.5px;color:#4a5872}
+html:not(.sb-classic) .sb-gps-meta:empty{display:none}
 html:not(.sb-classic) .bm-sc--obs .bm-sc-row svg{flex:0 0 auto;margin-top:2px;color:var(--sc)}
 html:not(.sb-classic) .bm-sc-media{margin-top:8px;background:#fff4e0;border-color:#f2c78a;color:#8a4b06}
 html:not(.sb-classic) .bm-sc-media b{font-weight:800;color:#8a4b06;margin-right:2px}
@@ -494,7 +518,7 @@ html:not(.sb-classic) .bm-sc-ft .is-ok{color:#2d7a4b;font-weight:700}
     <aside id="sidebar" aria-label="Sidebar">
       <div class="panel-header">
       <div id="stickyPanel">
-      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa" data-title-checklist="Kontrollnimekiri" data-title-species="Liigi leht" data-spring="kevad" data-autumn="s&uuml;gis" data-unknown="teadmata" data-unknown-title="R&auml;ndeaja andmed puuduvad (v&auml;he Eesti vaatlusi)" data-unknown-title-2="R&auml;ndeaja andmed puuduvad" data-comment="eBirdi m&auml;rkus" data-recent="Viimased eBirdi vaatlused" data-priv-title="Privaatne asukoht" data-days7="7 p" data-loc7="asukohta 7 p" data-ind1="isend" data-single="&uuml;ksikvaatlus" data-photos1="1 foto" data-photos-n="fotot" data-audio1="1 heli" data-audio-n="heli" data-video1="1 video" data-video-n="videot" data-view-ebird="Vaata eBirdis" data-media-photo="Fotoga vaatlus" data-media-audio="Heliga vaatlus" data-media-video="Videoga vaatlus"></template>
+      <template id="euStr" data-today="T&auml;na" data-yesterday="Eile" data-days-ago="p&auml;eva tagasi" data-no-loc="Asukoht puudub" data-country="Riik" data-place="Koht" data-open-ebird="Ava eBirdis" data-copy="Kopeeri koordinaadid" data-copied="Kopeeritud" data-obs7="vaatlust 7 p" data-ind="isendit" data-mig="r&auml;ndel" data-yes="jah" data-countries="riiki" data-newest="uusim vaatlus" data-site="vaatluskoht" data-active="aktiivset liiki" data-hidden="peidetud" data-updated="Uuendatud" data-fi="Soome" data-se="Rootsi" data-lv="L&auml;ti" data-lt="Leedu" data-pl="Poola" data-by="Valgevene" data-ru="Venemaa" data-title-checklist="Kontrollnimekiri" data-title-species="Liigi leht" data-spring="kevad" data-autumn="s&uuml;gis" data-unknown="teadmata" data-unknown-title="R&auml;ndeaja andmed puuduvad (v&auml;he Eesti vaatlusi)" data-unknown-title-2="R&auml;ndeaja andmed puuduvad" data-comment="eBirdi m&auml;rkus" data-recent="Viimased eBirdi vaatlused" data-priv-title="Privaatne asukoht" data-days7="7 p" data-loc7="asukohta 7 p" data-ind1="isend" data-single="&uuml;ksikvaatlus" data-photos1="1 foto" data-photos-n="fotot" data-audio1="1 heli" data-audio-n="heli" data-video1="1 video" data-video-n="videot" data-view-ebird="Vaata eBirdis" data-media-photo="Fotoga vaatlus" data-media-audio="Heliga vaatlus" data-media-video="Videoga vaatlus" data-dot="&middot;" data-gps-birds="lindu" data-gps-newest="uusim asukoht" data-gps-none="Saatjaga lindu pole viimase 7 p&auml;eva jooksul" data-gps-tag="GPS-saatja" data-gps-fresh="V&auml;rske" data-gps-sens="Tundlik liik" data-gps-sens-note="Asukoht on &uuml;mardatud umbes 10 km t&auml;psusega. T&auml;pset asukohta ega Movebanki linki ei n&auml;idata." data-gps-last="Viimane asukoht:" data-gps-today="t&auml;na kell" data-gps-yday="eile kell" data-gps-at="kell" data-gps-ago="tagasi" data-gps-exact="t&auml;pne" data-gps-loc="asukoht" data-gps-approx="~10 km" data-gps-src="allikas" data-gps-id="Saatja tunnus:" data-gps-study="Uuring:" data-gps-coords="Koordinaadid:" data-gps-open="Ava Movebankis" data-gps-data="Andmed: Movebank" data-gps-leg-fresh="Viimane asukoht alla 24 tunni" data-gps-leg-old="Viimane asukoht 1&ndash;7 p&auml;eva tagasi" data-gps-leg-sens="Tundlik liik: &uuml;mardatud ~10 km"></template>
       <div class="sb-titlebar" hidden>
         <div class="sb-brand"><img class="sb-brand-ico" src="/icons/estbirds-96.png" alt="" width="44" height="44"><div class="sb-brand-txt"><h2>EstBirds</h2><div class="sb-counts" id="euCounts"></div></div></div>
         <div class="sb-title-r"><span class="sb-src">eBird &middot; 7 p</span></div>
@@ -540,6 +564,7 @@ html:not(.sb-classic) .bm-sc-ft .is-ok{color:#2d7a4b;font-weight:700}
         <div class="sb-frow"><span>M&auml;rgised</span><div class="sb-seg" id="euSeg" role="group" aria-label="M&auml;rgised"><button type="button" data-pc="1">Riigiti</button><button type="button" data-pc="0">Uusim riik</button></div></div>
         <div class="sb-frow"><span>Ainult haruldased</span><button type="button" class="sb-sw" id="euSwRare" role="switch" aria-checked="false" aria-label="Ainult haruldased"></button></div>
         <div class="sb-frow"><span>Peida n&auml;htud liigid</span><button type="button" class="sb-sw" id="euSwSeen" role="switch" aria-checked="false" aria-label="Peida n&auml;htud liigid"></button></div>
+        <div class="sb-gps" id="euGpsBox"><div class="sb-frow"><span>GPS-saatjaga linnud<b class="sb-gps-new">Uus</b></span><button type="button" class="sb-sw" id="euSwGps" role="switch" aria-checked="false" aria-label="GPS-saatjaga linnud"></button></div><div class="sb-gps-meta" id="euGpsMeta"></div></div>
         <div class="elu-updated" id="euUpdated"></div>
       </div></details>
       </div>
@@ -3059,6 +3084,7 @@ if (!DEV_DEBUG) {
     setSwitch("euSw7", !!(cb && cb.checked));
     setSwitch("euSwRare", rareOnly);
     setSwitch("euSwSeen", readHideSeen());
+    setSwitch("euSwGps", !!(window.__euGpsIsOn && window.__euGpsIsOn()));
     var seg = document.getElementById("euSeg");
     if (seg) seg.querySelectorAll("button[data-pc]").forEach(function(b){
       var on = (b.getAttribute("data-pc") === "1") === perCountry;
@@ -3093,6 +3119,7 @@ if (!DEV_DEBUG) {
   var EU_PIN_OPTS = { className: "", iconSize: [44, 56], iconAnchor: [22, 56], popupAnchor: [0, -52] };
   var EU_STUB_ICON = L.divIcon(Object.assign({ html: "" }, EU_PIN_OPTS));
   var EU_POPUP_OPTS = { maxWidth: 340, closeButton: true, autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) };
+  window.__euPopupOpts = EU_POPUP_OPTS; // P105d: shared with the euGps layer cards
   var EU_OLD_DAYS = 3;
   var EU_POPUP_REPAN_MS = 1500;
   var EU_SWEEP_MS = 1500;
@@ -3672,6 +3699,262 @@ if (!DEV_DEBUG) {
   window.__euRandelSource = euRandelSource;
 })();
 
+/* ========= P105d: GPS-tracked birds layer (Movebank, anon RPC get_gps_tracked_birds; skipped under html.sb-classic) ========= */
+// Map layer only (not in the sidebar list). Filtrid switch, default OFF, remembered per browser.
+// Supabase config arrives via SUPABASE_CONFIG (parent message listener -> window.__euGpsSetConfig).
+(function euGps(){
+  if (document.documentElement.classList.contains("sb-classic")) return;
+  var STR = (document.getElementById("euStr") || {}).dataset || {};
+  var LS_KEY = "bm_eu_gps_layer_v1";
+  var RELOAD_MS = 30 * 60 * 1000;
+  var CFG_RETRY_MS = 3000;
+  var CFG_MAX_TRIES = 10;
+  var FRESH_MS = 24 * 3600 * 1000;
+  var SENS_RADIUS_M = 8000;
+  var NAVY = "#1e3a8a";
+  var POPUP_OPTS = window.__euPopupOpts || { maxWidth: 340, closeButton: true };
+  var ICO_SIGNAL = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="9" r="1.4" fill="currentColor" stroke="none"/><path d="M5.2 6.2a4 4 0 0 0 0 5.6M10.8 6.2a4 4 0 0 1 0 5.6M2.9 3.9a7.2 7.2 0 0 0 0 10.2M13.1 3.9a7.2 7.2 0 0 1 0 10.2"/></svg>';
+  var ICO_SHIELD = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8 13.2 3.8v4c0 3.1-2.2 5.4-5.2 6.4-3-1-5.2-3.3-5.2-6.4v-4z"/></svg>';
+  var ICO_COPY = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+
+  var cfg = { url: "", key: "" };
+  var on = false;
+  var tries = 0;
+  var retryTimer = null;
+  var reloadTimer = null;
+  var gen = 0;
+  var loading = false;
+  var layer = L.layerGroup();
+  var legend = null;
+  var tallinnFmt = null;
+  try {
+    tallinnFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Tallinn", year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  } catch(e){ tallinnFmt = null; }
+
+  try { on = localStorage.getItem(LS_KEY) === "1"; } catch(e){ on = false; }
+
+  function esc(s){
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+  function capFirst(s){
+    var t = String(s == null ? "" : s).trim();
+    return t ? t.charAt(0).toUpperCase() + t.slice(1) : "";
+  }
+  // Same resolution as euAvatar in euNewUi (species meta avatarUrl, then the avatars map), by Estonian name.
+  function avatarFor(nameEt){
+    var cands = [capFirst(nameEt), String(nameEt || "").trim()];
+    for (var i = 0; i < cands.length; i++) {
+      var n = cands[i];
+      if (!n) continue;
+      var meta = {};
+      try { meta = getSpeciesMeta(n) || {}; } catch(e){ meta = {}; }
+      var av = meta.avatarUrl || (typeof avatars === "object" && avatars ? avatars[n] : "");
+      if (av) return String(av).replace(/['"()\\]/g, "");
+    }
+    return "";
+  }
+  // Tallinn wall-clock parts of a ms timestamp: { ymd: "Y-M-D", d, m, hm: "HH:MM" } or null.
+  function tallinnParts(ms){
+    if (!tallinnFmt || !isFinite(ms)) return null;
+    var o = {};
+    try { tallinnFmt.formatToParts(new Date(ms)).forEach(function(p){ o[p.type] = p.value; }); } catch(e){ return null; }
+    if (!o.year || !o.month || !o.day) return null;
+    return { ymd: o.year + "-" + o.month + "-" + o.day, d: Number(o.day), m: Number(o.month), hm: (o.hour || "00") + ":" + (o.minute || "00") };
+  }
+  // "tana kell HH:MM" / "eile kell HH:MM" / "D.M kell HH:MM" (Europe/Tallinn).
+  function whenText(ms){
+    var p = tallinnParts(ms);
+    if (!p) return "";
+    var now = Date.now();
+    var today = tallinnParts(now);
+    var yday = tallinnParts(now - 86400000);
+    if (today && p.ymd === today.ymd) return (STR.gpsToday || "") + " " + p.hm;
+    if (yday && p.ymd === yday.ymd) return (STR.gpsYday || "") + " " + p.hm;
+    return p.d + "." + p.m + " " + (STR.gpsAt || "") + " " + p.hm;
+  }
+  function ageText(ms){
+    var h = Math.max(0, Math.floor((Date.now() - ms) / 3600000));
+    return h >= 48 ? (Math.floor(h / 24) + " p") : (h + " h");
+  }
+  // Validates one RPC row; returns a clean object or null.
+  function cleanRow(r){
+    if (!r || typeof r !== "object") return null;
+    var lat = Number(r.lat);
+    var lon = Number(r.lon);
+    var t = Date.parse(String(r.fix_at || ""));
+    if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || !isFinite(t)) return null;
+    var sid = String(r.study_id == null ? "" : r.study_id);
+    return {
+      nameEt: String(r.name_et || ""),
+      latin: String(r.taxon_latin || ""),
+      ind: String(r.individual_local_identifier || ""),
+      studyId: /^\d+$/.test(sid) ? sid : "",
+      studyName: String(r.study_name || ""),
+      license: String(r.license_type || ""),
+      lat: lat,
+      lon: lon,
+      sens: r.coords_rounded === true,
+      t: t
+    };
+  }
+  function isFresh(row){ return (Date.now() - row.t) < FRESH_MS; }
+
+  function markerIcon(row){
+    var av = avatarFor(row.nameEt);
+    var html = '<div class="eu-gps-mk' + (isFresh(row) ? '' : ' is-old') + '">' +
+      '<div class="eu-gps-av"' + (av ? ' style="background-image:url(\'' + esc(av) + '\')"' : '') + '></div>' +
+      '<span class="eu-gps-bd">' + (row.sens ? ICO_SHIELD : ICO_SIGNAL) + '</span></div>';
+    return L.divIcon({ html: html, className: "", iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -17] });
+  }
+
+  function cardHtml(row){
+    var av = avatarFor(row.nameEt);
+    var avStyle = av ? "background-image:url('" + esc(av) + "');" : "";
+    var name = capFirst(row.nameEt) || row.latin;
+    var fresh = isFresh(row);
+    var rtag = row.sens
+      ? '<span class="bm-sc-rtag is-sens">' + esc(STR.gpsSens) + '</span>'
+      : (fresh ? '<span class="bm-sc-rtag is-fresh">' + esc(STR.gpsFresh) + '</span>' : '');
+    var stat = function(b, s){ return '<div class="bm-sc-stat"><b>' + esc(b) + '</b><span>' + esc(s) + '</span></div>'; };
+    var stats = '<div class="bm-sc-stats">' +
+      stat(ageText(row.t), STR.gpsAgo) +
+      stat(row.sens ? STR.gpsApprox : STR.gpsExact, STR.gpsLoc) +
+      stat("Movebank", STR.gpsSrc) + '</div>';
+    var row2 = function(label, val){ return '<div class="bm-sc-row"><span><span class="bm-sc-m">' + esc(label) + '</span> ' + val + '</span></div>'; };
+    var coordTxt = row.lat.toFixed(5) + ", " + row.lon.toFixed(5);
+    var rows = (row.ind ? row2(STR.gpsId, esc(row.ind)) : '') +
+      (row.studyName ? row2(STR.gpsStudy, esc(row.studyName)) : '') +
+      (row.sens ? '' : row2(STR.gpsCoords, '<span class="bm-sc-coords">' + esc(coordTxt) + '</span>'));
+    var acts = row.sens ? '' :
+      ((row.studyId ? '<a class="bm-sc-btn" href="https://www.movebank.org/cms/webapp?gwt_fragment=page=studies,path=study' + esc(row.studyId) + '" target="_blank" rel="noopener">' + esc(STR.gpsOpen) + '</a>' : '') +
+       '<button type="button" class="bm-sc-ico bm-sc-copy" data-coords="' + esc(coordTxt) + '" title="' + esc(STR.copy) + '" aria-label="' + esc(STR.copy) + '">' + ICO_COPY + '</button>');
+    // bm-sc--obs: a GPS card must not reset the P107 eBird location markers on open.
+    return '<div class="bm-sc bm-sc--obs bm-sc--gps">' +
+      '<div class="bm-sc-band">' + (av ? '<div class="bm-sc-wash" style="' + avStyle + '"></div>' : '') +
+        '<span class="bm-sc-tag">' + esc(STR.gpsTag) + '</span>' + rtag + '</div>' +
+      '<div class="bm-sc-body">' +
+        '<div class="bm-sc-head"><div class="bm-sc-av" style="' + avStyle + '"></div>' +
+          '<div class="bm-sc-id"><div class="bm-sc-name">' + esc(name) + '</div>' +
+          (row.latin ? '<div class="bm-sc-sci">' + esc(row.latin) + '</div>' : '') + '</div></div>' +
+        '<div class="bm-sc-when">' + esc(STR.gpsLast) + ' <b class="bm-sc-rel">' + esc(whenText(row.t)) + '</b></div>' +
+        (row.sens ? '<div class="eu-gps-note">' + esc(STR.gpsSensNote) + '</div>' : '') +
+        stats +
+        '<div class="bm-sc-rows">' + rows + '</div>' +
+        (acts ? '<div class="bm-sc-acts">' + acts + '</div>' : '') +
+        '<div class="bm-sc-ft"><span>' + esc(STR.gpsData) + '</span>' + (row.license ? '<span>' + esc(row.license) + '</span>' : '') + '</div>' +
+      '</div></div>';
+  }
+
+  function draw(rows){
+    layer.clearLayers();
+    // Oldest first, so the newest fixes end up on top.
+    rows.slice().sort(function(a, b){ return a.t - b.t; }).forEach(function(row){
+      if (row.sens) {
+        L.circle([row.lat, row.lon], { radius: SENS_RADIUS_M, color: NAVY, weight: 1.5, dashArray: "5 5", fillColor: NAVY, fillOpacity: 0.08, interactive: false }).addTo(layer);
+      }
+      var m = L.marker([row.lat, row.lon], { icon: markerIcon(row), zIndexOffset: isFresh(row) ? 400 : 300 });
+      m.bindPopup(function(){ return cardHtml(row); }, POPUP_OPTS);
+      m.addTo(layer);
+    });
+  }
+  function paintMeta(rows){
+    var el = document.getElementById("euGpsMeta");
+    if (!el) return;
+    if (!on) { el.textContent = ""; return; }
+    if (!rows) return;
+    if (!rows.length) { el.textContent = STR.gpsNone || ""; return; }
+    var newest = rows.reduce(function(a, r){ return r.t > a ? r.t : a; }, 0);
+    var dot = " " + (STR.dot || "") + " ";
+    el.textContent = rows.length + " " + (STR.gpsBirds || "") + dot + "Movebank" + dot + (STR.gpsNewest || "") + " " + whenText(newest);
+  }
+  function paintSwitch(){
+    var el = document.getElementById("euSwGps");
+    if (!el) return;
+    el.classList.toggle("on", on);
+    el.setAttribute("aria-checked", on ? "true" : "false");
+  }
+  function legendControl(){
+    var c = L.control({ position: "bottomleft" });
+    c.onAdd = function(){
+      var div = L.DomUtil.create("div", "eu-gps-legend");
+      div.innerHTML = '<div><i></i><span>' + esc(STR.gpsLegFresh) + '</span></div>' +
+        '<div><i class="is-old"></i><span>' + esc(STR.gpsLegOld) + '</span></div>' +
+        '<div><i class="is-sens"></i><span>' + esc(STR.gpsLegSens) + '</span></div>';
+      L.DomEvent.disableClickPropagation(div);
+      return div;
+    };
+    return c;
+  }
+
+  function load(){
+    if (!on) return;
+    if (!cfg.url || !cfg.key) {
+      if (tries < CFG_MAX_TRIES) {
+        tries++;
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(load, CFG_RETRY_MS);
+      }
+      return;
+    }
+    if (loading) return;
+    loading = true;
+    var g = ++gen;
+    safeFetchJson(cfg.url + "/rest/v1/rpc/get_gps_tracked_birds", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": cfg.key, "Authorization": "Bearer " + cfg.key },
+      body: "{}",
+      timeoutMs: 15000,
+      retries: 1
+    })
+      .then(function(res){
+        if (g !== gen || !on) return;
+        if (!res || !res.ok || !Array.isArray(res.json)) throw new Error("bad response " + (res ? res.status : ""));
+        var rows = res.json.map(cleanRow).filter(Boolean);
+        draw(rows);
+        paintMeta(rows);
+      })
+      .catch(function(e){ console.warn("[eu-gps]", (e && e.message) || e); })
+      .then(function(){ loading = false; });
+  }
+  function setOn(next){
+    on = !!next;
+    try { localStorage.setItem(LS_KEY, on ? "1" : "0"); } catch(e){ console.warn("[eu-gps] save failed", e); }
+    apply();
+  }
+  function apply(){
+    paintSwitch();
+    clearTimeout(retryTimer);
+    clearInterval(reloadTimer);
+    retryTimer = null;
+    reloadTimer = null;
+    if (on) {
+      if (!map.hasLayer(layer)) layer.addTo(map);
+      if (!legend) { legend = legendControl(); legend.addTo(map); }
+      tries = 0;
+      load();
+      reloadTimer = setInterval(load, RELOAD_MS);
+    } else {
+      gen++;
+      loading = false;
+      layer.clearLayers();
+      if (map.hasLayer(layer)) map.removeLayer(layer);
+      if (legend) { try { map.removeControl(legend); } catch(e){} legend = null; }
+      paintMeta(null);
+    }
+  }
+
+  window.__euGpsSetConfig = function(url, key){
+    cfg.url = String(url || "").trim().replace(/\/+$/, "");
+    cfg.key = String(key || "").trim();
+    if (on && cfg.url && cfg.key) { tries = 0; load(); }
+  };
+  window.__euGpsIsOn = function(){ return on; };
+
+  var sw = document.getElementById("euSwGps");
+  if (sw) sw.addEventListener("click", function(){ setOn(!on); });
+  apply();
+})();
+
 /* ========= Init ========= */
 preloadAvatars();
 updateProxyHint();
@@ -3772,6 +4055,11 @@ window.addEventListener("message", function(ev){
       return;
     }
     if (ev.origin !== window.location.origin) return;
+    // P105d: Supabase config for the GPS layer (reply to SUPABASE_CONFIG_REQUEST, as linnuliigid).
+    if (t === "SUPABASE_CONFIG") {
+      if (typeof window.__euGpsSetConfig === "function") window.__euGpsSetConfig(ev.data.supabaseUrl, ev.data.supabaseAnonKey);
+      return;
+    }
     if (t === "MAP_REFRESH_VISIBLE" || t === "MAP_REFRESH_SELECTED") {
       resetEuropeDebugState();
       document.getElementById("btnRefreshData")?.click();
@@ -3803,6 +4091,7 @@ window.addEventListener("message", function(ev){
 try { if (window.parent && window.parent !== window) {
   window.parent.postMessage({ type: "SPECIES_META_REQUEST" }, "*");
   window.parent.postMessage({ type: "CUSTOM_SPECIES_REQUEST" }, "*");
+  window.parent.postMessage({ type: "SUPABASE_CONFIG_REQUEST" }, "*");
 } } catch(e){}
 </script>
 </body>

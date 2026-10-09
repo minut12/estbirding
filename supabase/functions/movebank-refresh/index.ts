@@ -1,4 +1,4 @@
-// redeploy-marker: P105c3 2026-10-09
+// redeploy-marker: P105f 2026-10-09
 // movebank-refresh (P105c)
 // pg_cron -> pg_net -> public.m7_call_ef('movebank-refresh', '{"mode":...}') -> here.
 //
@@ -81,6 +81,7 @@ interface StudyDiag {
   individuals_after_filter: number;
   sample_timestamp_end: string[]; // first 5 raw values, before filtering
   fetch: FetchDiag[];
+  outliers_skipped: number; // locations Movebank flagged visible=false
 }
 
 interface StudyResult {
@@ -239,7 +240,7 @@ async function collectStudy(
     taxa: [],
     newTaxa: [],
     rows: [],
-    diag: { individuals_total: 0, individuals_after_filter: 0, sample_timestamp_end: [], fetch: [] },
+    diag: { individuals_total: 0, individuals_after_filter: 0, sample_timestamp_end: [], fetch: [], outliers_skipped: 0 },
   };
 
   // 1. individuals (authenticated CSV)
@@ -301,7 +302,8 @@ async function collectStudy(
     const qs = new URLSearchParams({
       study_id: String(studyId),
       sensor_type: "gps",
-      max_events_per_individual: "1",
+      max_events_per_individual: "5",
+      attributes: "timestamp,location_long,location_lat,visible",
       timestamp_start: String(now - RECENT_MS),
     });
     for (const id of group) qs.append("individual_local_identifiers", id);
@@ -321,7 +323,9 @@ async function collectStudy(
     }
 
     // 4. newest fix per individual -> row
-    for (const fix of extractNewestFixes(payload)) {
+    const extracted = extractNewestFixes(payload);
+    result.diag.outliers_skipped += extracted.outliersSkipped;
+    for (const fix of extracted.fixes) {
       const bin = taxonById.get(fix.individualLocalIdentifier);
       if (bin === undefined) continue;
       const info = taxa.get(bin);
@@ -630,6 +634,7 @@ Deno.serve(async (req) => {
       individuals_after_filter: res.diag.individuals_after_filter,
       sample_timestamp_end: res.diag.sample_timestamp_end,
       fetch: res.diag.fetch,
+      outliers_skipped: res.diag.outliers_skipped,
       took_ms: Date.now() - started,
     });
   } catch (e) {

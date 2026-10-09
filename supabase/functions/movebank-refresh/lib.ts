@@ -176,13 +176,28 @@ function asRecord(v: unknown): Record<string, unknown> | null {
     : null;
 }
 
+// One entry of an individual's `locations` array (all fields untrusted).
+export interface MovebankLocation {
+  timestamp?: number | string;
+  location_lat?: number | string;
+  location_long?: number | string;
+  visible?: boolean | string; // false = Movebank outlier; missing = keep
+}
+
+export interface NewestFixesResult {
+  fixes: NewestFix[];
+  outliersSkipped: number; // locations dropped because visible === false
+}
+
 // Shape: { individuals: [{ individual_local_identifier, individual_taxon_canonical_name,
-//   locations: [{ timestamp, location_lat, location_long }] }] }
+//   locations: [{ timestamp, location_lat, location_long, visible }] }] }
+// Locations flagged visible=false (Movebank outliers) are skipped and counted.
 // Individuals without a usable location are dropped.
-export function extractNewestFixes(payload: unknown): NewestFix[] {
+export function extractNewestFixes(payload: unknown): NewestFixesResult {
   const root = asRecord(payload);
   const inds = root && Array.isArray(root.individuals) ? root.individuals : [];
   const out: NewestFix[] = [];
+  let outliersSkipped = 0;
   for (const raw of inds) {
     const ind = asRecord(raw);
     if (!ind) continue;
@@ -191,8 +206,12 @@ export function extractNewestFixes(payload: unknown): NewestFix[] {
     const locs = Array.isArray(ind.locations) ? ind.locations : [];
     let best: { timestamp: number; lat: number; lon: number } | null = null;
     for (const l of locs) {
-      const loc = asRecord(l);
+      const loc: MovebankLocation | null = asRecord(l);
       if (!loc) continue;
+      if (loc.visible === false || loc.visible === "false") {
+        outliersSkipped++;
+        continue;
+      }
       const ts = parseMovebankTime(
         typeof loc.timestamp === "number" || typeof loc.timestamp === "string"
           ? loc.timestamp
@@ -211,7 +230,7 @@ export function extractNewestFixes(payload: unknown): NewestFix[] {
       ...best,
     });
   }
-  return out;
+  return { fixes: out, outliersSkipped };
 }
 
 // Splits an array into chunks of `size`.

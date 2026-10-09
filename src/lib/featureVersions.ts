@@ -126,6 +126,8 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-09', ref: 'P107d', kind: 'patch', text: '\u201eUusim riik\u201c kaart laeb asukohad k\u00f5igist aktiivsetest riikidest' },
       { date: '2026-10-09', ref: 'P110', kind: 'patch', text: 'Peidetud liigid tulevad 1. jaanuaril tagasi n\u00e4htavale' },
       { date: '2026-10-09', ref: 'P105d', kind: 'minor', text: 'GPS-saatjaga lindude kiht Movebankist' },
+      { date: '2026-10-09', ref: 'P105f', kind: 'patch', text: 'GPS-kihist eemaldatud Movebanki vigased asukohad' },
+      { date: '2026-10-09', ref: 'P105g', kind: 'patch', text: 'GPS-linnu kaardil uuringu viide' },
     ],
   },
   {

@@ -2872,7 +2872,7 @@ if (!DEV_DEBUG) {
       if (pinSub && o.subId === pinSub) return;
       if (Number.isFinite(pLat) && Number.isFinite(pLon) && Math.abs(lat - pLat) < 0.0002 && Math.abs(lng - pLon) < 0.0002) return;
       var mk = L.marker([lat, lng], { icon: euObsIcon(species), keyboard: false });
-      mk.bindPopup(function(){ return euObsCardHtml(species, o, cc); }, EU_POPUP_OPTS);
+      mk.bindPopup(function(){ return euObsCardHtml(species, o, o.cc || cc); }, EU_POPUP_OPTS);
       lg.addLayer(mk);
     });
     euLoc.layer = lg.addTo(map);
@@ -3178,7 +3178,9 @@ if (!DEV_DEBUG) {
     // P107b: aggregated card loads the location dots for its "viimati" country (d.rg); nothing visible in the card.
     if (isAgg) {
       var aCode = resolveEbirdCode(species) || "";
-      return (aCode && d.rg) ? '<div class="bm-sc-loc" hidden data-cc="' + esc(d.rg) + '" data-code="' + esc(aCode) + '"' + euLocAttrs(species, d) + '></div>' : "";
+      // P107d: every active country of the species, not only "viimati" (d.rg first).
+      var aCcs = [d.rg].concat(activeRegions(points[species]).map(function(r){ return r.rg; }).filter(function(rg){ return rg !== d.rg; }));
+      return (aCode && d.rg) ? '<div class="bm-sc-loc" hidden data-cc="' + esc(d.rg) + '" data-ccs="' + esc(aCcs.join(",")) + '" data-code="' + esc(aCode) + '"' + euLocAttrs(species, d) + '></div>' : "";
     }
     var code = resolveEbirdCode(species) || "";
     var cc = d.rg || "";
@@ -3382,10 +3384,19 @@ if (!DEV_DEBUG) {
       euPopupUpdate();
     });
     var locEl = el.querySelector(".bm-sc-loc");
-    if (locEl) euRecentObs(locEl.getAttribute("data-cc"), locEl.getAttribute("data-code"), function(list){
-      if (!el.isConnected) return;
-      if (Array.isArray(list) && list.length) euLocDraw(list, locGen, locEl);
-    });
+    if (locEl) {
+      var locCcs = String(locEl.getAttribute("data-ccs") || locEl.getAttribute("data-cc") || "").split(",").filter(Boolean);
+      var locAll = [];
+      var locLeft = locCcs.length;
+      locCcs.forEach(function(c){
+        euRecentObs(c, locEl.getAttribute("data-code"), function(list){
+          (Array.isArray(list) ? list : []).forEach(function(o){ locAll.push(Object.assign({ cc: c }, o)); });
+          locLeft--;
+          if (locLeft > 0 || !el.isConnected) return;
+          if (locAll.length) euLocDraw(locAll, locGen, locEl);
+        });
+      });
+    }
   });
   // P107c: the location markers stay after the card closes; an empty-map tap clears them.
   map.on("click", function(){ euLocClear(); });

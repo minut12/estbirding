@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-09 - P108b Mistral JSON mode when the prompt demands JSON output
 // redeploy-marker: 2026-10-09 - P108 Mistral (free tier) as third provider after the Gemini chain
 // redeploy-marker: 2026-10-08 - P97f2 per-attempt llm_calls logging (source, provider, model, ok, error_class, tokens, latency, fallback)
 // redeploy-marker: 2026-10-01 - P89c drop thinkingConfig (400 INVALID_ARGUMENT on Gemini 3.x), 1024 output floor
@@ -532,7 +533,13 @@ async function callGemini(
 // P108: Mistral (La Plateforme, free "Experiment" tier; OpenAI-style chat API).
 // Free tier: ~1 request/s per model, so a 429 waits a little longer than Gemini.
 const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
-const DEFAULT_MISTRAL_MODELS = "mistral-large-latest,mistral-small-latest";
+// Free tier (verified 2026-10-09): Large/Small/Medium are refused (403) or capped at 20k
+// tokens/min, below our ~37k-token report calls; ministral-14b-2512 fits (937.5k/min).
+// The live chain is set by the MISTRAL_MODEL secret.
+const DEFAULT_MISTRAL_MODELS = "mistral-large-2512,ministral-14b-2512";
+// P108b: prompts that demand JSON get Mistral's JSON mode (response_format json_object),
+// which guarantees parseable JSON (ministral-14b otherwise left raw newlines in strings).
+const JSON_DEMAND_RE = /\b(return|reply|respond|output|tagasta)\b[^.\n]{0,40}\bjson\b|\bjson only\b|\bonly (valid )?json\b|\bainult json\b/i;
 const MISTRAL_ATTEMPTS = 2;
 const MISTRAL_RETRY_MS = 2500;
 
@@ -560,6 +567,9 @@ function toMistralBody(req: AnthropicMessagesRequest, model: string): Record<str
   }
   const body: Record<string, unknown> = { model, messages, max_tokens: req.max_tokens };
   if (typeof req.temperature === "number") body.temperature = req.temperature;
+  if (messages.some((m) => m.role !== "assistant" && JSON_DEMAND_RE.test(m.content))) {
+    body.response_format = { type: "json_object" };
+  }
   return body;
 }
 

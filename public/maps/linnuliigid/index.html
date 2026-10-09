@@ -180,6 +180,9 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
 .bm-card-recent-when{flex:0 0 auto;width:80px;font:600 11.5px/1.4 system-ui,Arial,sans-serif;color:#222a26}
 .bm-card-recent-place{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit}
 .bm-card-recent-n{flex:0 0 auto;font:700 11.5px/1.4 system-ui,Arial,sans-serif;color:#0e7490}
+/* P111: unconfirmed (awaiting eBird review) sighting */
+.bm-pend{display:inline-block;margin-left:6px;padding:0 7px;border-radius:999px;background:#FFF1D1;color:#7A4F00;border:1px solid #f2c78a;font:700 10.5px/1.6 system-ui,Arial,sans-serif;vertical-align:1px}
+.bm-pend-note{margin-top:8px;padding:6px 9px;border-radius:8px;background:#FFF8E6;color:#7A4F00;font-size:12.5px;line-height:1.4}
 .bm-card-note{display:flex;gap:8px;align-items:flex-start;margin-top:10px;padding:8px 10px;border-radius:10px;
   background:#f4f6f5;border:1px solid #dde4df;color:#4a5852;font-size:11.5px;line-height:1.4}
 .bm-card-acts{display:flex;gap:8px;margin-top:12px}
@@ -11017,9 +11020,9 @@ function buildPopupHtml(key, p, opts){
           <div class="bm-card-av" style="border-color:${_ring};${_avCss}"></div>
           <div class="bm-card-id">
             <div class="bm-card-name">${escapeHtml(key)}</div>${sciLine}
-            <div class="bm-card-date">${dateLine}</div>
+            <div class="bm-card-date">${dateLine}${(isEb && opts && opts.pending) ? '<span class="bm-pend">kinnitamata</span>' : ''}</div>
           </div>
-        </div>${mediaBox}
+        </div>${(isEb && opts && opts.pending) ? '<div class="bm-pend-note">Vaatlus ootab eBirdi kinnitust.</div>' : ''}${mediaBox}
         <div class="bm-card-stats">
           <div class="bm-card-stat"><b${isEb ? ' class="bm-card-occ"' : ''}>${isEb ? '&ndash;' : escapeHtml(dash(occ7))}</b><span>vaatlust 7 p</span></div>
           <div class="bm-card-stat"><b>${escapeHtml(dash(ind))}</b><span>${indLabel}</span></div>
@@ -14281,7 +14284,7 @@ var __sharedDefaults = {};
       lat: ep.lat, lon: ep.lon, t: ep.t, occ7: ep.occ7,
       individualCount: Number.isFinite(ep.howMany) ? ep.howMany : null,
       collectors: ep.observer || '', placeText: ep.loc || '', src: 'eBird'
-    }, { source: 'ebird', dateTxt: dt, extUrl: ep.subId ? ('https://ebird.org/checklist/' + encodeURIComponent(ep.subId)) : '' });
+    }, { source: 'ebird', pending: ep.pending === true, dateTxt: dt, extUrl: ep.subId ? ('https://ebird.org/checklist/' + encodeURIComponent(ep.subId)) : '' });
   }
 
   // --- Fetch single species ---
@@ -14292,8 +14295,8 @@ var __sharedDefaults = {};
 
     var SUPABASE_REF = 'rfjhrosxbaihyrnbmmbl';
     var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
-    var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=30&maxResults=1000&detail=full&_ts=' + Date.now();
-    var proxyUrl = 'https://' + SUPABASE_REF + '.supabase.co/functions/v1/ebird_recent?regionCode=EE&back=30&maxResults=1000&detail=full&speciesCode=' + encodeURIComponent(code);
+    var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=30&maxResults=1000&detail=full&includeProvisional=true&_ts=' + Date.now();
+    var proxyUrl = 'https://' + SUPABASE_REF + '.supabase.co/functions/v1/ebird_recent?regionCode=EE&back=30&maxResults=1000&detail=full&includeProvisional=true&speciesCode=' + encodeURIComponent(code);
 
     var arr;
     try {
@@ -14336,6 +14339,7 @@ var __sharedDefaults = {};
       howMany: Number.isFinite(latest.howMany) ? latest.howMany : null,
       observer: latest.userDisplayName || (latest.firstName && latest.lastName ? ((latest.firstName || '') + ' ' + (latest.lastName || '')).trim() : null),
       subId: latest.subId || null,
+      pending: latest.obsValid === false,
       lastFetched: new Date().toISOString(),
       src: 'eBird EE'
     };
@@ -14360,7 +14364,7 @@ var __sharedDefaults = {};
     window.__ennEbirdCounts = window.__ennEbirdCounts || {};
     var started = Date.now();
     var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
-    var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent?back=30&maxResults=10000&detail=full&_ts=' + Date.now();
+    var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent?back=30&maxResults=10000&detail=full&includeProvisional=true&_ts=' + Date.now();
 
     async function _fetchWithTimeout(url, opts, ms){
       var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
@@ -14449,6 +14453,7 @@ var __sharedDefaults = {};
           howMany: Number.isFinite(latest.howMany) ? latest.howMany : null,
           observer: observer,
           subId: latest.subId || null,
+          pending: latest.obsValid === false,
           lastFetched: new Date().toISOString(),
           src: 'eBird EE'
         };
@@ -14818,7 +14823,7 @@ var __sharedDefaults = {};
     if(hit && (Date.now() - hit.at) < BM_EBIRD_SP_TTL_MS){ paint(); return; }
     if(__bmEbirdSpInflight[code]){ __bmEbirdSpInflight[code].then(paint, function(){}); return; }
     var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
-    var url = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=7&detail=full';
+    var url = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=7&detail=full&includeProvisional=true';
     var pReq = fetch(url, { headers: { 'X-eBirdApiToken': token } })
       .then(function(res){ if(!res.ok) throw new Error('species feed HTTP ' + res.status); return res.json(); })
       .then(function(arr){

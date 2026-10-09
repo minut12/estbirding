@@ -99,6 +99,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-07', ref: 'P97c4b', kind: 'minor', text: 'Foto autori rida kaartidel' },
       { date: '2026-10-07', ref: 'P100', kind: 'patch', text: 'V\u00e4ikeste markerite nihutus ainult sama koha markeritele' },
       { date: '2026-10-08', ref: 'P103', kind: 'patch', text: 'Filtrid n\u00e4itab Elurikkuse serveri p\u00e4ringu aega' },
+      { date: '2026-10-09', ref: 'P111', kind: 'minor', text: 'eBirdi kinnitamata vaatlused kaardil m\u00e4rkega \u201ekinnitamata\u201c' },
     ],
   },
   {
@@ -128,6 +129,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-09', ref: 'P105d', kind: 'minor', text: 'GPS-saatjaga lindude kiht Movebankist' },
       { date: '2026-10-09', ref: 'P105f', kind: 'patch', text: 'GPS-kihist eemaldatud Movebanki vigased asukohad' },
       { date: '2026-10-09', ref: 'P105g', kind: 'patch', text: 'GPS-linnu kaardil uuringu viide' },
+      { date: '2026-10-09', ref: 'P111', kind: 'minor', text: 'eBirdi kinnitamata vaatlused kaardil m\u00e4rkega \u201ekinnitamata\u201c' },
     ],
   },
   {
@@ -146,6 +148,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-07', ref: 'P97c4c', kind: 'minor', text: 'Foto autori rida h\u00fcpikaknas' },
       { date: '2026-10-08', ref: 'P104f', kind: 'minor', text: 'Automaatselt lisatud uued liigid j\u00f5uavad ka Rariliini' },
       { date: '2026-10-09', ref: 'P110', kind: 'patch', text: 'Peidetud liigid tulevad 1. jaanuaril tagasi n\u00e4htavale' },
+      { date: '2026-10-09', ref: 'P111', kind: 'minor', text: 'eBirdi kinnitamata vaatlused kaardil m\u00e4rkega \u201ekinnitamata\u201c' },
     ],
   },
   {

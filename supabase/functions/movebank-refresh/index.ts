@@ -1,4 +1,4 @@
-// redeploy-marker: P105f 2026-10-09
+// redeploy-marker: P105h 2026-10-09
 // movebank-refresh (P105c)
 // pg_cron -> pg_net -> public.m7_call_ef('movebank-refresh', '{"mode":...}') -> here.
 //
@@ -8,9 +8,14 @@
 //   refresh   202 + background: per study, find recent bird individuals, resolve
 //             taxa, read the newest fix via the authenticated json-auth endpoint
 //             and upsert gps_tracked_birds. Sensitive taxa are rounded to 0.1 deg.
-//   probe     synchronous dry run for one studyId, NO DB access at all; returns
-//             extra diagnostics (individual counts, raw timestamp_end samples,
-//             per-chunk json-auth fetch info).
+//   probe     synchronous dry run for one studyId, NO DB writes (one read of
+//             movebank_studies for pinned/name/citation); returns extra
+//             diagnostics (individual counts, raw timestamp_end samples,
+//             per-chunk json-auth fetch info) and the metadata row it would write.
+//
+// Pinned studies (P105h, movebank_studies.pinned) are refreshed on every run
+// regardless of status / last_fix_at, and get their study metadata filled from
+// direct-read while the name is still the placeholder or citation is null.
 //
 // Movebank etiquette: one request at a time, 400 ms between calls, one retry
 // after 5 s on HTTP 429 / "concurrent". Both direct-read and json-auth are
@@ -73,6 +78,22 @@ interface FetchDiag {
   http_status: number;
   bytes: number;
   head: string; // first 200 chars of the body
+}
+
+// Study metadata update for a pinned study (direct-read entity_type=study).
+interface StudyMetaUpdate {
+  name?: string; // omitted when Movebank returns an empty name
+  license_type: string | null;
+  citation: string | null;
+  pi_name: string | null;
+  last_fix_at?: string; // omitted when timestamp_last_deployed_location is unparseable
+  updated_at: string;
+}
+
+interface PinnedStudy {
+  study_id: number;
+  name: string | null;
+  citation: string | null;
 }
 
 // Diagnostics only (returned by probe); never used for refresh decisions.
@@ -298,6 +319,7 @@ async function collectStudy(
   const taxonById = new Map(birds.map((b) => [b.local_identifier, binomial(b.taxon_canonical_name)]));
   const fetchedAt = new Date().toISOString();
   const groups = chunk(birds.map((b) => b.local_identifier), JSON_CHUNK);
+  let emptyBodySeen = false;
   for (const [chunkIndex, group] of groups.entries()) {
     const qs = new URLSearchParams({
       study_id: String(studyId),
@@ -314,6 +336,11 @@ async function collectStudy(
       bytes: new TextEncoder().encode(pub.text).length,
       head: pub.text.slice(0, 200),
     });
+    // HTTP 200 with an empty body = no fixes in the window, not an error.
+    if (pub.status === 200 && pub.text.trim() === "") {
+      emptyBodySeen = true;
+      continue;
+    }
     let payload: unknown;
     try {
       payload = JSON.parse(pub.text);
@@ -342,7 +369,47 @@ async function collectStudy(
       });
     }
   }
+  if (emptyBodySeen && result.rows.length === 0) return { ...result, status: "empty" };
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Pinned-study metadata (P105h)
+
+const PLACEHOLDER_NAME_PREFIX = "Movebank study ";
+
+function needsMetaFill(s: PinnedStudy): boolean {
+  return (s.name ?? "").startsWith(PLACEHOLDER_NAME_PREFIX) || s.citation === null;
+}
+
+// One direct-read call (same pacing/retry as every Movebank call). Returns the
+// movebank_studies update, or null when Movebank returns no row. Throws on a
+// bad response.
+async function fetchStudyMeta(studyId: number, creds: Creds): Promise<StudyMetaUpdate | null> {
+  const r = await mbFetch(
+    directReadUrl({
+      entity_type: "study",
+      study_id: String(studyId),
+      attributes: "id,name,license_type,citation,principal_investigator_name,timestamp_last_deployed_location",
+    }),
+    creds,
+  );
+  const firstLine = r.text.split(/\r?\n/, 1)[0] ?? "";
+  if (r.status !== 200 || !firstLine.includes("name")) {
+    throw new Error("study meta HTTP " + r.status + ": " + classifyBadBody(r).lastError);
+  }
+  const row = csvToObjects(r.text)[0];
+  if (row === undefined) return null;
+  const last = parseMovebankTime(row.timestamp_last_deployed_location);
+  const name = (row.name ?? "").trim();
+  return {
+    ...(name !== "" ? { name } : {}),
+    license_type: row.license_type || null,
+    citation: row.citation || null,
+    pi_name: row.principal_investigator_name || null,
+    ...(last !== null ? { last_fix_at: new Date(last).toISOString() } : {}),
+    updated_at: new Date().toISOString(),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -443,6 +510,22 @@ function dedupeBy<T>(items: T[], key: (item: T) => string): T[] {
   return [...m.values()];
 }
 
+// Fills metadata for a pinned study when still needed. Never throws: a failure
+// is logged and the study is refreshed anyway. Returns true when a row was written.
+async function fillPinnedMeta(sb: Sb, study: PinnedStudy, creds: Creds): Promise<boolean> {
+  if (!needsMetaFill(study)) return false;
+  try {
+    const meta = await fetchStudyMeta(study.study_id, creds);
+    if (meta === null) return false;
+    const { error } = await sb.from("movebank_studies").update(meta).eq("study_id", study.study_id);
+    if (error) throw new Error("update movebank_studies meta: " + error.message);
+    return true;
+  } catch (e) {
+    console.error("[movebank-refresh pinned meta]", study.study_id, errMsg(e).slice(0, 200));
+    return false;
+  }
+}
+
 async function refreshOneStudy(
   sb: Sb,
   studyId: number,
@@ -505,6 +588,8 @@ async function runRefresh(creds: Creds, maxStudies: number): Promise<void> {
   const started = Date.now();
   const summary = {
     picked: 0,
+    pinned: 0,
+    meta_filled: 0,
     processed: 0,
     rows_upserted: 0,
     statuses: {} as Record<string, number>,
@@ -530,7 +615,24 @@ async function runRefresh(creds: Creds, maxStudies: number): Promise<void> {
       .order("last_checked_at", { ascending: true, nullsFirst: true })
       .limit(maxStudies);
     if (error) throw new Error("select movebank_studies: " + error.message);
-    const ids = ((data ?? []) as Array<{ study_id: number }>).map((r) => Number(r.study_id));
+    // Pinned studies: always, no status / last_fix_at / last_checked_at filter.
+    const { data: pinnedData, error: pinnedErr } = await sb
+      .from("movebank_studies")
+      .select("study_id,name,citation")
+      .eq("pinned", true);
+    if (pinnedErr) throw new Error("select pinned movebank_studies: " + pinnedErr.message);
+    const pinned = new Map<number, PinnedStudy>();
+    for (const p of (pinnedData ?? []) as PinnedStudy[]) {
+      pinned.set(Number(p.study_id), { ...p, study_id: Number(p.study_id) });
+    }
+    // Pinned first, then the regular pick (maxStudies limits only that part).
+    const ids = [
+      ...pinned.keys(),
+      ...((data ?? []) as Array<{ study_id: number }>)
+        .map((r) => Number(r.study_id))
+        .filter((id) => !pinned.has(id)),
+    ];
+    summary.pinned = pinned.size;
     summary.picked = ids.length;
 
     for (const id of ids) {
@@ -538,6 +640,8 @@ async function runRefresh(creds: Creds, maxStudies: number): Promise<void> {
         summary.stopped_early = true;
         break;
       }
+      const pin = pinned.get(id);
+      if (pin !== undefined && (await fillPinnedMeta(sb, pin, creds))) summary.meta_filled++;
       const r = await refreshOneStudy(sb, id, creds);
       summary.processed++;
       summary.rows_upserted += r.rows;
@@ -621,10 +725,34 @@ Deno.serve(async (req) => {
   }
   const started = Date.now();
   try {
+    // Read-only lookup of the pinned flag; probe never writes.
+    let pinnedRow: PinnedStudy | null = null;
+    const { data: pinData, error: pinErr } = await serviceClient()
+      .from("movebank_studies")
+      .select("study_id,name,citation,pinned")
+      .eq("study_id", studyId)
+      .maybeSingle();
+    const pinRec = pinData as (PinnedStudy & { pinned: boolean }) | null;
+    if (pinRec !== null && pinRec.pinned === true) {
+      pinnedRow = { study_id: studyId, name: pinRec.name, citation: pinRec.citation };
+    }
+    let metadata: StudyMetaUpdate | null = null;
+    let metadataError: string | null = null;
+    if (pinnedRow !== null && needsMetaFill(pinnedRow)) {
+      try {
+        metadata = await fetchStudyMeta(studyId, creds);
+      } catch (e) {
+        metadataError = errMsg(e).slice(0, 200);
+      }
+    }
     const res = await collectStudy(studyId, creds, () => Promise.resolve(new Map()));
     return json(200, {
       mode: m,
       study_id: studyId,
+      pinned: pinnedRow !== null,
+      pinned_lookup_error: pinErr ? pinErr.message : null,
+      metadata,
+      metadata_error: metadataError,
       status: res.status,
       last_error: res.lastError,
       individuals: res.individuals,

@@ -63,8 +63,18 @@ describe('loadCloudHidden year reset', () => {
     expect([...hidden]).toEqual(['Sinitihane']);
   });
 
-  it('keeps all rows for europe_map', async () => {
+  it('drops rows from a previous Tallinn year for europe_map (P110)', async () => {
     const hidden = await loadCloudHidden('europe_map', 'u1');
+    expect([...hidden]).toEqual(['Sinitihane']);
+  });
+
+  it('drops rows from a previous Tallinn year for rariliin_map (P110)', async () => {
+    const hidden = await loadCloudHidden('rariliin_map', 'u1');
+    expect([...hidden]).toEqual(['Sinitihane']);
+  });
+
+  it('keeps all rows for usa_co_map', async () => {
+    const hidden = await loadCloudHidden('usa_co_map', 'u1');
     expect([...hidden].sort()).toEqual(['Rasvatihane', 'Sinitihane']);
   });
 });

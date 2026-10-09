@@ -124,6 +124,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-08', ref: 'P107', kind: 'minor', text: 'Kaart n\u00e4itab liigi k\u00f5iki 7 p\u00e4eva asukohti riigis' },
       { date: '2026-10-09', ref: 'P107c', kind: 'minor', text: '7 p\u00e4eva asukohad liigiavataridena koos vaatluskaardiga' },
       { date: '2026-10-09', ref: 'P107d', kind: 'patch', text: '\u201eUusim riik\u201c kaart laeb asukohad k\u00f5igist aktiivsetest riikidest' },
+      { date: '2026-10-09', ref: 'P110', kind: 'patch', text: 'Peidetud liigid tulevad 1. jaanuaril tagasi n\u00e4htavale' },
     ],
   },
   {
@@ -141,6 +142,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-04', ref: 'P93', kind: 'patch', text: 'Uute leidude teade uueneb p\u00e4rast Elurikkuse v\u00e4rskendust' },
       { date: '2026-10-07', ref: 'P97c4c', kind: 'minor', text: 'Foto autori rida h\u00fcpikaknas' },
       { date: '2026-10-08', ref: 'P104f', kind: 'minor', text: 'Automaatselt lisatud uued liigid j\u00f5uavad ka Rariliini' },
+      { date: '2026-10-09', ref: 'P110', kind: 'patch', text: 'Peidetud liigid tulevad 1. jaanuaril tagasi n\u00e4htavale' },
     ],
   },
   {

@@ -16,7 +16,8 @@ const CACHE_PREFIX = 'speciesHidden';
 
 // ── Year reset: crossouts in these scopes count only within the current Europe/Tallinn year ──
 
-export const YEAR_BOUND_SCOPES: ReadonlySet<MapScope> = new Set<MapScope>(['ee_map']);
+// P110: Euroopa and Rariliin also reset on 1 Jan (Kristian, 9 Oct 2026).
+export const YEAR_BOUND_SCOPES: ReadonlySet<MapScope> = new Set<MapScope>(['ee_map', 'europe_map', 'rariliin_map']);
 
 export function tallinnYear(d: Date): number {
   return Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Tallinn', year: 'numeric' }).format(d));

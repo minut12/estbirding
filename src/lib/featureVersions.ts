@@ -100,6 +100,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-07', ref: 'P100', kind: 'patch', text: 'V\u00e4ikeste markerite nihutus ainult sama koha markeritele' },
       { date: '2026-10-08', ref: 'P103', kind: 'patch', text: 'Filtrid n\u00e4itab Elurikkuse serveri p\u00e4ringu aega' },
       { date: '2026-10-09', ref: 'P111', kind: 'minor', text: 'eBirdi kinnitamata vaatlused kaardil m\u00e4rkega \u201ekinnitamata\u201c' },
+      { date: '2026-10-09', ref: 'P111b', kind: 'patch', text: 'Liik on loendis ka siis, kui v\u00e4rske vaatlus on ainult eBirdis' },
     ],
   },
   {

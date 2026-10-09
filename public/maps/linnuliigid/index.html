@@ -5601,6 +5601,13 @@ function hasRecentObservation(p){
   if(!d) return false;
   return isWithin7d(d);
 }
+// P111b: a 7-day eBird EE sighting (incl. unconfirmed) also lists the species, while the eBird layer is on.
+function _p111EbirdRecentPoint(key){
+  try {
+    var eb = (window.__ebirdEELayerOn && window.__getEbirdEEPoint) ? window.__getEbirdEEPoint(key) : null;
+    return (eb && eb.t && isWithin7d(eb.t)) ? eb : null;
+  } catch(e){ return null; }
+}
 function getEffectiveRecentDate(p){
   return String((p && (p.latestSeenDate || p.t)) || '').trim();
 }
@@ -11773,10 +11780,11 @@ window.toggleNotification = async function(speciesName) {
 function rowHTML(obj) {
   const key = obj.est;
   const p = points[key] || {};
-  const bcol = _borderColorByDate(p.t);
+  const _eb = hasRecentObservation(p) ? null : _p111EbirdRecentPoint(key);
+  const bcol = _borderColorByDate(_eb ? _eb.t : p.t);
   const hasPoint = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const muted = (p.visible===false) ? 'muted' : '';
-  const occ7 = Number.isFinite(p.occ7) ? p.occ7 : null;
+  const occ7 = _eb ? (Number(_eb.occ7) || 1) : (Number.isFinite(p.occ7) ? p.occ7 : null);
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
   var isNotified = __notifySpecies.indexOf(key) >= 0;
@@ -11881,7 +11889,7 @@ function rowHTML(obj) {
   var isOpen = (window.__sbOpenKey === key);
   var mig = (typeof window.__randeajadRow === 'function') ? window.__randeajadRow(key) : null;
   var metaNew = hasPoint
-    ? '<span class="sb-fresh">' + (p.t ? formatDateEE(p.t) : '') + '</span>'
+    ? '<span class="sb-fresh">' + (_eb ? formatDateEE(_eb.t) : (p.t ? formatDateEE(p.t) : '')) + '</span>'
       + (occ7 !== null ? '<i class="sb-sep"></i><span class="sb-occ">7d ' + occ7 + '</span>' : '')
     : '<span>' + ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub') + '</span>';
   var bellBtnNew = '<button class="notify-bell sb-ib' + (isNotified ? ' active' : '') + '" '
@@ -11935,8 +11943,7 @@ function render() {
     if (window.__hideSeen) { var pS = points[x.est]; if (pS && pS.visible === false) return false; }
     if(recent7){
       const p = points[x.est];
-      if(!p) return false;
-      if(!hasRecentObservation(p)) return false;
+      if(!(p && hasRecentObservation(p)) && !_p111EbirdRecentPoint(x.est)) return false;
     }
     return true;
   });
@@ -14518,7 +14525,7 @@ var __sharedDefaults = {};
       }
 
       saveEbirdEE();
-      try { refreshEbirdEEMarkers(); } catch(e){}
+      try { if (typeof window.render === 'function') window.render(); else refreshEbirdEEMarkers(); } catch(e){}
 
       var elapsed = Date.now() - started;
       console.log('[eBird EE bulk] done total=' + arr.length + ' codes=' + codesWithData.length + ' written=' + written + ' in ' + elapsed + 'ms');

@@ -1,4 +1,4 @@
-// redeploy-marker: P105h 2026-10-09
+// redeploy-marker: P105j 2026-10-10
 // movebank-refresh (P105c)
 // pg_cron -> pg_net -> public.m7_call_ef('movebank-refresh', '{"mode":...}') -> here.
 //
@@ -16,6 +16,11 @@
 // Pinned studies (P105h, movebank_studies.pinned) are refreshed on every run
 // regardless of status / last_fix_at, and get their study metadata filled from
 // direct-read while the name is still the placeholder or citation is null.
+//
+// Transient Movebank failures (P105j): HTTP status >= 500, timeout or network
+// error on any Movebank call throw MovebankTransientError. refresh then only
+// sets last_checked_at + last_error ("transient: ...") for that study: status
+// and its gps_tracked_birds rows stay untouched. probe reports transient: true.
 //
 // Movebank etiquette: one request at a time, 400 ms between calls, one retry
 // after 5 s on HTTP 429 / "concurrent". Both direct-read and json-auth are
@@ -151,6 +156,15 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 let lastMovebankCallEnd = 0;
 
+// P105j: HTTP >= 500, timeout (AbortError) or network failure on a Movebank
+// call. Never classified into a study status.
+class MovebankTransientError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MovebankTransientError";
+  }
+}
+
 interface MbResponse {
   status: number;
   text: string;
@@ -165,8 +179,15 @@ async function mbOnce(url: string, creds: Creds | null): Promise<MbResponse> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), CALL_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { headers, signal: ctrl.signal });
-    const text = await res.text();
+    let res: Response;
+    let text: string;
+    try {
+      res = await fetch(url, { headers, signal: ctrl.signal });
+      text = await res.text();
+    } catch (e) {
+      // fetch threw: timeout (AbortError), DNS, connection reset, body read.
+      throw new MovebankTransientError("network: " + errMsg(e));
+    }
     return {
       status: res.status,
       text,
@@ -180,11 +201,17 @@ async function mbOnce(url: string, creds: Creds | null): Promise<MbResponse> {
 
 async function mbFetch(url: string, creds: Creds | null): Promise<MbResponse> {
   const first = await mbOnce(url, creds);
+  let r = first;
   if (first.status === 429 || /concurrent/i.test(first.text)) {
     await sleep(RETRY_WAIT_MS);
-    return await mbOnce(url, creds);
+    r = await mbOnce(url, creds);
   }
-  return first;
+  // P105j: server-side failure is transient, never a study status.
+  if (r.status >= 500) {
+    const endpoint = url.split("?", 1)[0].split("/").pop() ?? "";
+    throw new MovebankTransientError(endpoint + " HTTP " + r.status + ": " + r.text.slice(0, 200));
+  }
+  return r;
 }
 
 // direct-read (authenticated, CSV)
@@ -572,9 +599,13 @@ async function refreshOneStudy(
     if (error) throw new Error("update movebank_studies: " + error.message);
     return { status: res.status, rows: birdRows.length, error: res.lastError };
   } catch (e) {
-    // Thrown failure (timeout, network, DB): keep the status so a transient
-    // error does not drop the study from the refresh set; record the error.
-    const msg = errMsg(e).slice(0, 200);
+    // Thrown failure (timeout, network, HTTP >= 500, DB): keep the status so a
+    // transient error does not drop the study from the refresh set; record the
+    // error. collectStudy runs before any DB write, so a MovebankTransientError
+    // leaves this study's gps_tracked_birds rows untouched (P105j).
+    const msg = e instanceof MovebankTransientError
+      ? "transient: " + errMsg(e).slice(0, 200)
+      : errMsg(e).slice(0, 200);
     const { error } = await sb
       .from("movebank_studies")
       .update({ last_checked_at: nowIso(), last_error: msg })
@@ -745,7 +776,25 @@ Deno.serve(async (req) => {
         metadataError = errMsg(e).slice(0, 200);
       }
     }
-    const res = await collectStudy(studyId, creds, () => Promise.resolve(new Map()));
+    let res: StudyResult;
+    try {
+      res = await collectStudy(studyId, creds, () => Promise.resolve(new Map()));
+    } catch (e) {
+      if (!(e instanceof MovebankTransientError)) throw e;
+      // P105j: transient Movebank failure; refresh would write no status.
+      return json(200, {
+        mode: m,
+        study_id: studyId,
+        pinned: pinnedRow !== null,
+        pinned_lookup_error: pinErr ? pinErr.message : null,
+        metadata,
+        metadata_error: metadataError,
+        transient: true,
+        status: null,
+        last_error: "transient: " + errMsg(e).slice(0, 200),
+        took_ms: Date.now() - started,
+      });
+    }
     return json(200, {
       mode: m,
       study_id: studyId,
@@ -753,6 +802,7 @@ Deno.serve(async (req) => {
       pinned_lookup_error: pinErr ? pinErr.message : null,
       metadata,
       metadata_error: metadataError,
+      transient: false,
       status: res.status,
       last_error: res.lastError,
       individuals: res.individuals,

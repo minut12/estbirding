@@ -102,6 +102,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-09', ref: 'P111', kind: 'minor', text: 'eBirdi kinnitamata vaatlused kaardil m\u00e4rkega \u201ekinnitamata\u201c' },
       { date: '2026-10-09', ref: 'P111b', kind: 'patch', text: 'Liik on loendis ka siis, kui v\u00e4rske vaatlus on ainult eBirdis' },
       { date: '2026-10-10', ref: 'P115', kind: 'patch', text: 'Aegunud eBirdi n\u00f5el kaob kaardilt j\u00e4rgmisel v\u00e4rskendusel' },
+      { date: '2026-10-10', ref: 'P120', kind: 'minor', text: 'Vaatluskaardil i-nupp: liigi tunnused eBirdist eesti keeles' },
     ],
   },
   {

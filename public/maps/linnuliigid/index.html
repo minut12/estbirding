@@ -134,6 +134,28 @@
   background-color:#29c;background-size:cover;background-position:center;box-shadow:0 2px 6px rgba(20,40,30,.18)}
 .bm-card-id{min-width:0;padding-bottom:4px}
 .bm-card-name{font:700 17px/1.25 system-ui,Arial,sans-serif;color:#222a26;overflow-wrap:anywhere}
+/* P120: species info "i" button + in-card info view (text from public.species_info) */
+.bm-card-nm{display:flex;align-items:center;gap:7px;min-width:0}
+.bm-info-btn{flex:0 0 auto;width:22px;height:22px;padding:0;border-radius:50%;border:1.5px solid #2d7a4b;background:#fff;color:#2d7a4b;
+  font:700 13px/1 Georgia,'Times New Roman',serif;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.bm-info-btn:hover{background:#2d7a4b;color:#fff}
+.bm-info{position:relative;z-index:2;padding:12px 16px 14px;background:#fff}
+.bm-info-top{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.bm-info-back{flex:0 0 auto;width:32px;height:32px;padding:0;border-radius:50%;border:0;background:#f0f4f1;color:#4a5852;font-size:16px;cursor:pointer}
+.bm-info-back:hover{background:#e2e9e4}
+.bm-info-ttl{min-width:0;display:flex;flex-direction:column}
+.bm-info-ttl b{font:700 16px/1.25 system-ui,Arial,sans-serif;color:#222a26}
+.bm-info-sci{font-size:12.5px;color:#6b7770}
+.bm-info-photo{position:relative;height:170px;border-radius:12px;background:#e8ece9 center/cover no-repeat;margin-bottom:10px}
+.bm-info-photo span{position:absolute;left:8px;bottom:8px;max-width:calc(100% - 16px);background:rgba(0,0,0,.55);color:#fff;font-size:10.5px;
+  padding:2px 7px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bm-info-h{font:700 11px/1.3 system-ui,Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:#6b7770;margin:4px 0 5px}
+.bm-info-txt{margin:0;font-size:13.5px;line-height:1.55;color:#2b3530;max-height:220px;overflow:auto}
+.bm-info-cred{font-size:11.5px;color:#6b7770;margin-top:8px}
+.bm-info-msg{font-size:13px;color:#4a5852;padding:6px 0 10px}
+.leaflet-container a.bm-info-ext,.bm-info-ext{display:flex;align-items:center;justify-content:center;height:38px;margin-top:12px;border:1px solid #dde4df;
+  border-radius:10px;font:600 13px/1 system-ui,Arial,sans-serif;color:#222a26;text-decoration:none}
+.leaflet-container a.bm-info-ext:hover{color:#2d7a4b}
 .bm-card-sci{margin-top:2px;font:italic 12px/1.3 system-ui,Arial,sans-serif;color:#6c7f74;overflow-wrap:anywhere}
 .bm-card-date{margin-top:2px;font-size:12px;color:#6c7f74}
 .bm-card-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:12px;
@@ -11014,6 +11036,7 @@ function buildPopupHtml(key, p, opts){
   const extBtn = (isEb && opts.extUrl)
     ? `<a class="bm-card-ico" href="${escapeHtml(opts.extUrl)}" target="_blank" rel="noopener" title="Ava eBirdis">${SVG_EXT}</a>`
     : '';
+  const _infoBtn = __bmSpeciesInfoBtnHtml(key); // P120
   const foot = hasCoords
     ? `<div class="bm-card-foot"><span class="bm-card-coords" title="Kopeeri koordinaadid" onclick="_bmCardCopy(this,${p.lat},${p.lon})">${escapeHtml(lat)},${escapeHtml(lon)}</span><span class="bm-card-foot-note">${coordsApprox ? 'ligikaudne' : (isEb ? 'vaatluskoht' : 't&auml;pne asukoht')}</span></div>`
     : '';
@@ -11027,7 +11050,7 @@ function buildPopupHtml(key, p, opts){
         <div class="bm-card-head">
           <div class="bm-card-av" style="border-color:${_ring};${_avCss}"></div>
           <div class="bm-card-id">
-            <div class="bm-card-name">${escapeHtml(key)}</div>${sciLine}
+            <div class="bm-card-nm"><div class="bm-card-name">${escapeHtml(key)}</div>${_infoBtn}</div>${sciLine}
             <div class="bm-card-date">${dateLine}${(isEb && opts && opts.pending) ? '<span class="bm-pend">kinnitamata</span>' : ''}</div>
           </div>
         </div>${(isEb && opts && opts.pending) ? '<div class="bm-pend-note">Vaatlus ootab eBirdi kinnitust.</div>' : ''}${mediaBox}
@@ -11044,6 +11067,86 @@ function buildPopupHtml(key, p, opts){
       </div>
     </div>
   `;
+}
+// P120: species info "i" button + in-card info view. The button shows only when the
+// species has an eBird code; the row comes from public.species_info (anon SELECT,
+// filled by the species-info-save Edge Function). One request per code per session.
+// Function declarations only (no top-level let/const); exposed via global scope for onclick.
+function __bmSpeciesInfoBtnHtml(key){
+  try {
+    var code = (typeof SPECIES_EBIRD_CODES !== 'undefined' && SPECIES_EBIRD_CODES[key]) || '';
+    if (!/^[a-z0-9]{3,12}$/.test(code)) return '';
+    return '<button type="button" class="bm-info-btn" title="Liigiinfo" aria-label="Liigiinfo" onclick="__bmSpeciesInfoOpen(this,\'' + code + '\')">i</button>';
+  } catch (e) { return ''; }
+}
+function __bmSpeciesInfoFetch(code){
+  window.__bmSpeciesInfoCache = window.__bmSpeciesInfoCache || {};
+  var c = window.__bmSpeciesInfoCache;
+  if (c[code]) return c[code];
+  var cfg = resolveSupabaseConfig();
+  if (!cfg || !cfg.supabaseUrl || !cfg.anonKey) return Promise.reject(new Error('no supabase config'));
+  var url = cfg.supabaseUrl + '/rest/v1/species_info?ebird_code=eq.' + encodeURIComponent(code)
+    + '&select=ebird_code,com_name_en,sci_name,id_text_en,id_text_et,translator,photo_url,photo_credit,photo_license';
+  c[code] = fetch(url, { headers: { 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey } })
+    .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(rows){ return (Array.isArray(rows) && rows[0]) ? rows[0] : null; })
+    .catch(function(err){ delete c[code]; throw err; });
+  return c[code];
+}
+function __bmSpeciesInfoRefit(){
+  try { if (window.map && window.map._popup) window.map._popup.update(); } catch (e) {}
+}
+function __bmSpeciesInfoClose(btn){
+  try {
+    var card = btn.closest('.bm-card'); if (!card) return;
+    var view = card.querySelector('.bm-info'); if (view) view.parentNode.removeChild(view);
+    var body = card.querySelector('.bm-card-body'); if (body) body.style.display = '';
+    __bmSpeciesInfoRefit();
+  } catch (e) {}
+}
+function __bmSpeciesInfoOpen(btn, code){
+  try {
+    var card = btn && btn.closest ? btn.closest('.bm-card') : null;
+    if (!card || card.querySelector('.bm-info')) return;
+    var body = card.querySelector('.bm-card-body');
+    var nameEl = card.querySelector('.bm-card-name');
+    var name = nameEl ? nameEl.textContent.trim() : '';
+    var view = document.createElement('div');
+    view.className = 'bm-info';
+    var head = '<div class="bm-info-top"><button type="button" class="bm-info-back" title="Tagasi" aria-label="Tagasi" onclick="__bmSpeciesInfoClose(this)">&larr;</button>'
+      + '<div class="bm-info-ttl"><b>' + escapeHtml(name) + '</b><i class="bm-info-sci"></i></div></div>';
+    var ext = '<a class="bm-info-ext" href="https://ebird.org/species/' + code + '" target="_blank" rel="noopener">Vaata liiki eBirdis &#8599;</a>';
+    view.innerHTML = head + '<div class="bm-info-msg">Laadin&hellip;</div>';
+    if (body) body.style.display = 'none';
+    card.appendChild(view);
+    __bmSpeciesInfoRefit();
+    __bmSpeciesInfoFetch(code).then(function(row){
+      if (!view.isConnected) return;
+      if (!row) {
+        view.innerHTML = head + '<div class="bm-info-msg">Selle liigi kirjeldust pole veel lisatud.</div>' + ext;
+      } else {
+        var et = row.id_text_et ? String(row.id_text_et) : '';
+        var txt = et || String(row.id_text_en || '');
+        var photo = (row.photo_url && /^https:\/\/[^'"()\s]+$/.test(row.photo_url))
+          ? '<div class="bm-info-photo" style="background-image:url(\'' + row.photo_url + '\')">'
+            + (row.photo_credit ? '<span>' + escapeHtml(row.photo_credit) + (row.photo_license ? ' (' + escapeHtml(String(row.photo_license).toUpperCase()) + ')' : '') + '</span>' : '')
+            + '</div>'
+          : '';
+        view.innerHTML = head + photo
+          + '<div class="bm-info-h">Tunnused</div>'
+          + '<p class="bm-info-txt">' + escapeHtml(txt) + '</p>'
+          + '<div class="bm-info-cred">Tekst: eBird.org' + (et ? ' &middot; masint&otilde;lge: TartuNLP' : ' (inglise keeles)') + '</div>'
+          + ext;
+        var sci = view.querySelector('.bm-info-sci');
+        if (sci && row.sci_name) sci.textContent = String(row.sci_name);
+      }
+      __bmSpeciesInfoRefit();
+    }).catch(function(){
+      if (!view.isConnected) return;
+      view.innerHTML = head + '<div class="bm-info-msg">Liigiinfot ei &otilde;nnestunud laadida.</div>' + ext;
+      __bmSpeciesInfoRefit();
+    });
+  } catch (e) {}
 }
 // P64c: shared builder for the eBird 7-day recent-sightings rows. Declared as a
 // function (not a top-level let/const) and exposed on window so the eBird IIFE can

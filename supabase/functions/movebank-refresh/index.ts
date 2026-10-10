@@ -1,4 +1,4 @@
-// redeploy-marker: P105j 2026-10-10
+// redeploy-marker: P105k 2026-10-10
 // movebank-refresh (P105c)
 // pg_cron -> pg_net -> public.m7_call_ef('movebank-refresh', '{"mode":...}') -> here.
 //
@@ -12,6 +12,9 @@
 //             movebank_studies for pinned/name/citation); returns extra
 //             diagnostics (individual counts, raw timestamp_end samples,
 //             per-chunk json-auth fetch info) and the metadata row it would write.
+//   licence   synchronous, NO DB access, one studyId: shows the Movebank licence
+//             text + md5; with acceptMd5 accepts it for the MOVEBANK_USER account
+//             (license-md5). Kristian approves each study's licence in chat first.
 //
 // Pinned studies (P105h, movebank_studies.pinned) are refreshed on every run
 // regardless of status / last_fix_at, and get their study metadata filled from
@@ -29,6 +32,7 @@
 // Auth on this function: X-Webhook-Secret must equal VAATLUSTE_WEBHOOK_SECRET.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { crypto } from "jsr:@std/crypto@^1";
 import EOU_NAMES from "../_shared/eoy-bird-names.json" with { type: "json" };
 import {
   binomial,
@@ -45,7 +49,7 @@ declare const EdgeRuntime:
   | { waitUntil(promise: Promise<unknown>): void }
   | undefined;
 
-type Mode = "discover" | "refresh" | "probe";
+type Mode = "discover" | "refresh" | "probe" | "licence";
 type StudyStatus =
   | "candidate"
   | "public"
@@ -212,6 +216,60 @@ async function mbFetch(url: string, creds: Creds | null): Promise<MbResponse> {
     throw new MovebankTransientError(endpoint + " HTTP " + r.status + ": " + r.text.slice(0, 200));
   }
   return r;
+}
+
+// P105k: raw single call for licence mode (bytes for md5 + session cookies).
+// Same pacing / auth / timeout as mbOnce; no retry; never logs.
+interface MbRawResponse {
+  status: number;
+  bytes: Uint8Array<ArrayBuffer>;
+  cookies: string;
+  acceptLicense: boolean;
+}
+
+async function mbRaw(url: string, creds: Creds, cookie: string): Promise<MbRawResponse> {
+  const wait = lastMovebankCallEnd + PAUSE_MS - Date.now();
+  if (wait > 0) await sleep(wait);
+  const headers: Record<string, string> = {
+    Authorization: "Basic " + btoa(creds.user + ":" + creds.pass),
+  };
+  if (cookie !== "") headers["Cookie"] = cookie;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), CALL_TIMEOUT_MS);
+  try {
+    let res: Response;
+    let bytes: Uint8Array<ArrayBuffer>;
+    try {
+      res = await fetch(url, { headers, signal: ctrl.signal });
+      bytes = new Uint8Array(await res.arrayBuffer());
+    } catch (e) {
+      throw new MovebankTransientError("network: " + errMsg(e));
+    }
+    const cookies = res.headers
+      .getSetCookie()
+      .map((c) => c.split(";", 1)[0].trim())
+      .filter((c) => c !== "")
+      .join("; ");
+    return { status: res.status, bytes, cookies, acceptLicense: res.headers.get("accept-license") !== null };
+  } finally {
+    clearTimeout(timer);
+    lastMovebankCallEnd = Date.now();
+  }
+}
+
+// P105k: md5 of the exact licence bytes Movebank served (lowercase hex).
+async function md5Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const digest = await crypto.subtle.digest("MD5", bytes);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// P105k: licence HTML -> readable plain text (max 4000 chars).
+function licenceTextOf(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 4000);
+}
+
+function looksLikeLicence(acceptLicense: boolean, text: string): boolean {
+  return acceptLicense || text.includes("License Terms");
 }
 
 // direct-read (authenticated, CSV)
@@ -694,6 +752,61 @@ async function runRefresh(creds: Creds, maxStudies: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// P105k: licence mode (synchronous, NO DB access). Credentials and cookie
+// values never appear in any response or log.
+
+// One mbRaw call; transient failure (network / timeout / HTTP >= 500) -> 503.
+async function licenceCall(
+  url: string,
+  creds: Creds,
+  cookie: string,
+  studyId: number,
+): Promise<MbRawResponse | Response> {
+  let r: MbRawResponse;
+  try {
+    r = await mbRaw(url, creds, cookie);
+  } catch (e) {
+    if (e instanceof MovebankTransientError) {
+      return json(503, { studyId, transient: true, error: errMsg(e).slice(0, 200) });
+    }
+    throw e;
+  }
+  if (r.status >= 500) return json(503, { studyId, transient: true, error: "HTTP " + r.status });
+  return r;
+}
+
+async function runLicence(studyId: number, acceptMd5: string | null, creds: Creds): Promise<Response> {
+  const url = directReadUrl({
+    entity_type: "individual",
+    study_id: String(studyId),
+    attributes: "local_identifier,taxon_canonical_name,timestamp_end",
+  });
+  // Step A: plain request; Movebank answers with the licence page if required.
+  const a = await licenceCall(url, creds, "", studyId);
+  if (a instanceof Response) return a;
+  const text = new TextDecoder().decode(a.bytes);
+  if (!looksLikeLicence(a.acceptLicense, text)) {
+    return json(200, { studyId, licenceRequired: false, httpStatus: a.status });
+  }
+  const md5 = await md5Hex(a.bytes);
+  if (acceptMd5 === null) {
+    return json(200, { studyId, licenceRequired: true, md5, bytes: a.bytes.length, licenceText: licenceTextOf(text) });
+  }
+  if (acceptMd5 !== md5) {
+    return json(409, { studyId, error: "licence text changed", expectedMd5: acceptMd5, currentMd5: md5 });
+  }
+  // Step B: accept with license-md5, reusing the session cookies from step A.
+  await sleep(PAUSE_MS); // explicit 400 ms before acceptance
+  const b = await licenceCall(url + "&license-md5=" + md5, creds, a.cookies, studyId);
+  if (b instanceof Response) return b;
+  const bText = new TextDecoder().decode(b.bytes);
+  if (b.status !== 200 || looksLikeLicence(b.acceptLicense, bText)) {
+    return json(502, { studyId, accepted: false, httpStatus: b.status, snippet: bText.slice(0, 200) });
+  }
+  return json(200, { studyId, accepted: true, httpStatus: b.status, dataBytes: b.bytes.length });
+}
+
+// ---------------------------------------------------------------------------
 
 function readCreds(): Creds | null {
   const user = Deno.env.get("MOVEBANK_USER");
@@ -729,8 +842,8 @@ Deno.serve(async (req) => {
   }
 
   const mode = body.mode;
-  if (mode !== "discover" && mode !== "refresh" && mode !== "probe") {
-    return json(400, { error: "mode must be discover | refresh | probe" });
+  if (mode !== "discover" && mode !== "refresh" && mode !== "probe" && mode !== "licence") {
+    return json(400, { error: "mode must be discover | refresh | probe | licence" });
   }
   const m: Mode = mode;
 
@@ -747,6 +860,19 @@ Deno.serve(async (req) => {
     const maxStudies = typeof raw === "number" && Number.isInteger(raw) && raw > 0 ? raw : DEFAULT_MAX_STUDIES;
     runInBackground(runRefresh(creds, maxStudies));
     return json(202, { accepted: true, mode: m });
+  }
+
+  // P105k: licence mode, synchronous, no DB access.
+  if (m === "licence") {
+    const studyId = body.studyId;
+    if (typeof studyId !== "number" || !Number.isInteger(studyId) || studyId <= 0) {
+      return json(400, { error: "licence requires a positive integer studyId" });
+    }
+    const rawMd5 = body.acceptMd5;
+    if (rawMd5 !== undefined && (typeof rawMd5 !== "string" || !/^[0-9a-f]{32}$/.test(rawMd5))) {
+      return json(400, { error: "acceptMd5 must be 32 lowercase hex chars" });
+    }
+    return await runLicence(studyId, typeof rawMd5 === "string" ? rawMd5 : null, creds);
   }
 
   // probe: synchronous, no DB access

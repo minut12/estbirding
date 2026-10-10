@@ -132,6 +132,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-09', ref: 'P105f', kind: 'patch', text: 'GPS-kihist eemaldatud Movebanki vigased asukohad' },
       { date: '2026-10-09', ref: 'P105g', kind: 'patch', text: 'GPS-linnu kaardil uuringu viide' },
       { date: '2026-10-09', ref: 'P111', kind: 'minor', text: 'eBirdi kinnitamata vaatlused kaardil m\u00e4rkega \u201ekinnitamata\u201c' },
+      { date: '2026-10-10', ref: 'P119', kind: 'patch', text: 'Kaardil on ka kinnitamata haruldused eBirdi haruldaste voost' },
     ],
   },
   {

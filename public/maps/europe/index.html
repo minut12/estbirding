@@ -2241,6 +2241,39 @@ async function refreshEuropeAggregated(keys, onProgress){
           }
         }
       }
+      // P119: the country /recent feed can omit newer unconfirmed sightings that the notable
+      // feed has (FI Pied Wheatear, 10.10.2026). Merge notable (7 d): a newer notable obs becomes
+      // this country's latest for the species; occ7 is at least the number of notable checklists.
+      try {
+        const nUrl = `https://api.ebird.org/v2/data/obs/${encodeURIComponent(region)}/recent/notable?back=7&detail=full`;
+        const nRaw = await safeFetchText(nUrl, { headers: { "X-eBirdApiToken": token } }, 15000, 0);
+        let nArr = null;
+        try { nArr = nRaw ? JSON.parse(nRaw) : null; } catch { nArr = null; }
+        if (Array.isArray(nArr)) {
+          const nSubs = {};
+          for (const obs of nArr) {
+            const speciesCode = String(obs?.speciesCode || "");
+            if (!speciesByCode.get(speciesCode)) continue;
+            const ts = parseObsDateToMs(String(obs?.obsDt || ""));
+            if (ts === null || !Number.isFinite(ts)) continue;
+            if (!Number.isFinite(Number(obs?.lat)) || !Number.isFinite(Number(obs?.lng))) continue;
+            let slot = perSpeciesRegionByCode[speciesCode];
+            if (!slot) {
+              slot = perSpeciesRegionByCode[speciesCode] = { occ7: 0, latestObs: null, latestTs: 0, speciesCode: speciesCode, sampleObsDt: String(obs.obsDt || "") };
+            }
+            const subs = nSubs[speciesCode] = nSubs[speciesCode] || {};
+            subs[String(obs?.subId || obs?.obsDt || "")] = 1;
+            if (!slot.latestTs || ts > slot.latestTs) { slot.latestObs = obs; slot.latestTs = ts; }
+          }
+          for (const c of Object.keys(nSubs)) {
+            const slot = perSpeciesRegionByCode[c];
+            const n = Object.keys(nSubs[c]).length;
+            if (slot && slot.occ7 < n) slot.occ7 = n;
+          }
+        }
+      } catch (e) {
+        console.warn("[P119] notable merge failed", region, e && e.message);
+      }
       debugCountryTop5 = Object.entries(perCountryCounts)
         .sort((a, b) => Number(b[1]) - Number(a[1]))
         .slice(0, 5)

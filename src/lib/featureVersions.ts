@@ -304,6 +304,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-09-30', ref: 'P85e3', kind: 'patch', text: '\u201eVaata vaatlust\u201c viib \u00f5igele Elurikkuse lehele' },
       { date: '2026-10-07', ref: 'P98', kind: 'major', text: '\u00dcks kaart liigi kohta' },
       { date: '2026-10-08', ref: 'P102', kind: 'patch', text: 'Isendite arv on alati n\u00e4ha' },
+      { date: '2026-10-10', ref: 'P114', kind: 'patch', text: 'Eesti loendis on ainult haruldased liigid' },
     ],
   },
   {

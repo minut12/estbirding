@@ -1252,7 +1252,12 @@ export default function OverviewTab() {
     () => mergeEstoniaEntries(report?.estonia_entries, elurikkusReport?.estonia_entries),
     [report, elurikkusReport],
   );
-  const eeEntries = useMemo(() => sortEntries(mergedEstonia), [mergedEstonia]);
+  // P114: Eesti shows only rare/super/mega. eBird notable also flags out-of-season
+  // sightings of common species (rarity_level 'none'); the report keeps them, the list hides them.
+  const eeEntries = useMemo(
+    () => sortEntries(mergedEstonia.filter((e) => effectiveRarityTier(e) !== 'none')),
+    [mergedEstonia],
+  );
   const euEntries = useMemo(() => sortEntries(report?.europe_entries || []), [report]);
   const eeGroups = useMemo(() => groupEntriesBySpecies(eeEntries), [eeEntries]);
   const euGroups = useMemo(() => groupEntriesBySpecies(euEntries), [euEntries]);

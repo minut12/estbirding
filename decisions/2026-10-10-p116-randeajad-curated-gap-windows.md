@@ -32,3 +32,15 @@ Draft CSV: `Claude outputs/2026-10-10-randeajad-manual-draft.csv`.
 ## Follow-up idea
 A rule v6 baseline (late-summer trough instead of June-July) would find ~20 of these autumn
 windows from data. Needs an all-species width check before fixtures.
+
+## P116b (same day) - estimates capped at 4 weeks; eBird neighbours tried and rejected
+- Kristian: Halltsiitsitaja window (P76 9 apr - 3 juuni / 24 sept - 11 nov) too long.
+- Every Linnuliigid estimate is now <= 4 weeks (except Kablik October, his own). P116 rows trimmed
+  (departure tails keep their start; bumps take the best 4-week block).
+- The 24 regular scarce species get their own `ee: {spring, autumn}` windows (best 4-week block with
+  >= half of that half's Estonian records; blocks centred on weeks 25-30 dropped as summer wandering).
+  Top-level P76 halves stay untouched as the Euroopa fallback. Jamejalg, Raisakotkas, Prillvaeras: no ee.
+- eBird FI/LV/SE (Kristian's ask): public bar charts (48 periods, coarse levels) read via Chrome for the
+  122 remaining-gap species (114 mapped; 8 subspecies skipped). With a 2-country agreement check and
+  peak-only detection, 0 species gave a consistent window; looser rules put vagrant stragglers in Nov/Dec.
+  Nothing added. Better input: the signed-in eBird barchartData TSV (real frequencies).

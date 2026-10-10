@@ -282,8 +282,8 @@
 
   /* P116: curated windows (migration-windows.json, {spring:[a,b]|null, autumn:[a,b]|null}) fill the halves
      the data cannot show. A data window always wins; resident and winter results are left alone;
-     a "few" result becomes a migrant only when the entry has ee:true (regular scarce species, not vagrants).
-     Filled halves carry manual:true and no pk.
+     a "few" result becomes a migrant only from the entry's own ee:{spring,autumn} (regular scarce species,
+     tight Estonian windows; vagrants have no ee). Filled halves carry manual:true and no pk.
      Returns a new object, or the input unchanged when there is nothing to fill. */
   function curatedWindow(arr) {
     if (!arr || arr.length !== 2) return null;
@@ -295,11 +295,17 @@
 
   function fillGaps(result, curated) {
     if (!result || !curated) return result;
+    if (result.kind === "few") {
+      var ee = curated.ee;
+      if (!ee || typeof ee !== "object") return result;
+      var es = curatedWindow(ee.spring);
+      var ea = curatedWindow(ee.autumn);
+      return es || ea ? { kind: "migrant", spring: es, autumn: ea, fromFew: true } : result;
+    }
+    if (result.kind !== "migrant") return result;
     var s = curatedWindow(curated.spring);
     var au = curatedWindow(curated.autumn);
     if (!s && !au) return result;
-    if (result.kind === "few") return curated.ee === true ? { kind: "migrant", spring: s, autumn: au, fromFew: true } : result;
-    if (result.kind !== "migrant") return result;
     var spring = isWindow(result.spring) ? result.spring : (s || result.spring);
     var autumn = isWindow(result.autumn) ? result.autumn : (au || result.autumn);
     if (spring === result.spring && autumn === result.autumn) return result;

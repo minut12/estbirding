@@ -20,7 +20,8 @@ type Randeajad = {
   fillGaps: (result: Record<string, unknown>, curated: Curated | null) => Record<string, unknown>;
 };
 
-type Curated = { spring: number[] | null; autumn: number[] | null; ee?: boolean };
+type Half = number[] | null;
+type Curated = { spring: Half; autumn: Half; ee?: { spring: Half; autumn: Half }; src?: string };
 
 function loadRandeajad(): { fromWindow: Randeajad; fromModule: Randeajad } {
   const filePath = path.resolve("public/maps/shared/randeajad.js");
@@ -175,13 +176,13 @@ describe("P116 fillGaps (curated windows fill what the data cannot show)", () =>
     expect(R.fillGaps(input, { spring: [10, 12], autumn: null })).toBe(input);
   });
 
-  it("keeps few for a curated entry without ee:true (vagrants)", () => {
+  it("keeps few for a curated entry without ee (vagrants)", () => {
     const few = { kind: "few" };
     expect(R.fillGaps(few, { spring: [17, 24], autumn: null })).toBe(few);
   });
 
-  it("turns few into a migrant with only the curated halves when ee:true", () => {
-    expect(R.fillGaps({ kind: "few" }, { spring: null, autumn: [40, 41], ee: true })).toEqual({
+  it("turns few into a migrant from the ee windows only (not the top-level Euroopa ones)", () => {
+    expect(R.fillGaps({ kind: "few" }, { spring: [15, 22], autumn: [36, 42], ee: { spring: null, autumn: [40, 41] } })).toEqual({
       kind: "migrant",
       spring: null,
       autumn: { a: 40, b: 41, manual: true },
@@ -199,7 +200,7 @@ describe("P116 fillGaps (curated windows fill what the data cannot show)", () =>
   it("ignores missing or malformed curated entries", () => {
     const few = { kind: "few" };
     expect(R.fillGaps(few, null)).toBe(few);
-    expect(R.fillGaps(few, { spring: [12, 10], autumn: [40, 60], ee: true })).toBe(few);
+    expect(R.fillGaps(few, { spring: null, autumn: null, ee: { spring: [12, 10], autumn: [40, 60] } })).toBe(few);
   });
 
   it("manual windows format and count as now like data windows", () => {
@@ -228,6 +229,15 @@ describe("P116 migration-windows.json", () => {
     expect(raw.species["Koldvint"].autumn).toEqual([39, 40]);
     expect(raw.species["K\u00e4blik"].autumn).toEqual([40, 44]);
     expect(raw.species["Liiv-kivit\u00e4ks"].autumn).toEqual([40, 41]);
-    expect(raw.species["Liiv-kivit\u00e4ks"].ee).toBe(true);
+    expect(raw.species["Liiv-kivit\u00e4ks"].ee).toEqual({ spring: null, autumn: [40, 41] });
+  });
+
+  it("Linnuliigid estimates are at most 4 weeks (K\u00e4blik October is Kristian's own)", () => {
+    const allow = new Set(["K\u00e4blik"]);
+    const wide = entries.flatMap(([name, e]) => {
+      const halves: Half[] = [...(e.ee ? [e.ee.spring, e.ee.autumn] : []), ...(e.src === "elurikkus" ? [e.spring, e.autumn] : [])];
+      return halves.filter((w): w is number[] => Array.isArray(w) && w[1] - w[0] + 1 > 4 && !allow.has(name)).map((w) => `${name} ${w.join("-")}`);
+    });
+    expect(wide).toEqual([]);
   });
 });

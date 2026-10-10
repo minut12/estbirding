@@ -108,7 +108,13 @@
     39,
     45
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     21,
+     24
+    ],
+    "autumn": null
+   }
   },
   "Harksaba-kajakas": {
    "spring": null,
@@ -148,7 +154,13 @@
     40,
     47
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     15,
+     17
+    ],
+    "autumn": null
+   }
   },
   "Jahipistrik": {
    "spring": [
@@ -168,8 +180,7 @@
    "autumn": [
     35,
     42
-   ],
-   "ee": true
+   ]
   },
   "Jääkaur": {
    "spring": [
@@ -180,7 +191,16 @@
     41,
     48
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     19,
+     20
+    ],
+    "autumn": [
+     42,
+     44
+    ]
+   }
   },
   "Kaeluskotkas": {
    "spring": [
@@ -215,7 +235,13 @@
     39,
     45
    ],
-   "ee": true
+   "ee": {
+    "spring": null,
+    "autumn": [
+     39,
+     42
+    ]
+   }
   },
   "Kiripugu-rüdi": {
    "spring": [
@@ -226,7 +252,13 @@
     30,
     41
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     20,
+     23
+    ],
+    "autumn": null
+   }
   },
   "Kivipääsuke": {
    "spring": [
@@ -403,7 +435,13 @@
     40,
     41
    ],
-   "ee": true
+   "ee": {
+    "spring": null,
+    "autumn": [
+     40,
+     41
+    ]
+   }
   },
   "Loorkakk": {
    "spring": null,
@@ -492,7 +530,13 @@
     31,
     37
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     17,
+     20
+    ],
+    "autumn": null
+   }
   },
   "Mustkurk-raat": {
    "spring": null,
@@ -534,7 +578,16 @@
     40,
     46
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     19,
+     22
+    ],
+    "autumn": [
+     38,
+     41
+    ]
+   }
   },
   "Mõrsjapart": {
    "spring": null,
@@ -549,7 +602,16 @@
     39,
     45
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     17,
+     18
+    ],
+    "autumn": [
+     42,
+     43
+    ]
+   }
   },
   "Mägiraat": {
    "spring": null,
@@ -597,7 +659,16 @@
     39,
     45
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     21,
+     24
+    ],
+    "autumn": [
+     36,
+     39
+    ]
+   }
   },
   "Niidu-ritsiklind": {
    "spring": null,
@@ -615,7 +686,13 @@
     37,
     44
    ],
-   "ee": true
+   "ee": {
+    "spring": null,
+    "autumn": [
+     37,
+     40
+    ]
+   }
   },
   "Nunn-kivitäks": {
    "spring": [
@@ -689,8 +766,7 @@
    "autumn": [
     41,
     48
-   ],
-   "ee": true
+   ]
   },
   "Puna-rägapart": {
    "spring": [
@@ -799,7 +875,16 @@
     36,
     41
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     17,
+     20
+    ],
+    "autumn": [
+     36,
+     39
+    ]
+   }
   },
   "Raipekotkas": {
    "spring": [
@@ -813,8 +898,7 @@
     19,
     26
    ],
-   "autumn": null,
-   "ee": true
+   "autumn": null
   },
   "Randkajakas": {
    "spring": [
@@ -937,7 +1021,16 @@
     38,
     42
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     18,
+     20
+    ],
+    "autumn": [
+     38,
+     41
+    ]
+   }
   },
   "Stepi-hallõgija": {
    "spring": null,
@@ -999,7 +1092,13 @@
     36,
     42
    ],
-   "ee": true
+   "ee": {
+    "spring": null,
+    "autumn": [
+     31,
+     32
+    ]
+   }
   },
   "Stepivuril": {
    "spring": [
@@ -1017,7 +1116,13 @@
     36,
     45
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     16,
+     19
+    ],
+    "autumn": null
+   }
   },
   "Suur-veetallaja": {
    "spring": [
@@ -1048,7 +1153,13 @@
     36,
     45
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     16,
+     17
+    ],
+    "autumn": null
+   }
   },
   "Sõnnpea-sõtkas": {
    "spring": [
@@ -1225,7 +1336,16 @@
     37,
     42
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     22,
+     23
+    ],
+    "autumn": [
+     41,
+     44
+    ]
+   }
   },
   "Välja-väikelõoke": {
    "spring": [
@@ -1236,7 +1356,16 @@
     37,
     42
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     18,
+     21
+    ],
+    "autumn": [
+     41,
+     43
+    ]
+   }
   },
   "Värbhuik": {
    "spring": [
@@ -1297,469 +1426,536 @@
    "autumn": [
     35,
     37
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Aed-roolind": {
    "spring": null,
    "autumn": [
     34,
     36
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Hall-kärbsenäpp": {
    "spring": null,
    "autumn": [
     36,
     38
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Hüüp": {
    "spring": null,
    "autumn": [
     39,
     40
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Jõgi-ritsiklind": {
    "spring": null,
    "autumn": [
     34,
-    38
-   ]
+    37
+   ],
+   "src": "elurikkus"
   },
   "Jõgivästrik": {
    "spring": null,
    "autumn": [
     38,
-    43
-   ]
+    41
+   ],
+   "src": "elurikkus"
   },
   "Käblik": {
    "spring": null,
    "autumn": [
     40,
     44
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Kadakatäks": {
    "spring": null,
    "autumn": [
     35,
     37
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Kägu": {
    "spring": null,
    "autumn": [
     36,
     37
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Käosulane": {
    "spring": null,
    "autumn": [
     32,
-    36
-   ]
+    35
+   ],
+   "src": "elurikkus"
   },
   "Karmiinleevike": {
    "spring": null,
    "autumn": [
     34,
     36
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Kivitäks": {
    "spring": null,
    "autumn": [
     36,
     37
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Koldvint": {
    "spring": null,
    "autumn": [
     39,
     40
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Kõrkja-roolind": {
    "spring": null,
    "autumn": [
     36,
     37
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Kõrvukräts": {
    "spring": null,
    "autumn": [
     38,
     39
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Kukkurtihane": {
    "spring": null,
    "autumn": [
     36,
     39
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Kuldhänilane": {
    "spring": null,
    "autumn": [
     33,
     36
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Lääne-pöialpoiss": {
    "spring": null,
    "autumn": [
     37,
     39
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Mets-lehelind": {
    "spring": null,
    "autumn": [
     33,
     36
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Metskurvits": {
    "spring": null,
    "autumn": [
-    40,
+    42,
     45
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Metstilder": {
    "spring": null,
    "autumn": [
     33,
     36
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Must-harksaba": {
    "spring": null,
    "autumn": [
     35,
     38
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Must-kärbsenäpp": {
    "spring": null,
    "autumn": [
     35,
     36
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Must-lepalind": {
    "spring": null,
    "autumn": [
     39,
     41
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Must-toonekurg": {
    "spring": null,
    "autumn": [
     34,
-    38
-   ]
+    37
+   ],
+   "src": "elurikkus"
   },
   "Mustpea-põõsalind": {
    "spring": null,
    "autumn": [
     35,
     36
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Musträstas": {
    "spring": null,
    "autumn": [
     39,
     42
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Mustsaba-vigle": {
    "spring": null,
    "autumn": [
     34,
-    39
-   ]
+    37
+   ],
+   "src": "elurikkus"
   },
   "Mustviires": {
    "spring": null,
    "autumn": [
     34,
     37
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Naaskelnokk": {
    "spring": null,
    "autumn": [
     35,
     38
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Ööbik": {
    "spring": null,
    "autumn": [
     33,
     35
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Öösorr": {
    "spring": null,
    "autumn": [
     35,
-    39
-   ]
+    38
+   ],
+   "src": "elurikkus"
   },
   "Peoleo": {
    "spring": null,
    "autumn": [
     32,
     34
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Põldvutt": {
    "spring": null,
    "autumn": [
     33,
-    38
-   ]
+    36
+   ],
+   "src": "elurikkus"
   },
   "Pruunselg-põõsalind": {
    "spring": null,
    "autumn": [
     35,
     37
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Puna-harksaba": {
    "spring": null,
    "autumn": [
     37,
     40
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Punajalg-tilder": {
    "spring": null,
    "autumn": [
     35,
     38
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Punakael-lagle": {
    "spring": null,
    "autumn": [
     41,
-    46
-   ]
+    44
+   ],
+   "src": "elurikkus"
   },
   "Punanokk-vart": {
    "spring": null,
    "autumn": [
     43,
     44
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Punarind": {
    "spring": null,
    "autumn": [
     36,
     39
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Rästas-roolind": {
    "spring": null,
    "autumn": [
     33,
     36
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Ristpart": {
    "spring": null,
    "autumn": [
     38,
     40
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Roo-ritsiklind": {
    "spring": null,
    "autumn": [
     34,
-    38
-   ]
+    37
+   ],
+   "src": "elurikkus"
   },
   "Rooruik": {
    "spring": null,
    "autumn": [
     39,
     40
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Rukkirääk": {
    "spring": null,
    "autumn": [
     32,
-    37
-   ]
+    35
+   ],
+   "src": "elurikkus"
   },
   "Salu-lehelind": {
    "spring": null,
    "autumn": [
     36,
     38
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Sarvikpütt": {
    "spring": null,
    "autumn": [
     38,
-    43
-   ]
+    41
+   ],
+   "src": "elurikkus"
   },
   "Soo-roolind": {
    "spring": null,
    "autumn": [
     33,
     36
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Suur-konnakotkas": {
    "spring": null,
    "autumn": [
-    33,
+    34,
     37
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Tait": {
    "spring": null,
    "autumn": [
     38,
     40
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Tiigi-roolind": {
    "spring": null,
    "autumn": [
     35,
     38
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Tumetilder": {
    "spring": null,
    "autumn": [
     36,
     39
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Väänkael": {
    "spring": null,
    "autumn": [
     34,
     36
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Väike-kärbsenäpp": {
    "spring": null,
    "autumn": [
     36,
     37
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Väike-lehelind": {
    "spring": null,
    "autumn": [
     36,
     39
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Väike-põõsalind": {
    "spring": null,
    "autumn": [
     37,
     39
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Väiketüll": {
    "spring": null,
    "autumn": [
     34,
-    38
-   ]
+    37
+   ],
+   "src": "elurikkus"
   },
   "Valge-toonekurg": {
    "spring": null,
    "autumn": [
     34,
-    38
-   ]
+    37
+   ],
+   "src": "elurikkus"
   },
   "Vööt-põõsalind": {
    "spring": null,
    "autumn": [
     33,
     34
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Võsa-ritsiklind": {
    "spring": null,
    "autumn": [
     32,
-    37
-   ]
+    35
+   ],
+   "src": "elurikkus"
   },
   "Hallkibu": {
    "spring": [
     21,
     22
    ],
-   "autumn": null
+   "autumn": null,
+   "src": "elurikkus"
   },
   "Kaljukajakas": {
    "spring": [
     17,
     19
    ],
-   "autumn": null
+   "autumn": null,
+   "src": "elurikkus"
   },
   "Laisaba-änn": {
    "spring": [
     18,
     20
    ],
-   "autumn": null
+   "autumn": null,
+   "src": "elurikkus"
   },
   "Roosterind-tüll": {
    "spring": [
     20,
     22
    ],
-   "autumn": null
+   "autumn": null,
+   "src": "elurikkus"
   },
   "Siidhaigur": {
    "spring": [
     20,
     21
    ],
-   "autumn": null
+   "autumn": null,
+   "src": "elurikkus"
   },
   "Kuldnokk": {
    "spring": [
     9,
     12
    ],
-   "autumn": null
+   "autumn": null,
+   "src": "elurikkus"
   },
   "Piiritaja": {
    "spring": [
     19,
     21
    ],
-   "autumn": null
+   "autumn": null,
+   "src": "elurikkus"
   },
   "Räästapääsuke": {
    "spring": [
@@ -1769,21 +1965,24 @@
    "autumn": [
     35,
     37
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Madukotkas": {
    "spring": [
     17,
     20
    ],
-   "autumn": null
+   "autumn": null,
+   "src": "elurikkus"
   },
   "Siniraag": {
    "spring": [
     19,
     22
    ],
-   "autumn": null
+   "autumn": null,
+   "src": "elurikkus"
   },
   "Väikehüüp": {
    "spring": [
@@ -1793,7 +1992,8 @@
    "autumn": [
     33,
     36
-   ]
+   ],
+   "src": "elurikkus"
   },
   "Lääne-mustlagle": {
    "spring": null,
@@ -1801,7 +2001,17 @@
     38,
     40
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     21,
+     22
+    ],
+    "autumn": [
+     37,
+     40
+    ]
+   },
+   "src": "elurikkus"
   },
   "Tuhk-lehelind": {
    "spring": null,
@@ -1809,7 +2019,14 @@
     41,
     44
    ],
-   "ee": true
+   "ee": {
+    "spring": null,
+    "autumn": [
+     40,
+     43
+    ]
+   },
+   "src": "elurikkus"
   },
   "Lumekakk": {
    "spring": null,
@@ -1817,8 +2034,19 @@
     45,
     48
    ],
-   "ee": true
+   "ee": {
+    "spring": [
+     9,
+     12
+    ],
+    "autumn": [
+     45,
+     48
+    ]
+   },
+   "src": "elurikkus"
   }
  },
- "ee": "ee:true = regular scarce species (>= 5 years in Elurikkus): Linnuliigid may show the curated window although the histogram says 'few'. Without it a 'few' species keeps the few-data note."
+ "ee": "ee = Linnuliigid windows for regular scarce species (>= 5 years in Elurikkus) whose histogram says 'few': best 4-week block holding >= half of that half's Estonian records; mid-summer blocks (weeks 25-30) dropped. Without ee a 'few' species keeps the few-data note. Top-level spring/autumn stay the P76 Euroopa fallback.",
+ "src": "src: elurikkus = P116 windows drafted from Estonian Elurikkus data (bump / departure tail / cluster), max 4 weeks except Kablik (Kristian: October)."
 }

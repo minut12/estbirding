@@ -1,4 +1,4 @@
-// redeploy-marker: P105k 2026-10-10
+// redeploy-marker: P105l 2026-10-10
 // movebank-refresh (P105c)
 // pg_cron -> pg_net -> public.m7_call_ef('movebank-refresh', '{"mode":...}') -> here.
 //
@@ -268,8 +268,14 @@ function licenceTextOf(html: string): string {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 4000);
 }
 
+// P105l: Movebank's reply when the owner has not allowed download for this account.
+// It also carries the accept-license header, so check it before the licence test.
+function isNoDownload(text: string): boolean {
+  return /No data (are )?available/i.test(text);
+}
+
 function looksLikeLicence(acceptLicense: boolean, text: string): boolean {
-  return acceptLicense || text.includes("License Terms");
+  return !isNoDownload(text) && (acceptLicense || text.includes("License Terms"));
 }
 
 // direct-read (authenticated, CSV)
@@ -279,11 +285,11 @@ function directReadUrl(params: Record<string, string>): string {
 
 // Classifies a body that is not the expected payload.
 function classifyBadBody(r: MbResponse): { status: StudyStatus; lastError: string } {
+  if (isNoDownload(r.text)) {
+    return { status: "no_access", lastError: "no download permission (owner)" };
+  }
   if (r.acceptLicense || r.text.includes("License Terms")) {
     return { status: "licence_required", lastError: "licence terms required" };
-  }
-  if (r.text.includes("No data available")) {
-    return { status: "no_access", lastError: "No data available" };
   }
   return { status: "error", lastError: r.text.slice(0, 200) };
 }
@@ -785,6 +791,7 @@ async function runLicence(studyId: number, acceptMd5: string | null, creds: Cred
   const a = await licenceCall(url, creds, "", studyId);
   if (a instanceof Response) return a;
   const text = new TextDecoder().decode(a.bytes);
+  if (isNoDownload(text)) return json(200, { studyId, licenceRequired: false, noDownload: true, httpStatus: a.status });
   if (!looksLikeLicence(a.acceptLicense, text)) {
     return json(200, { studyId, licenceRequired: false, httpStatus: a.status });
   }

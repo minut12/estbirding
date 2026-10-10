@@ -11153,6 +11153,12 @@ function __bmSpeciesInfoOpen(btn, code){
       + '<div class="bm-sim-tab">&#9432; &Uuml;levaade</div>'
       + '<div class="bm-sim-sec"><div class="bm-sim-msg">Laadin&hellip;</div></div>'
       + '</div>';
+    // P120f: backdrop covers the map only, so the species sidebar is not greyed out.
+    try {
+      var mapEl = document.getElementById('map');
+      var mr = mapEl ? mapEl.getBoundingClientRect() : null;
+      if (mr && mr.width > 280 && mr.left > 0) m.style.left = Math.round(mr.left) + 'px';
+    } catch (e) {}
     m.addEventListener('click', function(ev){ if (ev.target === m) __bmSpeciesInfoClose(); });
     if (!window.__bmSimEscBound) {
       window.__bmSimEscBound = true;

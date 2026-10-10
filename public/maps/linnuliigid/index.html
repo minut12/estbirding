@@ -11094,7 +11094,14 @@ function __bmSpeciesInfoFetch(code){
   return c[code];
 }
 function __bmSpeciesInfoRefit(){
-  try { if (window.map && window.map._popup) window.map._popup.update(); } catch (e) {}
+  // P120c: re-layout only. popup.update() re-renders the popup from its HTML string
+  // and would wipe the info view, so call the layout/position/pan steps directly.
+  try {
+    var p = window.map && window.map._popup; if (!p) return;
+    if (p._updateLayout) p._updateLayout();
+    if (p._updatePosition) p._updatePosition();
+    if (p._adjustPan) p._adjustPan();
+  } catch (e) {}
 }
 function __bmSpeciesInfoClose(btn){
   try {

@@ -2,6 +2,7 @@
 // redeploy-marker: 2026-10-10 - P120 species-info-save (bookmarklet -> TartuNLP -> species_info)
 // redeploy-marker: 2026-10-10 - P120d taxonomy (order/family/category from eBird taxonomy API) + family name EN->ET
 // redeploy-marker: 2026-10-10 - P120g translation via free LLM chain (Gemini -> Mistral, never Claude); action=translate
+// redeploy-marker: 2026-10-10 - P120h LLM_MAX_TOKENS 8192 (Gemini thinking budget)
 //
 // Two entry points, both writing public.species_info with the service role:
 //
@@ -27,7 +28,9 @@ const INAT_API = "https://api.inaturalist.org/v1";
 const USER_AGENT = "EstBirds/1.0 (+https://estbirds.netlify.app)";
 const INAT_TIMEOUT_MS = 8_000;
 const LLM_TIMEOUT_MS = 60_000;
-const LLM_MAX_TOKENS = 1_200;
+// P120h: Gemini 3.x thinking tokens count against maxOutputTokens; 1200 ended in
+// stop_reason=max_tokens with 45 visible tokens (eupowl1, 2026-10-10).
+const LLM_MAX_TOKENS = 8_192;
 const MAX_BODY_CHARS = 20_000;
 const MIN_TEXT = 20;
 const MAX_TEXT = 4_000;

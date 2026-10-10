@@ -2117,9 +2117,16 @@
     ],
     "autumnCc": "SE"
    }
+  },
+  "Mandariinpart": {
+   "spring": null,
+   "autumn": null,
+   "oneOff": true,
+   "note": "Not a winter visitor: all 65 winter records are one bird wintering in Tartu in 2023/24 (Kristian, 2026-10-10)."
   }
  },
  "ee": "ee = Linnuliigid windows for regular scarce species (>= 5 years in Elurikkus) whose histogram says 'few': best 4-week block holding >= half of that half's Estonian records; mid-summer blocks (weeks 25-30) dropped. Without ee a 'few' species keeps the few-data note. Top-level spring/autumn stay the P76 Euroopa fallback.",
  "src": "src: elurikkus = P116 windows drafted from Estonian Elurikkus data (bump / departure tail / cluster), max 4 weeks except Kablik (Kristian: October).",
- "nb": "nb = P117 windows from neighbour-country eBird bar charts (FI, LV, SE; signed-in barchartData, real frequencies, 2026-10-10): used by Linnuliigid only where neither Estonian data nor src/ee gives a window. Season needs >= 30 reporting checklists in a country; strongest country with >= 100 reports and its own window, or >= 2 countries within 3 weeks; max 4 weeks; residents in neighbours skipped. springCc/autumnCc = countries that agree."
+ "nb": "nb = P117 windows from neighbour-country eBird bar charts (FI, LV, SE; signed-in barchartData, real frequencies, 2026-10-10): used by Linnuliigid only where neither Estonian data nor src/ee gives a window. Season needs >= 30 reporting checklists in a country; strongest country with >= 100 reports and its own window, or >= 2 countries within 3 weeks; max 4 weeks; residents in neighbours skipped. springCc/autumnCc = countries that agree.",
+ "oneOff": "oneOff = Linnuliigid shows the few-data note whatever the histogram says (single-event species, e.g. one wintering bird)."
 }

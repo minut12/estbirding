@@ -22,7 +22,7 @@ type Randeajad = {
 
 type Half = number[] | null;
 type Nb = { spring: Half; autumn: Half; springCc?: string; autumnCc?: string };
-type Curated = { spring: Half; autumn: Half; ee?: { spring: Half; autumn: Half }; src?: string; nb?: Nb };
+type Curated = { spring: Half; autumn: Half; ee?: { spring: Half; autumn: Half }; src?: string; nb?: Nb; oneOff?: boolean };
 
 function loadRandeajad(): { fromWindow: Randeajad; fromModule: Randeajad } {
   const filePath = path.resolve("public/maps/shared/randeajad.js");
@@ -242,6 +242,17 @@ describe("P117 neighbour-country eBird windows (nb)", () => {
   });
 });
 
+describe("P118 oneOff (single-event species)", () => {
+  const R = loadRandeajad().fromWindow;
+  it("turns a winter result into few", () => {
+    expect(R.fillGaps({ kind: "winter", winter: { a: 48, b: 18 } }, { spring: null, autumn: null, oneOff: true })).toEqual({ kind: "few" });
+  });
+  it("wins over curated and neighbour windows", () => {
+    const cur = { spring: [10, 12], autumn: null, oneOff: true, nb: { spring: null, autumn: [40, 41], autumnCc: "FI" } };
+    expect(R.fillGaps({ kind: "migrant", spring: null, autumn: null }, cur)).toEqual({ kind: "few" });
+  });
+});
+
 describe("P116 migration-windows.json", () => {
   const raw = JSON.parse(fs.readFileSync(path.resolve("public/maps/shared/migration-windows.json"), "utf8")) as {
     species: Record<string, Curated>;
@@ -262,6 +273,7 @@ describe("P116 migration-windows.json", () => {
     expect(raw.species["K\u00e4blik"].autumn).toEqual([40, 44]);
     expect(raw.species["Liiv-kivit\u00e4ks"].autumn).toEqual([40, 41]);
     expect(raw.species["Liiv-kivit\u00e4ks"].ee).toEqual({ spring: null, autumn: [40, 41] });
+    expect(raw.species["Mandariinpart"].oneOff).toBe(true);
   });
 
   it("Linnuliigid estimates are at most 4 weeks (K\u00e4blik October is Kristian's own)", () => {

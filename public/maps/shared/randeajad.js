@@ -4,6 +4,7 @@
    Rule v5 (2026-09-21): window = shortest run holding 70 % of the half's excess, up to 12 weeks (was 50 % / 8).
    P116 (2026-10-10): fillGaps() lets curated windows (migration-windows.json) fill halves the data cannot show.
    P117 (2026-10-10): last fallback = neighbour-country eBird windows (entry.nb), src:"ebird".
+   P118 (2026-10-10): entry.oneOff forces the few-data note (Mandariinpart: one bird, one winter).
    Pure logic, ES5. Exposes window.__bmRandeajad and module.exports when present. */
 (function () {
   var MONTHS = ["jaan", "veebr", "m\u00e4rts", "apr", "mai", "juuni", "juuli", "aug", "sept", "okt", "nov", "dets"];
@@ -307,6 +308,8 @@
 
   function fillGaps(result, curated) {
     if (!result || !curated) return result;
+    /* P118: curated single-event species (e.g. one bird wintering once) show the few-data note. */
+    if (curated.oneOff === true) return result.kind === "few" ? result : { kind: "few" };
     if (result.kind === "few") {
       var ee = curated.ee && typeof curated.ee === "object" ? curated.ee : null;
       var es = (ee && curatedWindow(ee.spring)) || neighbourWindow(curated.nb, "spring");

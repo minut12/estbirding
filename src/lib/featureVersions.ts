@@ -165,6 +165,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-09-22', ref: 'P65', kind: 'patch', text: 'Avatud kaart avaneb uuesti p\u00e4rast markerite uuendamist' },
       { date: '2026-09-24', ref: 'P80a', kind: 'minor', text: 'Vaatleja kommentaar ja meediafailide arv' },
       { date: '2026-09-25', ref: 'P80c', kind: 'patch', text: 'Kommentaarikast k\u00f5igil eBirdi kaartidel' },
+      { date: '2026-10-10', ref: 'P112', kind: 'patch', text: 'Parandatud liikide eBirdi koodid: tavalist liiki ei n\u00e4idata enam haruldasena' },
     ],
   },
   {

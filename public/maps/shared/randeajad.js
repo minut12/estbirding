@@ -3,6 +3,7 @@
    Rule v4 (2026-09-20): gates on records, passage windows on damped bird weight.
    Rule v5 (2026-09-21): window = shortest run holding 70 % of the half's excess, up to 12 weeks (was 50 % / 8).
    P116 (2026-10-10): fillGaps() lets curated windows (migration-windows.json) fill halves the data cannot show.
+   P117 (2026-10-10): last fallback = neighbour-country eBird windows (entry.nb), src:"ebird".
    Pure logic, ES5. Exposes window.__bmRandeajad and module.exports when present. */
 (function () {
   var MONTHS = ["jaan", "veebr", "m\u00e4rts", "apr", "mai", "juuni", "juuli", "aug", "sept", "okt", "nov", "dets"];
@@ -293,18 +294,28 @@
     return { a: a, b: b, manual: true };
   }
 
+  /* P117: neighbour-country eBird window (entry.nb), tagged src:"ebird" with the agreeing countries. */
+  function neighbourWindow(nb, half) {
+    if (!nb || typeof nb !== "object") return null;
+    var w = curatedWindow(nb[half]);
+    if (!w) return null;
+    var cc = String(nb[half + "Cc"] || "");
+    w.src = "ebird";
+    w.cc = /^[A-Z]{2}(\+[A-Z]{2}){0,2}$/.test(cc) ? cc : "";
+    return w;
+  }
+
   function fillGaps(result, curated) {
     if (!result || !curated) return result;
     if (result.kind === "few") {
-      var ee = curated.ee;
-      if (!ee || typeof ee !== "object") return result;
-      var es = curatedWindow(ee.spring);
-      var ea = curatedWindow(ee.autumn);
+      var ee = curated.ee && typeof curated.ee === "object" ? curated.ee : null;
+      var es = (ee && curatedWindow(ee.spring)) || neighbourWindow(curated.nb, "spring");
+      var ea = (ee && curatedWindow(ee.autumn)) || neighbourWindow(curated.nb, "autumn");
       return es || ea ? { kind: "migrant", spring: es, autumn: ea, fromFew: true } : result;
     }
     if (result.kind !== "migrant") return result;
-    var s = curatedWindow(curated.spring);
-    var au = curatedWindow(curated.autumn);
+    var s = curatedWindow(curated.spring) || neighbourWindow(curated.nb, "spring");
+    var au = curatedWindow(curated.autumn) || neighbourWindow(curated.nb, "autumn");
     if (!s && !au) return result;
     var spring = isWindow(result.spring) ? result.spring : (s || result.spring);
     var autumn = isWindow(result.autumn) ? result.autumn : (au || result.autumn);

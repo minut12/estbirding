@@ -316,7 +316,15 @@
    "autumn": [
     42,
     48
-   ]
+   ],
+   "nb": {
+    "spring": null,
+    "autumn": [
+     43,
+     46
+    ],
+    "autumnCc": "FI+SE"
+   }
   },
   "Kõrbe-põõsalind": {
    "spring": null,
@@ -1238,7 +1246,15 @@
    "autumn": [
     39,
     45
-   ]
+   ],
+   "nb": {
+    "spring": null,
+    "autumn": [
+     41,
+     44
+    ],
+    "autumnCc": "FI+SE"
+   }
   },
   "Tõmmuiibis": {
    "spring": [
@@ -1315,7 +1331,15 @@
    "autumn": [
     43,
     50
-   ]
+   ],
+   "nb": {
+    "spring": null,
+    "autumn": [
+     43,
+     46
+    ],
+    "autumnCc": "SE"
+   }
   },
   "Väiketrapp": {
    "spring": [
@@ -2045,8 +2069,57 @@
     ]
    },
    "src": "elurikkus"
+  },
+  "Lühinokk-hani": {
+   "spring": null,
+   "autumn": null,
+   "nb": {
+    "spring": null,
+    "autumn": [
+     39,
+     41
+    ],
+    "autumnCc": "FI"
+   }
+  },
+  "Pikksaba-änn": {
+   "spring": null,
+   "autumn": null,
+   "nb": {
+    "spring": [
+     23,
+     25
+    ],
+    "autumn": null,
+    "springCc": "FI+SE"
+   }
+  },
+  "Rohunepp": {
+   "spring": null,
+   "autumn": null,
+   "nb": {
+    "spring": null,
+    "autumn": [
+     37,
+     39
+    ],
+    "autumnCc": "FI"
+   }
+  },
+  "Väike-laukhani": {
+   "spring": null,
+   "autumn": null,
+   "nb": {
+    "spring": null,
+    "autumn": [
+     36,
+     39
+    ],
+    "autumnCc": "SE"
+   }
   }
  },
  "ee": "ee = Linnuliigid windows for regular scarce species (>= 5 years in Elurikkus) whose histogram says 'few': best 4-week block holding >= half of that half's Estonian records; mid-summer blocks (weeks 25-30) dropped. Without ee a 'few' species keeps the few-data note. Top-level spring/autumn stay the P76 Euroopa fallback.",
- "src": "src: elurikkus = P116 windows drafted from Estonian Elurikkus data (bump / departure tail / cluster), max 4 weeks except Kablik (Kristian: October)."
+ "src": "src: elurikkus = P116 windows drafted from Estonian Elurikkus data (bump / departure tail / cluster), max 4 weeks except Kablik (Kristian: October).",
+ "nb": "nb = P117 windows from neighbour-country eBird bar charts (FI, LV, SE; signed-in barchartData, real frequencies, 2026-10-10): used by Linnuliigid only where neither Estonian data nor src/ee gives a window. Season needs >= 30 reporting checklists in a country; strongest country with >= 100 reports and its own window, or >= 2 countries within 3 weeks; max 4 weeks; residents in neighbours skipped. springCc/autumnCc = countries that agree."
 }

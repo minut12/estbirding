@@ -241,6 +241,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-06', ref: 'P95', kind: 'patch', text: 'Andmete vahem\u00e4lu ja kordus eba\u00f5nnestunud p\u00e4ringul' },
       { date: '2026-10-10', ref: 'P116', kind: 'minor', text: 'Hinnangulised r\u00e4ndeajad liikidele, mille andmetes aeg ei eristu' },
       { date: '2026-10-10', ref: 'P116b', kind: 'patch', text: 'Hinnangulised r\u00e4ndeajad on kuni neli n\u00e4dalat pikad' },
+      { date: '2026-10-10', ref: 'P117', kind: 'minor', text: 'Hinnangulised r\u00e4ndeajad naaberriikide eBirdi andmetest' },
     ],
   },
   {

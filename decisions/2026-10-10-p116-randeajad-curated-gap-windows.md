@@ -44,3 +44,14 @@ windows from data. Needs an all-species width check before fixtures.
   122 remaining-gap species (114 mapped; 8 subspecies skipped). With a 2-country agreement check and
   peak-only detection, 0 species gave a consistent window; looser rules put vagrant stragglers in Nov/Dec.
   Nothing added. Better input: the signed-in eBird barchartData TSV (real frequencies).
+
+## P117 (same day) - neighbour-country eBird windows (nb)
+- Kristian signed in to eBird in Chrome; barchartData TSV (real frequency + checklists per period)
+  downloaded for FI, LV, SE. 130 species halves still empty; 122 mapped to eBird species (8 subspecies skipped).
+- Rule: season needs >= 30 reporting checklists in a country; residents in neighbours skipped; window max
+  4 weeks inside Mar-Jun / mid-Jul-Nov; take the strongest country (>= 100 reports) that has its own window,
+  else the average of the countries when >= 2 agree within 3 weeks. Plain averaging failed where countries
+  differ for real (Pink-footed Goose winters in SE, passes FI).
+- Result: 7 windows - Korbe-kivitaks, Luhinokk-hani, Pikksaba-ann, Rohunepp, Tommu-lehelind,
+  Vaike-laukhani, Vaikealk. Stored as entry.nb {spring, autumn, springCc, autumnCc}; Linnuliigid uses it
+  last (data > Estonian curated/ee > nb); tag "hinnang - eBird FI/SE". Euroopa ignores nb.

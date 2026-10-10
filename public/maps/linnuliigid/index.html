@@ -11731,7 +11731,9 @@ window.toggleNotification = async function(speciesName) {
   function lineHTML(R, label, cls, win, live){
     return '<div class="sb-rand-l"><b class="' + cls + '">' + label + '</b><span>' + R.fmtRange(win) + '</span>'
       + (win.pk ? '<span class="sb-rand-pk">tipp ' + R.fmtDoy(R.weekToDoy(win.pk) + 3) + '</span>' : '')
-      + (win.manual ? '<span class="sb-rand-est" title="Hinnanguline aeg: Elurikkuse andmetes see ei eristu.">hinnang</span>' : '')
+      + (win.manual ? (win.src === 'ebird'
+        ? '<span class="sb-rand-est" title="Hinnanguline aeg naaberriikide eBirdi andmete j\u00E4rgi (Soome, L\u00E4ti, Rootsi); Eesti andmetes see ei eristu.">hinnang \u00b7 eBird ' + String(win.cc || '').replace(/\+/g, '/') + '</span>'
+        : '<span class="sb-rand-est" title="Hinnanguline aeg: Elurikkuse andmetes see ei eristu.">hinnang</span>') : '')
       + (live ? '<em>k\u00E4ib</em>' : '') + '</div>';
   }
   /* One migrant half: real window -> dated line; diffuse -> "selget tippu ei ole"; null -> "andmetes ei eristu".

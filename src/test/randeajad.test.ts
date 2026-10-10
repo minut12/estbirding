@@ -21,7 +21,8 @@ type Randeajad = {
 };
 
 type Half = number[] | null;
-type Curated = { spring: Half; autumn: Half; ee?: { spring: Half; autumn: Half }; src?: string };
+type Nb = { spring: Half; autumn: Half; springCc?: string; autumnCc?: string };
+type Curated = { spring: Half; autumn: Half; ee?: { spring: Half; autumn: Half }; src?: string; nb?: Nb };
 
 function loadRandeajad(): { fromWindow: Randeajad; fromModule: Randeajad } {
   const filePath = path.resolve("public/maps/shared/randeajad.js");
@@ -210,6 +211,37 @@ describe("P116 fillGaps (curated windows fill what the data cannot show)", () =>
   });
 });
 
+describe("P117 neighbour-country eBird windows (nb)", () => {
+  const R = loadRandeajad().fromWindow;
+  const nb = { spring: null, autumn: [39, 41], autumnCc: "FI" };
+
+  it("fills a migrant gap last, tagged src ebird with the countries", () => {
+    const res = R.fillGaps({ kind: "migrant", spring: { a: 18, b: 21, pk: 20 }, autumn: null }, { spring: null, autumn: null, nb });
+    expect(res.autumn).toEqual({ a: 39, b: 41, manual: true, src: "ebird", cc: "FI" });
+  });
+
+  it("Estonian curated windows win over nb", () => {
+    const res = R.fillGaps({ kind: "migrant", spring: null, autumn: null }, { spring: null, autumn: [36, 38], nb });
+    expect(res.autumn).toEqual({ a: 36, b: 38, manual: true });
+  });
+
+  it("ee wins over nb for few; nb fills the empty ee half", () => {
+    const res = R.fillGaps({ kind: "few" }, { spring: null, autumn: null, ee: { spring: [17, 20], autumn: null }, nb });
+    expect(res.spring).toEqual({ a: 17, b: 20, manual: true });
+    expect(res.autumn).toEqual({ a: 39, b: 41, manual: true, src: "ebird", cc: "FI" });
+  });
+
+  it("turns a vagrant few into a migrant only from nb", () => {
+    const res = R.fillGaps({ kind: "few" }, { spring: [15, 22], autumn: null, nb: { spring: null, autumn: [43, 46], autumnCc: "FI+SE" } });
+    expect(res).toEqual({ kind: "migrant", spring: null, autumn: { a: 43, b: 46, manual: true, src: "ebird", cc: "FI+SE" }, fromFew: true });
+  });
+
+  it("drops a malformed country list (it is inserted into HTML)", () => {
+    const res = R.fillGaps({ kind: "few" }, { spring: null, autumn: null, nb: { spring: null, autumn: [40, 41], autumnCc: "<b>FI" } });
+    expect(res.autumn).toMatchObject({ src: "ebird", cc: "" });
+  });
+});
+
 describe("P116 migration-windows.json", () => {
   const raw = JSON.parse(fs.readFileSync(path.resolve("public/maps/shared/migration-windows.json"), "utf8")) as {
     species: Record<string, Curated>;
@@ -235,7 +267,11 @@ describe("P116 migration-windows.json", () => {
   it("Linnuliigid estimates are at most 4 weeks (K\u00e4blik October is Kristian's own)", () => {
     const allow = new Set(["K\u00e4blik"]);
     const wide = entries.flatMap(([name, e]) => {
-      const halves: Half[] = [...(e.ee ? [e.ee.spring, e.ee.autumn] : []), ...(e.src === "elurikkus" ? [e.spring, e.autumn] : [])];
+      const halves: Half[] = [
+        ...(e.ee ? [e.ee.spring, e.ee.autumn] : []),
+        ...(e.nb ? [e.nb.spring, e.nb.autumn] : []),
+        ...(e.src === "elurikkus" ? [e.spring, e.autumn] : []),
+      ];
       return halves.filter((w): w is number[] => Array.isArray(w) && w[1] - w[0] + 1 > 4 && !allow.has(name)).map((w) => `${name} ${w.join("-")}`);
     });
     expect(wide).toEqual([]);

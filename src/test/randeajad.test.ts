@@ -17,7 +17,10 @@ type Randeajad = {
   monthBuckets: (rows: Row[], result: Record<string, unknown>) => unknown;
   isNow: (win: Win, week: number) => boolean;
   isNowWinter: (win: Win, week: number) => boolean;
+  fillGaps: (result: Record<string, unknown>, curated: Curated | null) => Record<string, unknown>;
 };
+
+type Curated = { spring: number[] | null; autumn: number[] | null; ee?: boolean };
 
 function loadRandeajad(): { fromWindow: Randeajad; fromModule: Randeajad } {
   const filePath = path.resolve("public/maps/shared/randeajad.js");
@@ -145,5 +148,86 @@ describe("randeajad module", () => {
   it("handles winter windows that wrap the year end", () => {
     expect(R.isNowWinter({ a: 43, b: 15 }, 2)).toBe(true);
     expect(R.isNowWinter({ a: 43, b: 15 }, 30)).toBe(false);
+  });
+});
+
+describe("P116 fillGaps (curated windows fill what the data cannot show)", () => {
+  const R = loadRandeajad().fromWindow;
+  const dataSpring = { a: 18, b: 21, pk: 20 };
+
+  it("fills a missing autumn and keeps the data spring", () => {
+    const res = R.fillGaps({ kind: "migrant", spring: dataSpring, autumn: null }, { spring: [10, 12], autumn: [39, 40] });
+    expect(res).toEqual({ kind: "migrant", spring: dataSpring, autumn: { a: 39, b: 40, manual: true } });
+  });
+
+  it("fills a diffuse half", () => {
+    const res = R.fillGaps({ kind: "migrant", spring: dataSpring, autumn: { diffuse: true } }, { spring: null, autumn: [40, 44] });
+    expect(res.autumn).toEqual({ a: 40, b: 44, manual: true });
+  });
+
+  it("never replaces a data window", () => {
+    const input = { kind: "migrant", spring: dataSpring, autumn: { a: 36, b: 39, pk: 37 } };
+    expect(R.fillGaps(input, { spring: [10, 12], autumn: [40, 41] })).toBe(input);
+  });
+
+  it("keeps a gap when the curated half is null", () => {
+    const input = { kind: "migrant", spring: dataSpring, autumn: null };
+    expect(R.fillGaps(input, { spring: [10, 12], autumn: null })).toBe(input);
+  });
+
+  it("keeps few for a curated entry without ee:true (vagrants)", () => {
+    const few = { kind: "few" };
+    expect(R.fillGaps(few, { spring: [17, 24], autumn: null })).toBe(few);
+  });
+
+  it("turns few into a migrant with only the curated halves when ee:true", () => {
+    expect(R.fillGaps({ kind: "few" }, { spring: null, autumn: [40, 41], ee: true })).toEqual({
+      kind: "migrant",
+      spring: null,
+      autumn: { a: 40, b: 41, manual: true },
+      fromFew: true,
+    });
+  });
+
+  it("leaves resident and winter results alone", () => {
+    const resident = { kind: "resident" };
+    const winter = { kind: "winter", winter: { a: 45, b: 10 } };
+    expect(R.fillGaps(resident, { spring: [10, 12], autumn: [40, 41] })).toBe(resident);
+    expect(R.fillGaps(winter, { spring: [10, 12], autumn: [40, 41] })).toBe(winter);
+  });
+
+  it("ignores missing or malformed curated entries", () => {
+    const few = { kind: "few" };
+    expect(R.fillGaps(few, null)).toBe(few);
+    expect(R.fillGaps(few, { spring: [12, 10], autumn: [40, 60], ee: true })).toBe(few);
+  });
+
+  it("manual windows format and count as now like data windows", () => {
+    const win = { a: 40, b: 41 };
+    expect(R.fmtRange(win)).toBe("1. okt \u2013 14. okt");
+    expect(R.isNow(win, 41)).toBe(true);
+  });
+});
+
+describe("P116 migration-windows.json", () => {
+  const raw = JSON.parse(fs.readFileSync(path.resolve("public/maps/shared/migration-windows.json"), "utf8")) as {
+    species: Record<string, Curated>;
+  };
+  const entries = Object.entries(raw.species);
+
+  it("every window is [a, b] with 1 <= a <= b <= 52", () => {
+    const bad = entries.flatMap(([name, e]) =>
+      (["spring", "autumn"] as const)
+        .map((half) => ({ name, half, w: e[half] }))
+        .filter(({ w }) => w !== null && !(Array.isArray(w) && w.length === 2 && w[0] >= 1 && w[0] <= w[1] && w[1] <= 52)),
+    );
+    expect(bad).toEqual([]);
+  });
+
+  it("holds Kristian's examples", () => {
+    expect(raw.species["Koldvint"].autumn).toEqual([39, 40]);
+    expect(raw.species["K\u00e4blik"].autumn).toEqual([40, 44]);
+    expect(raw.species["Liiv-kivit\u00e4ks"].autumn).toEqual([40, 41]);
+    expect(raw.species["Liiv-kivit\u00e4ks"].ee).toBe(true);
   });
 });

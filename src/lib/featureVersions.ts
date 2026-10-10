@@ -239,6 +239,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-09-21', ref: 'P50', kind: 'minor', text: 'Reegel v5: aken h\u00f5lmab 70% \u00fclej\u00e4\u00e4gist' },
       { date: '2026-10-02', ref: 'P90', kind: 'patch', text: 'Koduvarblane paigaliste liikide hulka' },
       { date: '2026-10-06', ref: 'P95', kind: 'patch', text: 'Andmete vahem\u00e4lu ja kordus eba\u00f5nnestunud p\u00e4ringul' },
+      { date: '2026-10-10', ref: 'P116', kind: 'minor', text: 'Hinnangulised r\u00e4ndeajad liikidele, mille andmetes aeg ei eristu' },
     ],
   },
   {

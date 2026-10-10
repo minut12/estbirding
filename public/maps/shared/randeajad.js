@@ -2,6 +2,7 @@
    Rows are [week, records, birds, sqrtBirds]; legacy [week, records] rows still work.
    Rule v4 (2026-09-20): gates on records, passage windows on damped bird weight.
    Rule v5 (2026-09-21): window = shortest run holding 70 % of the half's excess, up to 12 weeks (was 50 % / 8).
+   P116 (2026-10-10): fillGaps() lets curated windows (migration-windows.json) fill halves the data cannot show.
    Pure logic, ES5. Exposes window.__bmRandeajad and module.exports when present. */
 (function () {
   var MONTHS = ["jaan", "veebr", "m\u00e4rts", "apr", "mai", "juuni", "juuli", "aug", "sept", "okt", "nov", "dets"];
@@ -279,6 +280,32 @@
     return out;
   }
 
+  /* P116: curated windows (migration-windows.json, {spring:[a,b]|null, autumn:[a,b]|null}) fill the halves
+     the data cannot show. A data window always wins; resident and winter results are left alone;
+     a "few" result becomes a migrant only when the entry has ee:true (regular scarce species, not vagrants).
+     Filled halves carry manual:true and no pk.
+     Returns a new object, or the input unchanged when there is nothing to fill. */
+  function curatedWindow(arr) {
+    if (!arr || arr.length !== 2) return null;
+    var a = Number(arr[0]);
+    var b = Number(arr[1]);
+    if (!(a >= 1 && b <= WEEKS && a <= b)) return null;
+    return { a: a, b: b, manual: true };
+  }
+
+  function fillGaps(result, curated) {
+    if (!result || !curated) return result;
+    var s = curatedWindow(curated.spring);
+    var au = curatedWindow(curated.autumn);
+    if (!s && !au) return result;
+    if (result.kind === "few") return curated.ee === true ? { kind: "migrant", spring: s, autumn: au, fromFew: true } : result;
+    if (result.kind !== "migrant") return result;
+    var spring = isWindow(result.spring) ? result.spring : (s || result.spring);
+    var autumn = isWindow(result.autumn) ? result.autumn : (au || result.autumn);
+    if (spring === result.spring && autumn === result.autumn) return result;
+    return { kind: "migrant", spring: spring, autumn: autumn };
+  }
+
   var api = {
     analyse: analyse,
     series: series,
@@ -288,7 +315,8 @@
     fmtRange: fmtRange,
     monthBuckets: monthBuckets,
     isNow: isNow,
-    isNowWinter: isNowWinter
+    isNowWinter: isNowWinter,
+    fillGaps: fillGaps
   };
   if (typeof window !== "undefined") window.__bmRandeajad = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

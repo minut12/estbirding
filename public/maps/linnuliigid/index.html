@@ -11096,7 +11096,7 @@ function __bmSpeciesInfoFetch(code){
   if (!cfg || !cfg.supabaseUrl || !cfg.anonKey) return Promise.reject(new Error('no supabase config'));
   var url = cfg.supabaseUrl + '/rest/v1/species_info?ebird_code=eq.' + encodeURIComponent(code)
     + '&select=ebird_code,com_name_en,sci_name,id_text_en,id_text_et,translator,photo_url,photo_credit,photo_license,'
-    + 'order_sci,family_sci,family_com_en,family_com_et,category';
+    + 'order_sci,order_com_et,family_sci,family_com_en,family_com_et,category';
   c[code] = fetch(url, { headers: { 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey } })
     .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(rows){ return (Array.isArray(rows) && rows[0]) ? rows[0] : null; })
@@ -11114,7 +11114,12 @@ function __bmSpeciesInfoBodyHtml(row, code){
   if (!row) return '<div class="bm-sim-msg">Selle liigi kirjeldust pole veel lisatud.</div>' + ext;
   var cat = { species: 'liik', issf: 'alamliik', hybrid: 'h&uuml;briid' }[String(row.category || '')] || '';
   var chips = '';
-  if (row.order_sci) chips += '<span class="bm-sim-chip">Selts: ' + escapeHtml(row.order_sci) + '</span>';
+  if (row.order_sci || row.order_com_et) {
+    var ord = row.order_com_et
+      ? escapeHtml(row.order_com_et) + (row.order_sci ? ' (' + escapeHtml(row.order_sci) + ')' : '')
+      : escapeHtml(row.order_sci);
+    chips += '<span class="bm-sim-chip">Selts: ' + ord + '</span>';
+  }
   if (row.family_sci || row.family_com_et) {
     var fam = row.family_com_et
       ? escapeHtml(row.family_com_et) + (row.family_sci ? ' (' + escapeHtml(row.family_sci) + ')' : '')
@@ -11127,7 +11132,8 @@ function __bmSpeciesInfoBodyHtml(row, code){
   var html = '';
   if (chips) html += '<div class="bm-sim-l">Taksonoomia</div><div class="bm-sim-chips">' + chips + '</div>';
   html += '<div class="bm-sim-l">Tunnused</div><p class="bm-sim-txt">' + escapeHtml(txt) + '</p>'
-    + '<div class="bm-sim-cred">Tekst: eBird.org' + (et ? ' &middot; masint&otilde;lge: TartuNLP' : ' (inglise keeles)') + '</div>';
+    + '<div class="bm-sim-cred">Tekst: eBird.org' + (et ? ' &middot; masint&otilde;lge: '
+      + ({ gemini: 'Gemini', mistral: 'Mistral', tartunlp: 'TartuNLP' }[String(row.translator || '')] || 'masin') : ' (inglise keeles)') + '</div>';
   if (row.photo_url && /^https:\/\/[^'"<>\s]+$/.test(row.photo_url)) {
     html += '<div class="bm-sim-l">Foto</div>'
       + (row.photo_credit ? '<div class="bm-sim-cred bm-sim-cred--tight">Foto: ' + escapeHtml(row.photo_credit)

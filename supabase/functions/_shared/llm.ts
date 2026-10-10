@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-10 - P120g freeMessages (Gemini -> Mistral only, never Claude)
 // redeploy-marker: 2026-10-09 - P108b Mistral JSON mode when the prompt demands JSON output
 // redeploy-marker: 2026-10-09 - P108 Mistral (free tier) as third provider after the Gemini chain
 // redeploy-marker: 2026-10-08 - P97f2 per-attempt llm_calls logging (source, provider, model, ok, error_class, tokens, latency, fallback)
@@ -681,6 +682,16 @@ async function callMistral(
 // P108 backup chain after a Claude failure: every Gemini model, then every
 // Mistral model. A provider without a key is skipped. The caller's timeout
 // (abort) is never carried into the next provider.
+/**
+ * P120g: free providers only - the Gemini model chain, then Mistral. Never calls
+ * Claude, whatever LLM_FORCE_PROVIDER says. Same Anthropic-shaped Response as
+ * anthropicMessages (llm_provider tells which backup answered).
+ */
+export function freeMessages(req: AnthropicMessagesRequest, signal?: AbortSignal): Promise<Response> {
+  if (!backupConfigured()) throw new Error("missing_env:GEMINI_API_KEY|MISTRAL_API_KEY");
+  return callBackups(req, false, signal);
+}
+
 async function callBackups(
   req: AnthropicMessagesRequest,
   fallback: boolean,

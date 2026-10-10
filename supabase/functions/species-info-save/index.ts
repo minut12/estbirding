@@ -1,5 +1,6 @@
 // supabase/functions/species-info-save/index.ts
 // redeploy-marker: 2026-10-10 - P120 species-info-save (bookmarklet -> TartuNLP -> species_info)
+// redeploy-marker: 2026-10-10 - P120d taxonomy (order/family/category from eBird taxonomy API) + family name EN->ET
 //
 // Kristian clicks the "-> EstBirds" bookmarklet on an ebird.org/species/<code> page
 // in his own browser. The bookmarklet POSTs the page's species code, names and
@@ -25,10 +26,16 @@ const MAX_BODY_CHARS = 20_000;
 const MIN_TEXT = 20;
 const MAX_TEXT = 4_000;
 const CODE_RE = /^[a-z0-9]{3,12}$/;
+const CATEGORIES: readonly Category[] = ["species", "issf", "slash", "spuh", "hybrid", "intergrade", "domestic", "form"];
+const MAX_TAXON = 120;
 
 type JsonRecord = Record<string, unknown>;
 type License = "cc0" | "cc-by" | "cc-by-sa";
-type Payload = { code: string; comName: string | null; sciName: string | null; text: string; url: string };
+type Category = "species" | "issf" | "slash" | "spuh" | "hybrid" | "intergrade" | "domestic" | "form";
+type Payload = {
+  code: string; comName: string | null; sciName: string | null; text: string; url: string;
+  orderSci: string | null; familySci: string | null; familyComEn: string | null; category: Category | null;
+};
 type Photo = { url: string; credit: string; license: License };
 type Translation = { text: string | null; error: string | null };
 
@@ -63,6 +70,16 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+function short(v: unknown): string | null {
+  const t = str(v);
+  return t && t.length <= MAX_TAXON ? t : null;
+}
+
+function asCategory(v: unknown): Category | null {
+  const t = str(v)?.toLowerCase() ?? "";
+  return CATEGORIES.find((c) => c === t) ?? null;
+}
+
 function parsePayload(raw: unknown): { ok: true; p: Payload } | { ok: false; error: string } {
   if (!isRecord(raw)) return { ok: false, error: "BODY_NOT_OBJECT" };
   const code = str(raw.code)?.toLowerCase() ?? "";
@@ -73,7 +90,10 @@ function parsePayload(raw: unknown): { ok: true; p: Payload } | { ok: false; err
   if (!url.startsWith(`https://ebird.org/species/${code}`)) return { ok: false, error: "BAD_SOURCE_URL" };
   return {
     ok: true,
-    p: { code, text, url: `https://ebird.org/species/${code}`, comName: str(raw.comName), sciName: str(raw.sciName) },
+    p: {
+      code, text, url: `https://ebird.org/species/${code}`, comName: short(raw.comName), sciName: short(raw.sciName),
+      orderSci: short(raw.orderSci), familySci: short(raw.familySci), familyComEn: short(raw.familyComEn), category: asCategory(raw.category),
+    },
   };
 }
 
@@ -178,9 +198,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
   const p = parsed.p;
 
-  const [tr, photo] = await Promise.all([
-    translateToEstonian(p.text),
+  // Everything above is English; translation is the last step (text + family name).
+  const [photo, tr, fam] = await Promise.all([
     p.sciName ? findInatPhoto(p.sciName) : Promise.resolve(null),
+    translateToEstonian(p.text),
+    p.familyComEn ? translateToEstonian(p.familyComEn) : Promise.resolve<Translation>({ text: null, error: null }),
   ]);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
@@ -197,6 +219,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     translator: tr.text ? "tartunlp" : null,
     translated_at: tr.text ? now : null,
     source_url: p.url,
+    order_sci: p.orderSci,
+    family_sci: p.familySci,
+    family_com_en: p.familyComEn,
+    family_com_et: fam.text,
+    category: p.category,
     updated_at: now,
   };
   if (photo) {
@@ -219,5 +246,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     translate_error: tr.error,
     photo: photo !== null,
     id_text_et: tr.text,
+    family_com_et: fam.text,
   });
 });

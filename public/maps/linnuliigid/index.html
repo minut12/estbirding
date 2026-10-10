@@ -134,28 +134,36 @@
   background-color:#29c;background-size:cover;background-position:center;box-shadow:0 2px 6px rgba(20,40,30,.18)}
 .bm-card-id{min-width:0;padding-bottom:4px}
 .bm-card-name{font:700 17px/1.25 system-ui,Arial,sans-serif;color:#222a26;overflow-wrap:anywhere}
-/* P120: species info "i" button + in-card info view (text from public.species_info) */
+/* P120: species info "i" button (card header) + P120d species info modal (lifermap layout) */
 .bm-card-nm{display:flex;align-items:center;gap:7px;min-width:0}
 .bm-info-btn{flex:0 0 auto;width:22px;height:22px;padding:0;border-radius:50%;border:1.5px solid #2d7a4b;background:#fff;color:#2d7a4b;
   font:700 13px/1 Georgia,'Times New Roman',serif;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
 .bm-info-btn:hover{background:#2d7a4b;color:#fff}
-.bm-info{position:relative;z-index:2;padding:12px 16px 14px;background:#fff}
-.bm-info-top{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-.bm-info-back{flex:0 0 auto;width:32px;height:32px;padding:0;border-radius:50%;border:0;background:#f0f4f1;color:#4a5852;font-size:16px;cursor:pointer}
-.bm-info-back:hover{background:#e2e9e4}
-.bm-info-ttl{min-width:0;display:flex;flex-direction:column}
-.bm-info-ttl b{font:700 16px/1.25 system-ui,Arial,sans-serif;color:#222a26}
-.bm-info-sci{font-size:12.5px;color:#6b7770}
-.bm-info-photo{position:relative;height:170px;border-radius:12px;background:#e8ece9 center/cover no-repeat;margin-bottom:10px}
-.bm-info-photo span{position:absolute;left:8px;bottom:8px;max-width:calc(100% - 16px);background:rgba(0,0,0,.55);color:#fff;font-size:10.5px;
-  padding:2px 7px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bm-info-h{font:700 11px/1.3 system-ui,Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:#6b7770;margin:4px 0 5px}
-.bm-info-txt{margin:0;font-size:13.5px;line-height:1.55;color:#2b3530;max-height:220px;overflow:auto}
-.bm-info-cred{font-size:11.5px;color:#6b7770;margin-top:8px}
-.bm-info-msg{font-size:13px;color:#4a5852;padding:6px 0 10px}
-.leaflet-container a.bm-info-ext,.bm-info-ext{display:flex;align-items:center;justify-content:center;height:38px;margin-top:12px;border:1px solid #dde4df;
-  border-radius:10px;font:600 13px/1 system-ui,Arial,sans-serif;color:#222a26;text-decoration:none}
-.leaflet-container a.bm-info-ext:hover{color:#2d7a4b}
+.bm-sim{position:fixed;inset:0;z-index:5000;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;
+  background:rgba(40,46,43,.45);overflow-y:auto;-webkit-overflow-scrolling:touch}
+.bm-sim-panel{position:relative;width:100%;max-width:880px;background:#fafbfa;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.28);
+  padding:22px 24px 26px;font:14px/1.5 system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#2a3530}
+.bm-sim-x{position:absolute;top:16px;right:18px;width:28px;height:28px;padding:0;border-radius:50%;border:1.5px solid #3fbf8f;background:#fff;
+  color:#2f9e74;font-size:17px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.bm-sim-x:hover{background:#3fbf8f;color:#fff}
+.bm-sim-h{margin:0 44px 14px 0;font-size:22px;font-weight:600;line-height:1.25;color:#2a3530}
+.bm-sim-h small{display:block;margin-top:3px;font-size:13px;font-weight:400;font-style:italic;color:#6b7770}
+.bm-sim-tab{display:flex;align-items:center;justify-content:center;gap:7px;height:36px;margin-bottom:22px;border:1px solid #e3e8e4;
+  border-radius:10px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);font-weight:600;font-size:13.5px}
+.bm-sim-sec{padding:0 14px}
+.bm-sim-l{margin:0 0 7px;font-size:13.5px;font-weight:600;color:#6b7770}
+.bm-sim-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px}
+.bm-sim-chip{background:#eef2ef;border-radius:999px;padding:3px 11px;font-size:12px;font-weight:500}
+.bm-sim-chip--o{background:#fff;border:1px solid #e3e8e4}
+.bm-sim-txt{margin:0 0 8px;font-size:14px;line-height:1.65;color:#3a4540}
+.bm-sim-cred{margin-bottom:18px;font-size:11.5px;color:#6b7770}
+.bm-sim-cred--tight{margin-bottom:6px}
+.bm-sim-img{display:block;width:100%;max-width:380px;height:auto;margin:4px 0 18px;border-radius:12px;background:#e8ece9}
+.bm-sim-msg{margin:4px 0 18px;font-size:14px;color:#4a5852}
+.leaflet-container a.bm-sim-ext,a.bm-sim-ext{display:flex;align-items:center;justify-content:center;gap:8px;height:40px;border:1px solid #e3e8e4;
+  border-radius:10px;background:#fff;font-weight:600;font-size:13.5px;color:#2a3530;text-decoration:none}
+a.bm-sim-ext:hover{color:#2d7a4b;border-color:#c9d6cd}
+@media (max-width:600px){.bm-sim{padding:10px 8px}.bm-sim-panel{padding:18px 14px 20px}.bm-sim-sec{padding:0 2px}.bm-sim-h{font-size:19px}}
 .bm-card-sci{margin-top:2px;font:italic 12px/1.3 system-ui,Arial,sans-serif;color:#6c7f74;overflow-wrap:anywhere}
 .bm-card-date{margin-top:2px;font-size:12px;color:#6c7f74}
 .bm-card-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:12px;
@@ -11068,10 +11076,11 @@ function buildPopupHtml(key, p, opts){
     </div>
   `;
 }
-// P120: species info "i" button + in-card info view. The button shows only when the
-// species has an eBird code; the row comes from public.species_info (anon SELECT,
-// filled by the species-info-save Edge Function). One request per code per session.
-// Function declarations only (no top-level let/const); exposed via global scope for onclick.
+// P120: species info "i" button in the card header; P120d: opens a lifermap-style modal
+// over the map. Data: public.species_info (anon SELECT) - English text and taxonomy
+// collected from eBird by the bookmarklet, Estonian added last by TartuNLP in
+// species-info-save. One request per code per session. Function declarations only
+// (no top-level let/const); reached from onclick through the global scope.
 function __bmSpeciesInfoBtnHtml(key){
   try {
     var code = (typeof SPECIES_EBIRD_CODES !== 'undefined' && SPECIES_EBIRD_CODES[key]) || '';
@@ -11086,72 +11095,83 @@ function __bmSpeciesInfoFetch(code){
   var cfg = resolveSupabaseConfig();
   if (!cfg || !cfg.supabaseUrl || !cfg.anonKey) return Promise.reject(new Error('no supabase config'));
   var url = cfg.supabaseUrl + '/rest/v1/species_info?ebird_code=eq.' + encodeURIComponent(code)
-    + '&select=ebird_code,com_name_en,sci_name,id_text_en,id_text_et,translator,photo_url,photo_credit,photo_license';
+    + '&select=ebird_code,com_name_en,sci_name,id_text_en,id_text_et,translator,photo_url,photo_credit,photo_license,'
+    + 'order_sci,family_sci,family_com_en,family_com_et,category';
   c[code] = fetch(url, { headers: { 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey } })
     .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(rows){ return (Array.isArray(rows) && rows[0]) ? rows[0] : null; })
     .catch(function(err){ delete c[code]; throw err; });
   return c[code];
 }
-function __bmSpeciesInfoRefit(){
-  // P120c: re-layout only. popup.update() re-renders the popup from its HTML string
-  // and would wipe the info view, so call the layout/position/pan steps directly.
+function __bmSpeciesInfoClose(){
   try {
-    var p = window.map && window.map._popup; if (!p) return;
-    if (p._updateLayout) p._updateLayout();
-    if (p._updatePosition) p._updatePosition();
-    if (p._adjustPan) p._adjustPan();
+    var m = document.querySelector('.bm-sim');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
   } catch (e) {}
 }
-function __bmSpeciesInfoClose(btn){
-  try {
-    var card = btn.closest('.bm-card'); if (!card) return;
-    var view = card.querySelector('.bm-info'); if (view) view.parentNode.removeChild(view);
-    var body = card.querySelector('.bm-card-body'); if (body) body.style.display = '';
-    __bmSpeciesInfoRefit();
-  } catch (e) {}
+function __bmSpeciesInfoBodyHtml(row, code){
+  var ext = '<a class="bm-sim-ext" href="https://ebird.org/species/' + code + '" target="_blank" rel="noopener">&#8599; Ava liigi t&auml;ielik kirjeldus eBirdis</a>';
+  if (!row) return '<div class="bm-sim-msg">Selle liigi kirjeldust pole veel lisatud.</div>' + ext;
+  var cat = { species: 'liik', issf: 'alamliik', hybrid: 'h&uuml;briid' }[String(row.category || '')] || '';
+  var chips = '';
+  if (row.order_sci) chips += '<span class="bm-sim-chip">Selts: ' + escapeHtml(row.order_sci) + '</span>';
+  if (row.family_sci || row.family_com_et) {
+    var fam = row.family_com_et
+      ? escapeHtml(row.family_com_et) + (row.family_sci ? ' (' + escapeHtml(row.family_sci) + ')' : '')
+      : escapeHtml(row.family_sci);
+    chips += '<span class="bm-sim-chip">Sugukond: ' + fam + '</span>';
+  }
+  if (cat) chips += '<span class="bm-sim-chip bm-sim-chip--o">' + cat + '</span>';
+  var et = row.id_text_et ? String(row.id_text_et) : '';
+  var txt = et || String(row.id_text_en || '');
+  var html = '';
+  if (chips) html += '<div class="bm-sim-l">Taksonoomia</div><div class="bm-sim-chips">' + chips + '</div>';
+  html += '<div class="bm-sim-l">Tunnused</div><p class="bm-sim-txt">' + escapeHtml(txt) + '</p>'
+    + '<div class="bm-sim-cred">Tekst: eBird.org' + (et ? ' &middot; masint&otilde;lge: TartuNLP' : ' (inglise keeles)') + '</div>';
+  if (row.photo_url && /^https:\/\/[^'"<>\s]+$/.test(row.photo_url)) {
+    html += '<div class="bm-sim-l">Foto</div>'
+      + (row.photo_credit ? '<div class="bm-sim-cred bm-sim-cred--tight">Foto: ' + escapeHtml(row.photo_credit)
+        + (row.photo_license ? ' (' + escapeHtml(String(row.photo_license).toUpperCase()) + ')' : '') + '</div>' : '')
+      + '<img class="bm-sim-img" loading="lazy" alt="" src="' + row.photo_url + '">';
+  }
+  return html + ext;
 }
 function __bmSpeciesInfoOpen(btn, code){
   try {
+    __bmSpeciesInfoClose();
     var card = btn && btn.closest ? btn.closest('.bm-card') : null;
-    if (!card || card.querySelector('.bm-info')) return;
-    var body = card.querySelector('.bm-card-body');
-    var nameEl = card.querySelector('.bm-card-name');
-    var name = nameEl ? nameEl.textContent.trim() : '';
-    var view = document.createElement('div');
-    view.className = 'bm-info';
-    var head = '<div class="bm-info-top"><button type="button" class="bm-info-back" title="Tagasi" aria-label="Tagasi" onclick="__bmSpeciesInfoClose(this)">&larr;</button>'
-      + '<div class="bm-info-ttl"><b>' + escapeHtml(name) + '</b><i class="bm-info-sci"></i></div></div>';
-    var ext = '<a class="bm-info-ext" href="https://ebird.org/species/' + code + '" target="_blank" rel="noopener">Vaata liiki eBirdis &#8599;</a>';
-    view.innerHTML = head + '<div class="bm-info-msg">Laadin&hellip;</div>';
-    if (body) body.style.display = 'none';
-    card.appendChild(view);
-    __bmSpeciesInfoRefit();
+    var nameEl = card ? card.querySelector('.bm-card-name') : null;
+    var name = nameEl ? nameEl.textContent.trim() : code;
+    var m = document.createElement('div');
+    m.className = 'bm-sim';
+    m.setAttribute('role', 'dialog');
+    m.setAttribute('aria-modal', 'true');
+    m.setAttribute('aria-label', 'Liigiinfo');
+    m.innerHTML = '<div class="bm-sim-panel">'
+      + '<button type="button" class="bm-sim-x" title="Sulge" aria-label="Sulge" onclick="__bmSpeciesInfoClose()">&times;</button>'
+      + '<h2 class="bm-sim-h">' + escapeHtml(name) + '<small class="bm-sim-sub"></small></h2>'
+      + '<div class="bm-sim-tab">&#9432; &Uuml;levaade</div>'
+      + '<div class="bm-sim-sec"><div class="bm-sim-msg">Laadin&hellip;</div></div>'
+      + '</div>';
+    m.addEventListener('click', function(ev){ if (ev.target === m) __bmSpeciesInfoClose(); });
+    if (!window.__bmSimEscBound) {
+      window.__bmSimEscBound = true;
+      document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') __bmSpeciesInfoClose(); });
+    }
+    document.body.appendChild(m);
+    var sec = m.querySelector('.bm-sim-sec');
     __bmSpeciesInfoFetch(code).then(function(row){
-      if (!view.isConnected) return;
-      if (!row) {
-        view.innerHTML = head + '<div class="bm-info-msg">Selle liigi kirjeldust pole veel lisatud.</div>' + ext;
-      } else {
-        var et = row.id_text_et ? String(row.id_text_et) : '';
-        var txt = et || String(row.id_text_en || '');
-        var photo = (row.photo_url && /^https:\/\/[^'"()\s]+$/.test(row.photo_url))
-          ? '<div class="bm-info-photo" style="background-image:url(\'' + row.photo_url + '\')">'
-            + (row.photo_credit ? '<span>' + escapeHtml(row.photo_credit) + (row.photo_license ? ' (' + escapeHtml(String(row.photo_license).toUpperCase()) + ')' : '') + '</span>' : '')
-            + '</div>'
-          : '';
-        view.innerHTML = head + photo
-          + '<div class="bm-info-h">Tunnused</div>'
-          + '<p class="bm-info-txt">' + escapeHtml(txt) + '</p>'
-          + '<div class="bm-info-cred">Tekst: eBird.org' + (et ? ' &middot; masint&otilde;lge: TartuNLP' : ' (inglise keeles)') + '</div>'
-          + ext;
-        var sci = view.querySelector('.bm-info-sci');
-        if (sci && row.sci_name) sci.textContent = String(row.sci_name);
+      if (!m.isConnected) return;
+      if (row) {
+        var sub = m.querySelector('.bm-sim-sub');
+        var parts = [row.sci_name, row.com_name_en].filter(function(x){ return !!x; });
+        if (sub && parts.length) sub.textContent = parts.join(' \u00b7 ');
       }
-      __bmSpeciesInfoRefit();
+      sec.innerHTML = __bmSpeciesInfoBodyHtml(row, code);
     }).catch(function(){
-      if (!view.isConnected) return;
-      view.innerHTML = head + '<div class="bm-info-msg">Liigiinfot ei &otilde;nnestunud laadida.</div>' + ext;
-      __bmSpeciesInfoRefit();
+      if (!m.isConnected) return;
+      sec.innerHTML = '<div class="bm-sim-msg">Liigiinfot ei &otilde;nnestunud laadida.</div>'
+        + '<a class="bm-sim-ext" href="https://ebird.org/species/' + code + '" target="_blank" rel="noopener">&#8599; Ava liigi t&auml;ielik kirjeldus eBirdis</a>';
     });
   } catch (e) {}
 }

@@ -225,3 +225,6 @@ verify_jwt = false
 
 [functions.admin-user-status]
 verify_jwt = false
+
+[functions.species-info-save]
+verify_jwt = false

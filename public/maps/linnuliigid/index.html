@@ -14439,6 +14439,7 @@ var __sharedDefaults = {};
       if(dupes > 0) console.warn('[eBird EE bulk] duplicate eBird codes in SPECIES_EBIRD_CODES:', dupes);
 
       var written = 0;
+      var _p115Seen = Object.create(null); // P115: names refreshed in this run
       var codesWithData = Object.keys(countsByCode);
       for(var k = 0; k < codesWithData.length; k++){
         var spCode2 = codesWithData[k];
@@ -14464,7 +14465,19 @@ var __sharedDefaults = {};
           lastFetched: new Date().toISOString(),
           src: 'eBird EE'
         };
+        _p115Seen[name] = 1;
         written++;
+      }
+
+      // P115: drop saved pins for species absent from this 30-day EE pull
+      // (stale entries, e.g. a code that has since been corrected).
+      if(written > 0){
+        var _p115Pruned = 0;
+        for(var _p115k in ebirdEEPoints){
+          if(!Object.prototype.hasOwnProperty.call(ebirdEEPoints, _p115k)) continue;
+          if(!_p115Seen[_p115k]){ delete ebirdEEPoints[_p115k]; _p115Pruned++; }
+        }
+        if(_p115Pruned) console.log('[eBird EE bulk] P115 pruned stale species: ' + _p115Pruned);
       }
 
       // Populate counts keyed by eBird species code (what combinedProb reads).

@@ -8045,6 +8045,7 @@ async function refreshEbirdEEBulk(){
       if(ms && ms > slot.latestTs){ slot.latestTs = ms; slot.latest = obs; }
     }
     var written = 0;
+    var _p115Seen = Object.create(null); /* P115: names refreshed in this run */
     for(var c in byCode){ if(!Object.prototype.hasOwnProperty.call(byCode, c)) continue;
       var stats = byCode[c]; var name = codeToName[c]; var latest = stats.latest;
       if(!name || !latest) continue;
@@ -8052,7 +8053,14 @@ async function refreshEbirdEEBulk(){
       if(!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
       var observer = latest.userDisplayName || (latest.firstName && latest.lastName ? ((latest.firstName||'') + ' ' + (latest.lastName||'')).trim() : null);
       ebirdEEPoints[name] = { pending:latest.obsValid===false, lat:lat, lon:lon, t:String(latest.obsDt||'').substring(0,10), loc:latest.locName||'', occ7:stats.count7, howMany:Number.isFinite(latest.howMany)?latest.howMany:null, observer:observer, subId:latest.subId||null, lastFetched:new Date().toISOString(), src:'eBird EE' };
+      _p115Seen[name] = 1;
       written++;
+    }
+    /* P115: drop saved pins for species absent from this 30-day EE pull */
+    if(written > 0){
+      for(var _p115k in ebirdEEPoints){
+        if(Object.prototype.hasOwnProperty.call(ebirdEEPoints, _p115k) && !_p115Seen[_p115k]) delete ebirdEEPoints[_p115k];
+      }
     }
     _saveEbirdEE();
     try { refreshEbirdEEMarkers(); } catch(e){}

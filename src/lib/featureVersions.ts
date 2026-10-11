@@ -104,6 +104,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-10', ref: 'P115', kind: 'patch', text: 'Aegunud eBirdi n\u00f5el kaob kaardilt j\u00e4rgmisel v\u00e4rskendusel' },
       { date: '2026-10-10', ref: 'P120', kind: 'minor', text: 'Vaatluskaardil i-nupp: liigi tunnused eBirdist eesti keeles' },
       { date: '2026-10-11', ref: 'P121', kind: 'minor', text: 'Haruldusel Eesti vaatluse number, liigiinfos linnuh\u00e4\u00e4led (xeno-canto)' },
+      { date: '2026-10-11', ref: 'P122', kind: 'patch', text: 'Liigiinfos ka liigi teine eestikeelne nimi (nt keltsalind)' },
     ],
   },
   {

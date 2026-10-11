@@ -158,6 +158,7 @@
 .bm-sim-x:hover{background:#3fbf8f;color:#fff}
 .bm-sim-h{margin:0 44px 14px 0;font-size:22px;font-weight:600;line-height:1.25;color:#2a3530}
 .bm-sim-h small{display:block;margin-top:3px;font-size:13px;font-weight:400;font-style:italic;color:#6b7770}
+.bm-sim-alt{margin-left:7px;font-size:15px;font-weight:400;color:#6b7770}.bm-sim-alt:empty{display:none} /* P122 */
 .bm-sim-tab{display:flex;align-items:center;justify-content:center;gap:7px;height:36px;margin-bottom:22px;border:1px solid #e3e8e4;
   border-radius:10px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);font-weight:600;font-size:13.5px}
 .bm-sim-sec{padding:0 14px}
@@ -11107,7 +11108,7 @@ function __bmSpeciesInfoFetch(code){
   if (!cfg || !cfg.supabaseUrl || !cfg.anonKey) return Promise.reject(new Error('no supabase config'));
   var url = cfg.supabaseUrl + '/rest/v1/species_info?ebird_code=eq.' + encodeURIComponent(code)
     + '&select=ebird_code,com_name_en,sci_name,id_text_en,id_text_et,translator,photo_url,photo_credit,photo_license,'
-    + 'order_sci,order_com_et,family_sci,family_com_en,family_com_et,category,xc_recordings';
+    + 'order_sci,order_com_et,family_sci,family_com_en,family_com_et,category,xc_recordings,alt_names_et';
   c[code] = fetch(url, { headers: { 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey } })
     .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(rows){ return (Array.isArray(rows) && rows[0]) ? rows[0] : null; })
@@ -11167,7 +11168,7 @@ function __bmSpeciesInfoOpen(btn, code){
     m.setAttribute('aria-label', 'Liigiinfo');
     m.innerHTML = '<div class="bm-sim-panel">'
       + '<button type="button" class="bm-sim-x" title="Sulge" aria-label="Sulge" onclick="__bmSpeciesInfoClose()">&times;</button>'
-      + '<h2 class="bm-sim-h">' + escapeHtml(name) + '<small class="bm-sim-sub"></small></h2>'
+      + '<h2 class="bm-sim-h">' + escapeHtml(name) + '<span class="bm-sim-alt"></span><small class="bm-sim-sub"></small></h2>'
       + '<div class="bm-sim-tab">&#9432; &Uuml;levaade</div>'
       + '<div class="bm-sim-sec"><div class="bm-sim-msg">Laadin&hellip;</div></div>'
       + '</div>';
@@ -11187,6 +11188,8 @@ function __bmSpeciesInfoOpen(btn, code){
     __bmSpeciesInfoFetch(code).then(function(row){
       if (!m.isConnected) return;
       if (row) {
+        var alt = m.querySelector('.bm-sim-alt'); // P122: EOU alternative name(s)
+        if (alt && row.alt_names_et) alt.textContent = 'ehk ' + row.alt_names_et;
         var sub = m.querySelector('.bm-sim-sub');
         var parts = [row.sci_name, row.com_name_en].filter(function(x){ return !!x; });
         if (sub && parts.length) sub.textContent = parts.join(' \u00b7 ');

@@ -7,6 +7,7 @@
 // redeploy-marker: 2026-10-11 - P121 action=xc: one song + one call per species from xeno-canto API v3 (XENO_CANTO_API_KEY)
 // redeploy-marker: 2026-10-11 - P121b xeno-canto picks prefer recordings up to 1:30 (a 14:58 call was picked)
 // redeploy-marker: 2026-10-11 - P121c xeno-canto name fallbacks: English name, then epithet + English last word (Astur/Accipiter gentilis)
+// redeploy-marker: 2026-10-11 - P121d hyphens in English names compare as spaces (eBird Western Cattle-Egret = xeno-canto Western Cattle Egret)
 //
 // Two entry points, both writing public.species_info with the service role:
 //
@@ -339,9 +340,10 @@ async function xcRow(row: XcRow, key: string): Promise<string> {
     // P121c: eBird and xeno-canto taxonomies differ after splits/renames (eBird Astur gentilis =
     // xeno-canto Accipiter gentilis "Northern Goshawk"). Fall back to the English name, then to the
     // species epithet alone, keeping only hits whose English name ends with the same word.
-    const en = (row.com_name_en ?? "").trim();
+    // P121d: eBird hyphenates group names ("Cattle-Egret"), xeno-canto (IOC) does not.
+    const en = (row.com_name_en ?? "").trim().replace(/-/g, " ");
     const lastWord = en.split(/\s+/).pop()?.toLowerCase() ?? "";
-    const sameLast = (r: JsonRecord): boolean => lastWord !== "" && (str(r.en) ?? "").toLowerCase().endsWith(lastWord);
+    const sameLast = (r: JsonRecord): boolean => lastWord !== "" && (str(r.en) ?? "").toLowerCase().replace(/-/g, " ").endsWith(lastWord);
     const pick = async (kind: XcKind): Promise<XcPick | null> =>
       (await xcBest(`gen:${gen} sp:${sp} type:${kind}`, kind, key))
       ?? (en ? await xcBest(`en:"${en}" type:${kind}`, kind, key) : null)

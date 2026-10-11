@@ -5,6 +5,7 @@
 // redeploy-marker: 2026-10-10 - P120h LLM_MAX_TOKENS 8192 (Gemini thinking budget)
 // redeploy-marker: 2026-10-11 - P120i Flash-Lite models only (3.8-flash hung 60s x5; keeps its 20 RPD for news)
 // redeploy-marker: 2026-10-11 - P121 action=xc: one song + one call per species from xeno-canto API v3 (XENO_CANTO_API_KEY)
+// redeploy-marker: 2026-10-11 - P121b xeno-canto picks prefer recordings up to 1:30 (a 14:58 call was picked)
 //
 // Two entry points, both writing public.species_info with the service role:
 //
@@ -292,12 +293,21 @@ async function translateBatch(codes: string[] | null, limit: number): Promise<vo
   console.log("species-info-save translate done", results.join(" "));
 }
 
+// P121b: length first (a 14:58 recording is useless in the small player), then quality, then country.
+function xcSeconds(v: unknown): number {
+  const m = /^(?:(\d+):)?(\d+):(\d{2})$/.exec(str(v) ?? "");
+  if (!m) return Number.POSITIVE_INFINITY;
+  return Number(m[1] ?? 0) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+}
+
 function xcRank(r: JsonRecord): number {
   const cnt = str(r.cnt) ?? "";
   const q = (str(r.q) ?? "E").slice(0, 1).toUpperCase();
   const near = XC_NEAR.indexOf(cnt);
   const qi = XC_Q_ORDER.indexOf(q);
-  return (qi < 0 ? 9 : qi) * 100 + (near < 0 ? 50 : near);
+  const sec = xcSeconds(r.length);
+  const lenBucket = sec <= 90 ? 0 : sec <= 180 ? 1 : 2;
+  return lenBucket * 1000 + (qi < 0 ? 9 : qi) * 100 + (near < 0 ? 50 : near);
 }
 
 async function xcBest(gen: string, sp: string, kind: XcKind, key: string): Promise<XcPick | null> {

@@ -6,6 +6,7 @@
 // redeploy-marker: 2026-10-11 - P120i Flash-Lite models only (3.8-flash hung 60s x5; keeps its 20 RPD for news)
 // redeploy-marker: 2026-10-11 - P121 action=xc: one song + one call per species from xeno-canto API v3 (XENO_CANTO_API_KEY)
 // redeploy-marker: 2026-10-11 - P121b xeno-canto picks prefer recordings up to 1:30 (a 14:58 call was picked)
+// redeploy-marker: 2026-10-11 - P121c xeno-canto name fallbacks: English name, then epithet + English last word (Astur/Accipiter gentilis)
 //
 // Two entry points, both writing public.species_info with the service role:
 //
@@ -64,7 +65,7 @@ type Translation = { text: string; translator: Translator } | { text: null; erro
 type InfoRow = { ebird_code: string; id_text_en: string; name_glossary: unknown };
 type XcKind = "song" | "call";
 type XcPick = { id: string; type: XcKind; rec: string; cnt: string; lic: string; q: string };
-type XcRow = { ebird_code: string; sci_name: string | null };
+type XcRow = { ebird_code: string; sci_name: string | null; com_name_en: string | null };
 
 // P121: xeno-canto API v3 (key required; v2 is gone). Prefer quality A and recordings from
 // Estonia and its neighbours; one song and one call per species, stored in xc_recordings.
@@ -310,17 +311,17 @@ function xcRank(r: JsonRecord): number {
   return lenBucket * 1000 + (qi < 0 ? 9 : qi) * 100 + (near < 0 ? 50 : near);
 }
 
-async function xcBest(gen: string, sp: string, kind: XcKind, key: string): Promise<XcPick | null> {
-  const query = `gen:${gen} sp:${sp} type:${kind}`;
+// P121c: query is a full xeno-canto v3 query; keep() filters the hits (epithet-only fallback).
+async function xcBest(query: string, kind: XcKind, key: string, keep?: (r: JsonRecord) => boolean): Promise<XcPick | null> {
   const url = `${XC_API}?query=${encodeURIComponent(query)}&per_page=100&key=${encodeURIComponent(key)}`;
   const res = await fetchWithTimeout(url, { headers: { "User-Agent": USER_AGENT } }, XC_TIMEOUT_MS);
   if (!res.ok) {
-    console.error("species-info-save xc http", res.status, gen, sp, kind);
+    console.error("species-info-save xc http", res.status, query);
     return null;
   }
   const data: unknown = await res.json();
   const list = isRecord(data) && Array.isArray(data.recordings) ? data.recordings.filter(isRecord) : [];
-  const ok = list.filter((r) => /^\d{1,9}$/.test(String(r.id ?? "")));
+  const ok = list.filter((r) => /^\d{1,9}$/.test(String(r.id ?? "")) && (!keep || keep(r)));
   if (!ok.length) return null;
   ok.sort((a, b) => xcRank(a) - xcRank(b));
   const best = ok[0];
@@ -335,8 +336,18 @@ async function xcRow(row: XcRow, key: string): Promise<string> {
   if (parts.length < 2) return `${row.ebird_code}:NO_SCI`;
   const [gen, sp] = [parts[0].toLowerCase(), parts[1].toLowerCase()];
   try {
-    const song = await xcBest(gen, sp, "song", key);
-    const call = await xcBest(gen, sp, "call", key);
+    // P121c: eBird and xeno-canto taxonomies differ after splits/renames (eBird Astur gentilis =
+    // xeno-canto Accipiter gentilis "Northern Goshawk"). Fall back to the English name, then to the
+    // species epithet alone, keeping only hits whose English name ends with the same word.
+    const en = (row.com_name_en ?? "").trim();
+    const lastWord = en.split(/\s+/).pop()?.toLowerCase() ?? "";
+    const sameLast = (r: JsonRecord): boolean => lastWord !== "" && (str(r.en) ?? "").toLowerCase().endsWith(lastWord);
+    const pick = async (kind: XcKind): Promise<XcPick | null> =>
+      (await xcBest(`gen:${gen} sp:${sp} type:${kind}`, kind, key))
+      ?? (en ? await xcBest(`en:"${en}" type:${kind}`, kind, key) : null)
+      ?? (lastWord ? await xcBest(`sp:${sp} type:${kind}`, kind, key, sameLast) : null);
+    const song = await pick("song");
+    const call = await pick("call");
     const picks = [song, call].filter((p): p is XcPick => p !== null && p.id !== "");
     const uniq = picks.filter((p, i) => picks.findIndex((x) => x.id === p.id) === i);
     const { error } = await db().from("species_info").update({ xc_recordings: uniq, updated_at: new Date().toISOString() })
@@ -349,7 +360,7 @@ async function xcRow(row: XcRow, key: string): Promise<string> {
 }
 
 async function xcBatch(codes: string[] | null, limit: number, key: string): Promise<void> {
-  let q = db().from("species_info").select("ebird_code,sci_name");
+  let q = db().from("species_info").select("ebird_code,sci_name,com_name_en");
   if (codes && codes.length) q = q.in("ebird_code", codes);
   else q = q.is("xc_recordings", null);
   const { data, error } = await q.order("updated_at", { ascending: true }).limit(limit);

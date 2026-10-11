@@ -105,6 +105,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-10', ref: 'P120', kind: 'minor', text: 'Vaatluskaardil i-nupp: liigi tunnused eBirdist eesti keeles' },
       { date: '2026-10-11', ref: 'P121', kind: 'minor', text: 'Haruldusel Eesti vaatluse number, liigiinfos linnuh\u00e4\u00e4led (xeno-canto)' },
       { date: '2026-10-11', ref: 'P122', kind: 'patch', text: 'Liigiinfos ka liigi teine eestikeelne nimi (nt keltsalind)' },
+      { date: '2026-10-11', ref: 'P123', kind: 'patch', text: 'Liiginimi parandatud: \u00e4lver\u00fcdi (oli alver\u00fcdi)' },
     ],
   },
   {
@@ -136,6 +137,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-09', ref: 'P105g', kind: 'patch', text: 'GPS-linnu kaardil uuringu viide' },
       { date: '2026-10-09', ref: 'P111', kind: 'minor', text: 'eBirdi kinnitamata vaatlused kaardil m\u00e4rkega \u201ekinnitamata\u201c' },
       { date: '2026-10-10', ref: 'P119', kind: 'patch', text: 'Kaardil on ka kinnitamata haruldused eBirdi haruldaste voost' },
+      { date: '2026-10-11', ref: 'P123', kind: 'patch', text: 'Ameerika viupardi vaatlusi ei n\u00e4idata enam ameerika piilpardina' },
     ],
   },
   {
@@ -172,6 +174,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-09-24', ref: 'P80a', kind: 'minor', text: 'Vaatleja kommentaar ja meediafailide arv' },
       { date: '2026-09-25', ref: 'P80c', kind: 'patch', text: 'Kommentaarikast k\u00f5igil eBirdi kaartidel' },
       { date: '2026-10-10', ref: 'P112', kind: 'patch', text: 'Parandatud liikide eBirdi koodid: tavalist liiki ei n\u00e4idata enam haruldasena' },
+      { date: '2026-10-11', ref: 'P123', kind: 'patch', text: 'Piilparti ei n\u00e4idata enam ameerika piilpardina' },
     ],
   },
   {

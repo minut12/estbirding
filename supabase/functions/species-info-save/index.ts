@@ -3,6 +3,7 @@
 // redeploy-marker: 2026-10-10 - P120d taxonomy (order/family/category from eBird taxonomy API) + family name EN->ET
 // redeploy-marker: 2026-10-10 - P120g translation via free LLM chain (Gemini -> Mistral, never Claude); action=translate
 // redeploy-marker: 2026-10-10 - P120h LLM_MAX_TOKENS 8192 (Gemini thinking budget)
+// redeploy-marker: 2026-10-11 - P120i Flash-Lite models only (3.8-flash hung 60s x5; keeps its 20 RPD for news)
 //
 // Two entry points, both writing public.species_info with the service role:
 //
@@ -38,6 +39,14 @@ const MAX_TAXON = 120;
 const DEFAULT_BATCH = 10;
 const MAX_BATCH = 25;
 const CODE_RE = /^[a-z0-9]{3,12}$/;
+// P120i: species texts use the Flash-Lite models (1000 RPD free); gemini-3.8-flash (20 RPD) stays
+// for the news fallback and hung for 60 s on every call on 2026-10-11. Override: SPECIES_INFO_GEMINI_MODEL.
+const DEFAULT_SPECIES_GEMINI_MODELS = "gemini-3.5-flash-lite,gemini-3.1-flash-lite";
+
+function speciesGeminiModels(): string[] {
+  const raw = (Deno.env.get("SPECIES_INFO_GEMINI_MODEL") || DEFAULT_SPECIES_GEMINI_MODELS).trim();
+  return raw.split(",").map((m) => m.trim()).filter(Boolean);
+}
 
 type JsonRecord = Record<string, unknown>;
 type License = "cc0" | "cc-by" | "cc-by-sa";
@@ -171,7 +180,7 @@ async function translateToEstonian(text: string, glossary: GlossaryEntry[]): Pro
       temperature: 0.2,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: gl + "Text to translate:\n" + text }],
-    }, ctrl.signal);
+    }, ctrl.signal, speciesGeminiModels());
     if (!res.ok) return { text: null, error: `LLM_HTTP_${res.status}` };
     const data = (await res.json()) as AnthropicShapedResponse;
     if (data.stop_reason === "max_tokens") return { text: null, error: "LLM_MAX_TOKENS" };

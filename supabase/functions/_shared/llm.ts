@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-11 - P120i freeMessages optional Gemini model list (per-caller override)
 // redeploy-marker: 2026-10-10 - P120g freeMessages (Gemini -> Mistral only, never Claude)
 // redeploy-marker: 2026-10-09 - P108b Mistral JSON mode when the prompt demands JSON output
 // redeploy-marker: 2026-10-09 - P108 Mistral (free tier) as third provider after the Gemini chain
@@ -508,11 +509,12 @@ async function callGemini(
   req: AnthropicMessagesRequest,
   fallback: boolean,
   signal?: AbortSignal,
+  models?: string[],
 ): Promise<Response> {
   const apiKey = (Deno.env.get("GEMINI_API_KEY") || "").trim();
   if (!apiKey) throw new Error("missing_env:GEMINI_API_KEY");
   let last: Response | null = null;
-  for (const model of geminiModels()) {
+  for (const model of (models && models.length ? models : geminiModels())) {
     for (let attempt = 1; attempt <= GEMINI_ATTEMPTS; attempt++) {
       if (signal?.aborted) break;
       const res = await callGeminiOnce(req, apiKey, model, fallback, signal);
@@ -687,21 +689,22 @@ async function callMistral(
  * Claude, whatever LLM_FORCE_PROVIDER says. Same Anthropic-shaped Response as
  * anthropicMessages (llm_provider tells which backup answered).
  */
-export function freeMessages(req: AnthropicMessagesRequest, signal?: AbortSignal): Promise<Response> {
+export function freeMessages(req: AnthropicMessagesRequest, signal?: AbortSignal, geminiModelList?: string[]): Promise<Response> {
   if (!backupConfigured()) throw new Error("missing_env:GEMINI_API_KEY|MISTRAL_API_KEY");
-  return callBackups(req, false, signal);
+  return callBackups(req, false, signal, geminiModelList);
 }
 
 async function callBackups(
   req: AnthropicMessagesRequest,
   fallback: boolean,
   signal?: AbortSignal,
+  geminiModelList?: string[],
 ): Promise<Response> {
   let last: Response | null = null;
   let lastError: unknown = null;
   if (geminiConfigured()) {
     try {
-      const res = await callGemini(req, fallback, signal);
+      const res = await callGemini(req, fallback, signal, geminiModelList);
       if (res.ok) return res;
       last = res;
     } catch (e) {

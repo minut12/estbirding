@@ -103,6 +103,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-09', ref: 'P111b', kind: 'patch', text: 'Liik on loendis ka siis, kui v\u00e4rske vaatlus on ainult eBirdis' },
       { date: '2026-10-10', ref: 'P115', kind: 'patch', text: 'Aegunud eBirdi n\u00f5el kaob kaardilt j\u00e4rgmisel v\u00e4rskendusel' },
       { date: '2026-10-10', ref: 'P120', kind: 'minor', text: 'Vaatluskaardil i-nupp: liigi tunnused eBirdist eesti keeles' },
+      { date: '2026-10-11', ref: 'P121', kind: 'minor', text: 'Haruldusel Eesti vaatluse number, liigiinfos linnuh\u00e4\u00e4led (xeno-canto)' },
     ],
   },
   {

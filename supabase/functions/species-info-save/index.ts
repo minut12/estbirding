@@ -4,6 +4,7 @@
 // redeploy-marker: 2026-10-10 - P120g translation via free LLM chain (Gemini -> Mistral, never Claude); action=translate
 // redeploy-marker: 2026-10-10 - P120h LLM_MAX_TOKENS 8192 (Gemini thinking budget)
 // redeploy-marker: 2026-10-11 - P120i Flash-Lite models only (3.8-flash hung 60s x5; keeps its 20 RPD for news)
+// redeploy-marker: 2026-10-11 - P121 action=xc: one song + one call per species from xeno-canto API v3 (XENO_CANTO_API_KEY)
 //
 // Two entry points, both writing public.species_info with the service role:
 //
@@ -60,6 +61,16 @@ type Payload = {
 type Photo = { url: string; credit: string; license: License };
 type Translation = { text: string; translator: Translator } | { text: null; error: string };
 type InfoRow = { ebird_code: string; id_text_en: string; name_glossary: unknown };
+type XcKind = "song" | "call";
+type XcPick = { id: string; type: XcKind; rec: string; cnt: string; lic: string; q: string };
+type XcRow = { ebird_code: string; sci_name: string | null };
+
+// P121: xeno-canto API v3 (key required; v2 is gone). Prefer quality A and recordings from
+// Estonia and its neighbours; one song and one call per species, stored in xc_recordings.
+const XC_API = "https://xeno-canto.org/api/3/recordings";
+const XC_TIMEOUT_MS = 15_000;
+const XC_NEAR: readonly string[] = ["Estonia", "Finland", "Latvia", "Sweden", "Lithuania", "Russian Federation", "Poland", "Norway"];
+const XC_Q_ORDER = "ABCDE";
 
 const CATEGORIES: readonly Category[] = ["species", "issf", "slash", "spuh", "hybrid", "intergrade", "domestic", "form"];
 
@@ -281,6 +292,83 @@ async function translateBatch(codes: string[] | null, limit: number): Promise<vo
   console.log("species-info-save translate done", results.join(" "));
 }
 
+function xcRank(r: JsonRecord): number {
+  const cnt = str(r.cnt) ?? "";
+  const q = (str(r.q) ?? "E").slice(0, 1).toUpperCase();
+  const near = XC_NEAR.indexOf(cnt);
+  const qi = XC_Q_ORDER.indexOf(q);
+  return (qi < 0 ? 9 : qi) * 100 + (near < 0 ? 50 : near);
+}
+
+async function xcBest(gen: string, sp: string, kind: XcKind, key: string): Promise<XcPick | null> {
+  const query = `gen:${gen} sp:${sp} type:${kind}`;
+  const url = `${XC_API}?query=${encodeURIComponent(query)}&per_page=100&key=${encodeURIComponent(key)}`;
+  const res = await fetchWithTimeout(url, { headers: { "User-Agent": USER_AGENT } }, XC_TIMEOUT_MS);
+  if (!res.ok) {
+    console.error("species-info-save xc http", res.status, gen, sp, kind);
+    return null;
+  }
+  const data: unknown = await res.json();
+  const list = isRecord(data) && Array.isArray(data.recordings) ? data.recordings.filter(isRecord) : [];
+  const ok = list.filter((r) => /^\d{1,9}$/.test(String(r.id ?? "")));
+  if (!ok.length) return null;
+  ok.sort((a, b) => xcRank(a) - xcRank(b));
+  const best = ok[0];
+  return {
+    id: String(best.id), type: kind, rec: str(best.rec) ?? "", cnt: str(best.cnt) ?? "",
+    lic: str(best.lic) ?? "", q: str(best.q) ?? "",
+  };
+}
+
+async function xcRow(row: XcRow, key: string): Promise<string> {
+  const parts = (row.sci_name ?? "").trim().split(/\s+/);
+  if (parts.length < 2) return `${row.ebird_code}:NO_SCI`;
+  const [gen, sp] = [parts[0].toLowerCase(), parts[1].toLowerCase()];
+  try {
+    const song = await xcBest(gen, sp, "song", key);
+    const call = await xcBest(gen, sp, "call", key);
+    const picks = [song, call].filter((p): p is XcPick => p !== null && p.id !== "");
+    const uniq = picks.filter((p, i) => picks.findIndex((x) => x.id === p.id) === i);
+    const { error } = await db().from("species_info").update({ xc_recordings: uniq, updated_at: new Date().toISOString() })
+      .eq("ebird_code", row.ebird_code);
+    if (error) return `${row.ebird_code}:DB_UPDATE_FAILED`;
+    return `${row.ebird_code}:xc${uniq.length}`;
+  } catch (e) {
+    return `${row.ebird_code}:XC_${e instanceof Error ? e.name : "ERROR"}`;
+  }
+}
+
+async function xcBatch(codes: string[] | null, limit: number, key: string): Promise<void> {
+  let q = db().from("species_info").select("ebird_code,sci_name");
+  if (codes && codes.length) q = q.in("ebird_code", codes);
+  else q = q.is("xc_recordings", null);
+  const { data, error } = await q.order("updated_at", { ascending: true }).limit(limit);
+  if (error) {
+    console.error("species-info-save xc select failed", error.message);
+    return;
+  }
+  const rows = (Array.isArray(data) ? data : []) as XcRow[];
+  const results: string[] = [];
+  for (const row of rows) results.push(await xcRow(row, key)); // sequential: be gentle with xeno-canto
+  console.log("species-info-save xc done", results.join(" "));
+}
+
+async function handleXc(raw: unknown): Promise<Response> {
+  const key = (Deno.env.get("XENO_CANTO_API_KEY") ?? "").trim();
+  if (!key) return json({ ok: false, error: "XENO_CANTO_API_KEY_MISSING" }, 500);
+  const body = isRecord(raw) ? raw : {};
+  const codes = Array.isArray(body.codes)
+    ? body.codes.map((c) => (typeof c === "string" ? c.trim().toLowerCase() : "")).filter((c) => CODE_RE.test(c)).slice(0, MAX_BATCH)
+    : null;
+  const lim = typeof body.limit === "number" && Number.isFinite(body.limit) ? Math.floor(body.limit) : DEFAULT_BATCH;
+  const limit = Math.min(Math.max(lim, 1), MAX_BATCH);
+  const job = xcBatch(codes && codes.length ? codes : null, limit, key);
+  const rt = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime;
+  if (rt) rt.waitUntil(job);
+  else await job;
+  return json({ ok: true, accepted: true, action: "xc", codes: codes ?? "pending", limit }, 202);
+}
+
 async function handleTranslate(raw: unknown): Promise<Response> {
   const body = isRecord(raw) ? raw : {};
   const codes = Array.isArray(body.codes)
@@ -352,6 +440,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   if (viaWebhook) {
+    if (isRecord(raw) && raw.action === "xc") return handleXc(raw);
     if (!isRecord(raw) || raw.action !== "translate") return json({ ok: false, error: "BAD_ACTION" }, 400);
     return handleTranslate(raw);
   }

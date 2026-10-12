@@ -671,6 +671,7 @@ html:not(.sb-classic) .sb-ib-gbif[disabled]::before{opacity:.4}
 html:not(.sb-classic) .sb-ib-enn{background:var(--sb-primary-soft)!important}
 html:not(.sb-classic) .sb-ib-enn::before{background:var(--sb-primary)}
 html:not(.sb-classic) .sb-row-detail .sb-arvuta svg{width:14px;height:14px;margin-right:5px;vertical-align:-2px}
+html:not(.sb-classic) .sb-row-detail .sb-info-i{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-right:5px;border:1.5px solid currentColor;border-radius:50%;font:700 9px/1 Georgia,serif;font-style:italic;vertical-align:-2px} /* P124 */
 html:not(.sb-classic) .sb-kevad{display:inline-flex;align-items:center;gap:8px;font-size:12.5px}
 html:not(.sb-classic) .sb-kevad-lbl{color:var(--sb-muted)}
 html:not(.sb-classic) .sb-kevad-val{padding:3px 9px;border-radius:999px;background:var(--sb-bg);border:1px solid var(--sb-line);font-weight:600;color:var(--sb-ink)}
@@ -11100,6 +11101,17 @@ function __bmSpeciesInfoBtnHtml(key){
     return '<button type="button" class="bm-info-btn" title="Liigiinfo" aria-label="Liigiinfo" onclick="__bmSpeciesInfoOpen(this,\'' + code + '\')">i</button>';
   } catch (e) { return ''; }
 }
+// P124: 'Liigiinfo' pill in the expanded sidebar row (next to 'Arvuta toenaosus'); opens the
+// same P120 modal for species without a map card. Function declaration only.
+function __bmSpeciesInfoPillHtml(key){
+  try {
+    var code = (typeof SPECIES_EBIRD_CODES !== 'undefined' && SPECIES_EBIRD_CODES[key]) || '';
+    if (!/^[a-z0-9]{3,12}$/.test(code)) return '';
+    return '<button type="button" class="btn sb-arvuta sb-info-pill" title="Liigiinfo" data-sim-code="' + code + '" data-sim-name="' + escapeHtml(String(key)) + '"'
+      + ' onclick="event.stopPropagation();__bmSpeciesInfoOpen(this,this.getAttribute(\'data-sim-code\'),this.getAttribute(\'data-sim-name\'))">'
+      + '<span class="sb-info-i" aria-hidden="true">i</span>Liigiinfo</button>';
+  } catch (e) { return ''; }
+}
 function __bmSpeciesInfoFetch(code){
   window.__bmSpeciesInfoCache = window.__bmSpeciesInfoCache || {};
   var c = window.__bmSpeciesInfoCache;
@@ -11155,12 +11167,12 @@ function __bmSpeciesInfoBodyHtml(row, code){
   }
   return html + ext;
 }
-function __bmSpeciesInfoOpen(btn, code){
+function __bmSpeciesInfoOpen(btn, code, nameArg){
   try {
     __bmSpeciesInfoClose();
     var card = btn && btn.closest ? btn.closest('.bm-card') : null;
     var nameEl = card ? card.querySelector('.bm-card-name') : null;
-    var name = nameEl ? nameEl.textContent.trim() : code;
+    var name = nameEl ? nameEl.textContent.trim() : (nameArg || code); // P124: sidebar pill passes the name
     var m = document.createElement('div');
     m.className = 'bm-sim';
     m.setAttribute('role', 'dialog');
@@ -12228,6 +12240,7 @@ function rowHTML(obj) {
     '<div class="sb-row-detail">' +
       '<div class="sb-detail-acts">' +
         '<button type="button" class="btn prob-btn sb-arvuta" data-prob-species="' + key + '" title="Arvuta tõenäosus">' + SB_ICON.prob + 'Arvuta tõenäosus</button>' +
+        __bmSpeciesInfoPillHtml(key) + // P124
         springTxtNew +
       '</div>' +
       (mig ? mig.card : '') +

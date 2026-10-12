@@ -107,6 +107,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-11', ref: 'P122', kind: 'patch', text: 'Liigiinfos ka liigi teine eestikeelne nimi (nt keltsalind)' },
       { date: '2026-10-11', ref: 'P123', kind: 'patch', text: 'Liiginimi parandatud: \u00e4lver\u00fcdi (oli alver\u00fcdi)' },
       { date: '2026-10-12', ref: 'P124', kind: 'minor', text: 'Liigiinfo nupp ka k\u00fclgriba avatud liigireal' },
+      { date: '2026-10-12', ref: 'P125', kind: 'patch', text: 'Liigiinfo nupp ka liikidele, mille eBirdi kood oli vaid vaikimisi loendis' },
     ],
   },
   {

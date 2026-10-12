@@ -26,6 +26,7 @@ import { runSpeciesPredictionRequest } from '@/lib/speciesPredictionRunner';
 import { isSpeciesPredictionEnabled, isGpsEnabled } from '@/lib/settings';
 import { ACTIVE_PREDICTION_IFRAME_READY_MESSAGE, ACTIVE_PREDICTION_SPECIES_EVENT, ACTIVE_PREDICTION_SPECIES_MESSAGE, getActivePredictionSpecies, setActivePredictionSpecies, type ActivePredictionSpecies } from '@/lib/activePredictionSpecies';
 import { normalizeSpeciesName } from '@/lib/textNormalize';
+import { DEFAULT_EBIRD_CODES } from '@/lib/defaultEbirdCodes';
 import { runBundledSpeciesBackfill } from '@/lib/speciesMetaBackfill';
 import { loadGbifPins, addGbifPin, removeGbifPin, type GbifPin } from '@/lib/gbifPins';
 import { loadPoiPins, upsertPoiPin, upsertManyPoiPins, removePoiPin, type PoiPin } from '@/lib/poiPins';
@@ -247,7 +248,18 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     notifyIframe(avatars, speciesScope);
   }, [speciesScope]);
   const sendSpeciesMetaToIframe = useCallback(() => {
-    sendToIframe({ type: 'SPECIES_META_DEFAULTS', speciesMeta: loadSpeciesMeta(speciesScope) });
+    // P125: loadSpeciesMeta() never merges DEFAULT_EBIRD_CODES, so names whose stored meta has no
+    // ebirdCode reached the iframe without one (no Liigiinfo button). Fill only missing codes;
+    // the payload shape is unchanged and nothing is written back to storage here.
+    const speciesMeta = loadSpeciesMeta(speciesScope);
+    Object.keys(DEFAULT_EBIRD_CODES).forEach((name) => {
+      const key = normalizeSpeciesName(name);
+      if (!key) return;
+      const prev = speciesMeta[key];
+      if (prev?.ebirdCode) return;
+      speciesMeta[key] = { ...(prev ?? { name: key }), ebirdCode: DEFAULT_EBIRD_CODES[name] };
+    });
+    sendToIframe({ type: 'SPECIES_META_DEFAULTS', speciesMeta });
   }, [sendToIframe, speciesScope]);
   const sendCustomSpeciesToIframe = useCallback(() => {
     sendToIframe({ type: 'CUSTOM_SPECIES_DEFAULTS', customSpecies: loadCustomSpecies() });

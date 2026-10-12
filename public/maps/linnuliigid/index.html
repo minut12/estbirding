@@ -147,6 +147,7 @@
 .bm-sim-rar b{color:#2a3530}
 .bm-sim-my{margin:0 0 18px;padding:7px 11px;border-radius:9px;background:#eaf5ef;color:#2d6a48;font-size:13.5px;line-height:1.5} /* P128 */
 .bm-sim-my:empty{display:none}
+.bm-sim-my--none{background:#f1f4f2;color:#6b7770} /* P131 */
 .bm-sim-xc{display:flex;flex-wrap:wrap;gap:10px;margin:2px 0 6px}
 .bm-sim-xc figure{margin:0;max-width:100%}
 .bm-sim-xc figcaption{font-size:11.5px;color:#6b7770;margin:0 0 3px}
@@ -11216,7 +11217,7 @@ function __bmSpeciesInfoOpen(btn, code, nameArg){
       sec.innerHTML = __bmSpeciesInfoBodyHtml(row, code);
       __bmRarityModal(sec, name); // P121
       if (row) __bmPucModal(sec, row.sci_name); // P127
-      __bmMyObsModal(sec, name); // P128
+      __bmMyObsModal(sec, name, row ? row.sci_name : ''); // P128/P131
     }).catch(function(){
       if (!m.isConnected) return;
       sec.innerHTML = '<div class="bm-sim-msg">Liigiinfot ei &otilde;nnestunud laadida.</div>'
@@ -11381,26 +11382,39 @@ function __bmPucModal(sec, sci){
     }).catch(function(){});
   } catch (e) {}
 }
-// P128: the viewer's own latest Elurikkus sighting of the species ("Sinu viimane vaatlus"), from the
-// get_observer_latest_obs RPC with the observer name saved in Seaded (localStorage, same origin).
-// Shown after Taksonoomia and Haruldus; nothing when no name is set or no sighting matches.
-function __bmMyObsModal(sec, name){
+// P128/P131: the viewer's own latest Elurikkus sighting of the species ("Sinu viimane vaatlus"), from
+// get_observer_latest_obs_v2 with the observer name saved in Seaded (localStorage, same origin). The RPC
+// loads the observer's whole Elurikkus history server-side (at most every 6 h) and answers 'ok',
+// 'none' (shown as a muted line, so every species has it) or 'loading' (retried a few times).
+function __bmMyObsModal(sec, name, sci, tries){
   try {
     var who = '';
     try { who = String(localStorage.getItem('estbirding.elurikkusObserver.v1') || '').trim().normalize('NFC'); } catch (e) {}
     if (who.length < 5) return;
     var cfg = resolveSupabaseConfig();
     if (!cfg || !cfg.supabaseUrl || !cfg.anonKey) return;
-    fetch(cfg.supabaseUrl + '/rest/v1/rpc/get_observer_latest_obs', {
+    var n0 = Number(tries) || 0;
+    fetch(cfg.supabaseUrl + '/rest/v1/rpc/get_observer_latest_obs_v2', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey },
-      body: JSON.stringify({ p_species: String(name || '').normalize('NFC'), p_observer: who })
+      body: JSON.stringify({ p_species: String(name || '').normalize('NFC'), p_sci: String(sci || ''), p_observer: who })
     })
       .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function(rows){
         var d = Array.isArray(rows) ? rows[0] : null;
         var slot = sec && sec.isConnected ? sec.querySelector('.bm-sim-my') : null;
-        if (!d || !slot || !d.observed_at) return;
+        if (!d || !slot) return;
+        if (d.state === 'loading') {
+          if (n0 < 5) setTimeout(function(){ __bmMyObsModal(sec, name, sci, n0 + 1); }, 2500);
+          return;
+        }
+        if (d.state === 'none') {
+          slot.classList.add('bm-sim-my--none');
+          slot.textContent = 'Sinu vaatlusi sellest liigist Elurikkuses pole';
+          return;
+        }
+        if (d.state !== 'ok' || !d.observed_at) return;
+        slot.classList.remove('bm-sim-my--none');
         var place = d.locality || d.county || '';
         var n = Number(d.individual_count);
         var cnt = (Number.isFinite(n) && n > 0) ? (' (' + n + (n === 1 ? ' isend' : ' isendit') + ')') : '';

@@ -113,6 +113,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-12', ref: 'P129', kind: 'patch', text: 'Elurikkuse vaatlus l\u00e4heb \u00f5ige liigi alla (nt nunn-kivit\u00e4ks ei l\u00e4he kivit\u00e4ksi alla)' },
       { date: '2026-10-12', ref: 'P128', kind: 'minor', text: 'Liigiinfos sinu viimane Elurikkuse vaatlus; "1 vaatlus" \u00f5iges vormis' },
       { date: '2026-10-12', ref: 'P130', kind: 'patch', text: 'Liigiinfo j\u00e4rjekord: taksonoomia, haruldus, sinu viimane vaatlus' },
+      { date: '2026-10-12', ref: 'P131', kind: 'minor', text: 'Sinu viimane vaatlus k\u00f5igil liikidel (kogu Elurikkuse ajalugu)' },
     ],
   },
   {

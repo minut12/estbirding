@@ -149,6 +149,8 @@
 .bm-sim-xc figure{margin:0;max-width:100%}
 .bm-sim-xc figcaption{font-size:11.5px;color:#6b7770;margin:0 0 3px}
 .bm-sim-xc iframe{display:block;width:340px;max-width:100%;height:115px;border:0;border-radius:8px;background:#fff}
+.bm-sim-pucbox{box-sizing:border-box;width:340px;max-width:100%;height:115px;padding:12px 14px;border-radius:8px;background:#fff;display:flex;flex-direction:column;justify-content:center;gap:8px;font-size:12.5px;color:#3a4540} /* P127 */
+.bm-sim-pucbox audio{display:block;width:100%;height:36px}
 .bm-sim{position:fixed;inset:0;z-index:5000;display:flex;align-items:flex-start;justify-content:center;padding:68px 16px 24px;
   background:rgba(40,46,43,.45);overflow-y:auto;-webkit-overflow-scrolling:touch}
 .bm-sim-panel{position:relative;width:100%;max-width:880px;background:#fafbfa;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.28);
@@ -11159,6 +11161,7 @@ function __bmSpeciesInfoBodyHtml(row, code){
     + '<div class="bm-sim-cred">Tekst: eBird.org' + (et ? ' &middot; masint&otilde;lge: '
       + ({ gemini: 'Gemini', mistral: 'Mistral', tartunlp: 'TartuNLP' }[String(row.translator || '')] || 'masin') : ' (inglise keeles)') + '</div>';
   html += __bmSpeciesInfoXcHtml(row.xc_recordings); // P121
+  html += '<div class="bm-sim-puc"></div>'; // P127: filled by __bmPucModal
   if (row.photo_url && /^https:\/\/[^'"<>\s]+$/.test(row.photo_url)) {
     html += '<div class="bm-sim-l">Foto</div>'
       + (row.photo_credit ? '<div class="bm-sim-cred bm-sim-cred--tight">Foto: ' + escapeHtml(row.photo_credit)
@@ -11208,6 +11211,7 @@ function __bmSpeciesInfoOpen(btn, code, nameArg){
       }
       sec.innerHTML = __bmSpeciesInfoBodyHtml(row, code);
       __bmRarityModal(sec, name); // P121
+      if (row) __bmPucModal(sec, row.sci_name); // P127
     }).catch(function(){
       if (!m.isConnected) return;
       sec.innerHTML = '<div class="bm-sim-msg">Liigiinfot ei &otilde;nnestunud laadida.</div>'
@@ -11310,6 +11314,64 @@ function __bmRarityModal(sec, name){
         + (records.length > 1 ? ' &middot; viimane ' + __bmFmtDateEE(last.first_date) + (last.locality ? ' (' + escapeHtml(last.locality) + ')' : '') : '')
         + '</div>';
       sec.insertAdjacentHTML('afterbegin', html);
+    }).catch(function(){});
+  } catch (e) {}
+}
+// P127: latest EstBirds-PUC detection of the species (BirdWeather public GraphQL, station 18105,
+// confidence >= 0.7), shown as an extra player in the sounds section. Nothing is shown when the
+// station has no such detection. Session cache per scientific name. Function declarations only.
+function __bmPucLatest(sci){
+  window.__bmPucCache = window.__bmPucCache || {};
+  var c = window.__bmPucCache;
+  var k = String(sci || '').trim();
+  if (!/^[A-Z][a-z]+ [a-z-]+( [a-z-]+)?$/.test(k)) return Promise.resolve(null);
+  if (c[k]) return c[k];
+  var gql = function(query, variables){
+    return fetch('https://app.birdweather.com/graphql', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: query, variables: variables })
+    }).then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  };
+  c[k] = gql('query($sci:String!){ species(scientificName:$sci){ id } }', { sci: k.split(' ').slice(0, 2).join(' ') })
+    .then(function(j){
+      var sid = j && j.data && j.data.species && j.data.species.id;
+      if (!sid) return null;
+      return gql('query($sid:ID!){ station(id:"18105"){ detections(first:1, speciesId:$sid, confidenceGte:0.7){'
+        + ' nodes { timestamp confidence soundscape { url startTime endTime } } } } }', { sid: String(sid) })
+        .then(function(j2){
+          var n = j2 && j2.data && j2.data.station && j2.data.station.detections && j2.data.station.detections.nodes;
+          return (Array.isArray(n) && n[0]) ? n[0] : null;
+        });
+    })
+    .catch(function(err){ delete c[k]; throw err; });
+  return c[k];
+}
+function __bmPucModal(sec, sci){
+  try {
+    __bmPucLatest(sci).then(function(d){
+      var slot = sec && sec.isConnected ? sec.querySelector('.bm-sim-puc') : null;
+      if (!d || !slot) return;
+      var url = String((d.soundscape && d.soundscape.url) || '');
+      if (!/^https:\/\/media\.birdweather\.com\/[A-Za-z0-9_\/.-]+\.(flac|mp3|wav)$/.test(url)) return;
+      var st = Number(d.soundscape.startTime), en = Number(d.soundscape.endTime);
+      var frag = (Number.isFinite(st) && Number.isFinite(en) && en > st) ? ('#t=' + st + ',' + en) : '';
+      var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(d.timestamp || ''));
+      var when = m ? (m[3] + '.' + m[2] + '.' + m[1] + ' ' + m[4] + ':' + m[5]) : '';
+      var conf = Number(d.confidence);
+      var fig = '<figure><figcaption>PUC (Tartu)' + (when ? ' &middot; ' + when : '') + '</figcaption>'
+        + '<div class="bm-sim-pucbox"><div><b>EstBirds-PUC</b>'
+        + (Number.isFinite(conf) ? ' &middot; kindlus ' + Math.round(conf * 100) + '%' : '') + '</div>'
+        + '<audio controls preload="none" src="' + url + frag + '"></audio></div></figure>';
+      var cred = '<div class="bm-sim-cred">Salvestus: BirdWeather, jaam EstBirds-PUC (automaatne tuvastus, kindlus v&auml;hemalt 70%)</div>';
+      var xc = sec.querySelector('.bm-sim-xc');
+      if (xc) {
+        xc.insertAdjacentHTML('beforeend', fig);
+        var xcCred = xc.nextElementSibling;
+        if (xcCred && xcCred.classList.contains('bm-sim-cred')) xcCred.classList.add('bm-sim-cred--tight');
+        slot.innerHTML = cred;
+      } else {
+        slot.innerHTML = '<div class="bm-sim-l">H&auml;&auml;l</div><div class="bm-sim-xc">' + fig + '</div>' + cred;
+      }
     }).catch(function(){});
   } catch (e) {}
 }

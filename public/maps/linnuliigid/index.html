@@ -11157,8 +11157,10 @@ function __bmSpeciesInfoBodyHtml(row, code){
   if (cat) chips += '<span class="bm-sim-chip bm-sim-chip--o">' + cat + '</span>';
   var et = row.id_text_et ? String(row.id_text_et) : '';
   var txt = et || String(row.id_text_en || '');
-  var html = '<div class="bm-sim-my"></div>'; // P128: filled by __bmMyObsModal
+  var html = '';
   if (chips) html += '<div class="bm-sim-l">Taksonoomia</div><div class="bm-sim-chips">' + chips + '</div>';
+  // P130: order is Taksonoomia, Haruldus (__bmRarityModal), own sighting (__bmMyObsModal), Tunnused.
+  html += '<div class="bm-sim-rarslot"></div><div class="bm-sim-my"></div>';
   html += '<div class="bm-sim-l">Tunnused</div><p class="bm-sim-txt">' + escapeHtml(txt) + '</p>'
     + '<div class="bm-sim-cred">Tekst: eBird.org' + (et ? ' &middot; masint&otilde;lge: '
       + ({ gemini: 'Gemini', mistral: 'Mistral', tartunlp: 'TartuNLP' }[String(row.translator || '')] || 'masin') : ' (inglise keeles)') + '</div>';
@@ -11316,7 +11318,8 @@ function __bmRarityModal(sec, name){
         + ' &middot; esimene ' + __bmFmtDateEE(first.first_date) + (first.locality ? ' (' + escapeHtml(first.locality) + ')' : '')
         + (records.length > 1 ? ' &middot; viimane ' + __bmFmtDateEE(last.first_date) + (last.locality ? ' (' + escapeHtml(last.locality) + ')' : '') : '')
         + '</div>';
-      sec.insertAdjacentHTML('afterbegin', html);
+      var rs = sec.querySelector('.bm-sim-rarslot'); // P130: after Taksonoomia
+      if (rs) rs.innerHTML = html; else sec.insertAdjacentHTML('afterbegin', html);
     }).catch(function(){});
   } catch (e) {}
 }
@@ -11380,7 +11383,7 @@ function __bmPucModal(sec, sci){
 }
 // P128: the viewer's own latest Elurikkus sighting of the species ("Sinu viimane vaatlus"), from the
 // get_observer_latest_obs RPC with the observer name saved in Seaded (localStorage, same origin).
-// Shown between Haruldus and Taksonoomia; nothing when no name is set or no sighting matches.
+// Shown after Taksonoomia and Haruldus; nothing when no name is set or no sighting matches.
 function __bmMyObsModal(sec, name){
   try {
     var who = '';

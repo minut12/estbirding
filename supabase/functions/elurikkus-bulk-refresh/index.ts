@@ -1,4 +1,4 @@
-// redeploy-marker: P123 2026-10-11 (Alverudi -> correct EOU name)
+// redeploy-marker: P129 2026-10-12 (re-label rows whose Elurikkus name is another species)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
@@ -150,6 +150,8 @@ interface ParsedObservation {
   behavior: string | null;
   // Observer-recorded clock time, UTC ISO, only when the source actually carries one.
   precise_dt: string | null;
+  // P129: Elurikkus common_name_est of the record (JSON payload), when present.
+  common_name_est: string | null;
 }
 
 interface ObservationParseResult {
@@ -213,6 +215,20 @@ function cleanCellText(cellHtml: string): string {
 function preciseDateTime(rec: Record<string, unknown>): string | null {
   const v = typeof rec?.event_datetime_precise === "string" ? rec.event_datetime_precise.trim() : "";
   return v.includes("T") ? v : null;
+}
+
+// P129: canonical DEFAULT_SPECIES name for an Elurikkus common_name_est, when it is a different
+// species than the one searched; null otherwise.
+let canonSpeciesByLc: Map<string, string> | null = null;
+function otherKnownSpecies(commonNameEst: string | null, searched: string): string | null {
+  const cn = String(commonNameEst ?? "").trim().normalize("NFC").toLowerCase();
+  if (!cn || cn === searched.normalize("NFC").toLowerCase()) return null;
+  if (!canonSpeciesByLc) {
+    canonSpeciesByLc = new Map<string, string>();
+    for (const n of DEFAULT_SPECIES) canonSpeciesByLc.set(n.normalize("NFC").toLowerCase(), n);
+  }
+  const other = canonSpeciesByLc.get(cn) ?? null;
+  return other && other !== searched ? other : null;
 }
 
 function parseEstonianDate(text: string | null | undefined): string | null {
@@ -286,7 +302,7 @@ function parseObservationsFromHtml(html: string, species?: string): ObservationP
   // JSON pre-pass: extract real GPS from SvelteKit-fetched JSON block
   const sveltekitRe = /<script type="application\/json" data-sveltekit-fetched data-url="https:\/\/elurikkus\.ee\/api\/occurrences\/search"[^>]*>([\s\S]*?)<\/script>/;
   const m = html.match(sveltekitRe);
-  const coordsBySubId = new Map<string, { lat: number | null; lon: number | null; municipality: string | null; county: string | null; locality: string | null; precise: string | null }>();
+  const coordsBySubId = new Map<string, { lat: number | null; lon: number | null; municipality: string | null; county: string | null; locality: string | null; precise: string | null; cn: string | null }>();
   if (m) {
     try {
       const envelope = JSON.parse(m[1]);
@@ -303,6 +319,7 @@ function parseObservationsFromHtml(html: string, species?: string): ObservationP
           county: r.county || null,
           locality: r.locality || null,
           precise: preciseDateTime(r),
+          cn: typeof r.common_name_est === "string" && r.common_name_est.trim() ? r.common_name_est.trim() : null,
         });
       }
     } catch (_e) {
@@ -404,6 +421,7 @@ function parseObservationsFromHtml(html: string, species?: string): ObservationP
       behavior,
       // Joined by sub_id to the same payload record that supplied this row.
       precise_dt: j?.precise ?? null,
+      common_name_est: j?.cn ?? null,
     });
   }
   console.log("[elu-parse]", species ?? "(unknown)", "jsonHits:", coordsBySubId.size, "rows:", observations.length);
@@ -1145,7 +1163,17 @@ Deno.serve(async (req) => {
 
       // Parse per-observation rows from the HTML
       const parseResult = parseObservationsFromHtml(html, name);
-      const observations = parseResult.observations;
+      // P129: the text search for e.g. "Kivit\u00e4ks" also returns "nunn-kivit\u00e4ks" records. A row whose
+      // Elurikkus Estonian name is ANOTHER species of DEFAULT_SPECIES belongs to that species: it is
+      // kept out of this species' card/count and saved under the other name. Rows without a name,
+      // or with a name outside the list, stay with the searched species as before.
+      const relabeled: { obs: ParsedObservation; species: string }[] = [];
+      const observations = parseResult.observations.filter((o) => {
+        const other = otherKnownSpecies(o.common_name_est, name);
+        if (!other) return true;
+        if (o.sub_id) relabeled.push({ obs: o, species: other });
+        return false;
+      });
       totalSkippedNoDate += parseResult.skippedNoDate;
       totalSkippedFuture += parseResult.skippedFuture;
       // Sort by observed_at desc (string ISO sort works)
@@ -1305,6 +1333,25 @@ Deno.serve(async (req) => {
       totalObsParsed += observations.length;
       totalWithSubId += obsRowsWithSubId.length;
       totalWithoutSubId += obsRowsWithoutSubId.length;
+
+      // P129: rows that belong to another species (sub_id only), saved under that species' name.
+      for (const r of relabeled) {
+        obsRowsWithSubId.push({
+          species_name: r.species,
+          species_lat: null,
+          observed_at: r.obs.observed_at,
+          locality: r.obs.locality,
+          county: r.obs.county,
+          lat: r.obs.lat,
+          lon: r.obs.lon,
+          observer: r.obs.observer,
+          individual_count: r.obs.individual_count,
+          behavior: r.obs.behavior,
+          sub_id: r.obs.sub_id,
+          fetched_at: nowIso,
+        });
+      }
+      if (relabeled.length) console.log("[elu-relabel]", name, relabeled.map((r) => r.species + ":" + r.obs.sub_id).join(", "));
 
       if (obsRowsWithSubId.length > 0) {
         const { data: subIdData, error: subIdErr } = await supabase

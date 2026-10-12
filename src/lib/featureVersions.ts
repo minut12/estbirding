@@ -110,6 +110,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-12', ref: 'P125', kind: 'patch', text: 'Liigiinfo nupp ka liikidele, mille eBirdi kood oli vaid vaikimisi loendis' },
       { date: '2026-10-12', ref: 'P126', kind: 'patch', text: 'Harulduse vaatlused ka enne 2023. aastat (Elurikkuse ajalugu teadusliku nime j\u00e4rgi)' },
       { date: '2026-10-12', ref: 'P127', kind: 'minor', text: 'Liigiinfos PUC-jaama viimane salvestus (BirdWeather)' },
+      { date: '2026-10-12', ref: 'P129', kind: 'patch', text: 'Elurikkuse vaatlus l\u00e4heb \u00f5ige liigi alla (nt nunn-kivit\u00e4ks ei l\u00e4he kivit\u00e4ksi alla)' },
     ],
   },
   {

@@ -145,6 +145,8 @@
 .bm-card-recno small{font-weight:500;color:#6b7770}
 .bm-sim-rar{margin-bottom:18px;font-size:13.5px;line-height:1.55;color:#3a4540}
 .bm-sim-rar b{color:#2a3530}
+.bm-sim-my{margin:0 0 18px;padding:7px 11px;border-radius:9px;background:#eaf5ef;color:#2d6a48;font-size:13.5px;line-height:1.5} /* P128 */
+.bm-sim-my:empty{display:none}
 .bm-sim-xc{display:flex;flex-wrap:wrap;gap:10px;margin:2px 0 6px}
 .bm-sim-xc figure{margin:0;max-width:100%}
 .bm-sim-xc figcaption{font-size:11.5px;color:#6b7770;margin:0 0 3px}
@@ -11155,7 +11157,7 @@ function __bmSpeciesInfoBodyHtml(row, code){
   if (cat) chips += '<span class="bm-sim-chip bm-sim-chip--o">' + cat + '</span>';
   var et = row.id_text_et ? String(row.id_text_et) : '';
   var txt = et || String(row.id_text_en || '');
-  var html = '';
+  var html = '<div class="bm-sim-my"></div>'; // P128: filled by __bmMyObsModal
   if (chips) html += '<div class="bm-sim-l">Taksonoomia</div><div class="bm-sim-chips">' + chips + '</div>';
   html += '<div class="bm-sim-l">Tunnused</div><p class="bm-sim-txt">' + escapeHtml(txt) + '</p>'
     + '<div class="bm-sim-cred">Tekst: eBird.org' + (et ? ' &middot; masint&otilde;lge: '
@@ -11212,6 +11214,7 @@ function __bmSpeciesInfoOpen(btn, code, nameArg){
       sec.innerHTML = __bmSpeciesInfoBodyHtml(row, code);
       __bmRarityModal(sec, name); // P121
       if (row) __bmPucModal(sec, row.sci_name); // P127
+      __bmMyObsModal(sec, name); // P128
     }).catch(function(){
       if (!m.isConnected) return;
       sec.innerHTML = '<div class="bm-sim-msg">Liigiinfot ei &otilde;nnestunud laadida.</div>'
@@ -11290,7 +11293,7 @@ function __bmRecnoFill(root){
         el.title = 'Elurikkuse andmetel; 5 km ja 7 p\u00e4eva piires olevad vaatlused on \u00fcks vaatlus';
         el.innerHTML = rec
           ? ('Eesti ' + rec.record_no + '. vaatlus <small>(Elurikkus)</small>')
-          : ('Eestis ' + records.length + ' vaatlust <small>(Elurikkus)</small>');
+          : ('Eestis ' + records.length + (records.length === 1 ? ' vaatlus' : ' vaatlust') + ' <small>(Elurikkus)</small>');
       }).catch(function(){ el.removeAttribute('data-done'); });
     });
   } catch (e) {}
@@ -11309,7 +11312,7 @@ function __bmRarityModal(sec, name){
     __bmRarityRecords(name).then(function(records){
       if (!records.length || !sec.isConnected) return;
       var first = records[0], last = records[records.length - 1];
-      var html = '<div class="bm-sim-l">Haruldus</div><div class="bm-sim-rar"><b>Eestis ' + records.length + ' vaatlust</b> Elurikkuse andmetel'
+      var html = '<div class="bm-sim-l">Haruldus</div><div class="bm-sim-rar"><b>Eestis ' + records.length + (records.length === 1 ? ' vaatlus' : ' vaatlust') + '</b> Elurikkuse andmetel'
         + ' &middot; esimene ' + __bmFmtDateEE(first.first_date) + (first.locality ? ' (' + escapeHtml(first.locality) + ')' : '')
         + (records.length > 1 ? ' &middot; viimane ' + __bmFmtDateEE(last.first_date) + (last.locality ? ' (' + escapeHtml(last.locality) + ')' : '') : '')
         + '</div>';
@@ -11373,6 +11376,35 @@ function __bmPucModal(sec, sci){
         slot.innerHTML = '<div class="bm-sim-l">H&auml;&auml;l</div><div class="bm-sim-xc">' + fig + '</div>' + cred;
       }
     }).catch(function(){});
+  } catch (e) {}
+}
+// P128: the viewer's own latest Elurikkus sighting of the species ("Sinu viimane vaatlus"), from the
+// get_observer_latest_obs RPC with the observer name saved in Seaded (localStorage, same origin).
+// Shown between Haruldus and Taksonoomia; nothing when no name is set or no sighting matches.
+function __bmMyObsModal(sec, name){
+  try {
+    var who = '';
+    try { who = String(localStorage.getItem('estbirding.elurikkusObserver.v1') || '').trim().normalize('NFC'); } catch (e) {}
+    if (who.length < 5) return;
+    var cfg = resolveSupabaseConfig();
+    if (!cfg || !cfg.supabaseUrl || !cfg.anonKey) return;
+    fetch(cfg.supabaseUrl + '/rest/v1/rpc/get_observer_latest_obs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey },
+      body: JSON.stringify({ p_species: String(name || '').normalize('NFC'), p_observer: who })
+    })
+      .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(rows){
+        var d = Array.isArray(rows) ? rows[0] : null;
+        var slot = sec && sec.isConnected ? sec.querySelector('.bm-sim-my') : null;
+        if (!d || !slot || !d.observed_at) return;
+        var place = d.locality || d.county || '';
+        var n = Number(d.individual_count);
+        var cnt = (Number.isFinite(n) && n > 0) ? (' (' + n + (n === 1 ? ' isend' : ' isendit') + ')') : '';
+        slot.innerHTML = 'Sinu viimane vaatlus: <b>' + __bmFmtDateEE(d.observed_at) + '</b>'
+          + (place ? ', ' + escapeHtml(String(place)) : '') + cnt;
+      })
+      .catch(function(){});
   } catch (e) {}
 }
 function __bmSpeciesInfoXcHtml(list){

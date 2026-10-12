@@ -111,6 +111,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-12', ref: 'P126', kind: 'patch', text: 'Harulduse vaatlused ka enne 2023. aastat (Elurikkuse ajalugu teadusliku nime j\u00e4rgi)' },
       { date: '2026-10-12', ref: 'P127', kind: 'minor', text: 'Liigiinfos PUC-jaama viimane salvestus (BirdWeather)' },
       { date: '2026-10-12', ref: 'P129', kind: 'patch', text: 'Elurikkuse vaatlus l\u00e4heb \u00f5ige liigi alla (nt nunn-kivit\u00e4ks ei l\u00e4he kivit\u00e4ksi alla)' },
+      { date: '2026-10-12', ref: 'P128', kind: 'minor', text: 'Liigiinfos sinu viimane Elurikkuse vaatlus; "1 vaatlus" \u00f5iges vormis' },
     ],
   },
   {
@@ -451,6 +452,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-06', ref: 'P93f', kind: 'patch', text: 'Kasutamata t\u00f5lke- ja ennustuse seaded eemaldatud' },
       { date: '2026-10-07', ref: 'P93g', kind: 'minor', text: 'Arvutis kahe paaniga vaade' },
       { date: '2026-10-07', ref: 'P97a', kind: 'patch', text: 'Tagasi liikumine viib Seadetesse' },
+      { date: '2026-10-12', ref: 'P128', kind: 'minor', text: 'Elurikkuse vaatleja nimi (liigiinfo jaoks)' },
     ],
   },
   {

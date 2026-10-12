@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { loadSettings, saveSettings, type AppSettings } from '@/lib/settings';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -12,7 +13,7 @@ import { clearAppCaches, fullReset, doSoftReload, doHardReload, type ResetReport
 import { APP_VERSION } from '@/lib/version';
 import {
   Trash2, RotateCcw, LogOut, Users, MapPin, Bird, Rss, Activity, LifeBuoy, ChevronRight, Wrench,
-  Settings, History,
+  Settings, History, User,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -29,6 +30,7 @@ import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import { getSupabaseConfigSource, isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 import { broadcastGpsConfigToMapIframes } from '@/config/gpsConfig';
+import { loadElurikkusObserver, saveElurikkusObserver } from '@/lib/elurikkusObserver';
 
 type ResetMode = 'soft' | 'hard' | null;
 type SettingsPage = 'home' | 'news' | 'species' | 'event_log' | 'versions';
@@ -155,6 +157,7 @@ export default function SettingsTab() {
   const [devTapCount, setDevTapCount] = useState(0);
   const [speciesScope, setSpeciesScope] = useState<'ee' | 'rariliin'>('ee');
   const [form, setForm] = useState<AppSettings>(loadSettings);
+  const [observerName, setObserverName] = useState<string>(loadElurikkusObserver); // P128
   const [confirmMode, setConfirmMode] = useState<ResetMode>(null);
   const [resetting, setResetting] = useState(false);
   const canManageSettings = isAdminUser || hasPermission(PERMISSIONS.settingsManage);
@@ -401,6 +404,24 @@ export default function SettingsTab() {
                 onCheckedChange={handleGpsToggle}
                 aria-label="N&auml;ita minu asukohta"
               />
+            </div>
+            {/* P128: own Elurikkus name for the species info "Sinu viimane vaatlus" line */}
+            <div className="px-3.5 py-2.5 flex items-start gap-3 w-full">
+              <IconTile icon={User} variant="accent" />
+              <div className="flex-1 min-w-0 flex flex-col gap-2">
+                <RowText
+                  title={<>Elurikkuse vaatleja nimi</>}
+                  sub={<>Liigiinfo n&auml;itab siis sinu viimast vaatlust. Hoitakse ainult selles seadmes.</>}
+                />
+                <Input
+                  value={observerName}
+                  onChange={(e) => { setObserverName(e.target.value); saveElurikkusObserver(e.target.value); }}
+                  placeholder="Eesnimi Perenimi"
+                  aria-label="Elurikkuse vaatleja nimi"
+                  autoComplete="name"
+                  maxLength={80}
+                />
+              </div>
             </div>
           </div>
         </SettingsSection>

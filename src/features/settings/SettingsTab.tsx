@@ -415,7 +415,9 @@ export default function SettingsTab() {
                 />
                 <Input
                   value={observerName}
-                  onChange={(e) => { setObserverName(e.target.value); saveElurikkusObserver(e.target.value); }}
+                  onChange={(e) => setObserverName(e.target.value)}
+                  onBlur={(e) => saveElurikkusObserver(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveElurikkusObserver(e.currentTarget.value); }}
                   placeholder="Eesnimi Perenimi"
                   aria-label="Elurikkuse vaatleja nimi"
                   autoComplete="name"

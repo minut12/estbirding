@@ -114,6 +114,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-12', ref: 'P128', kind: 'minor', text: 'Liigiinfos sinu viimane Elurikkuse vaatlus; "1 vaatlus" \u00f5iges vormis' },
       { date: '2026-10-12', ref: 'P130', kind: 'patch', text: 'Liigiinfo j\u00e4rjekord: taksonoomia, haruldus, sinu viimane vaatlus' },
       { date: '2026-10-12', ref: 'P131', kind: 'minor', text: 'Sinu viimane vaatlus k\u00f5igil liikidel (kogu Elurikkuse ajalugu)' },
+      { date: '2026-10-12', ref: 'P131b', kind: 'patch', text: 'Sinu viimane vaatlus: ainult t\u00e4pne vaatleja nimi ja liigi eestikeelne nimi' },
     ],
   },
   {

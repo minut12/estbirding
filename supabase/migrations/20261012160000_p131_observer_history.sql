@@ -4,6 +4,8 @@
 -- Edge IPs and browser CORS) into elurikkus_observer_obs, at most once per 6 h per name and at most
 -- 30 new names per hour. get_observer_latest_obs_v2 ingests finished pages lazily and answers with
 -- state 'ok' (row), 'none' (history loaded, no record of this species) or 'loading'.
+-- P131b: exact observer names only; Estonian name decides the species (scientific name only as a
+-- fallback for records without one).
 
 create table if not exists public.elurikkus_observer_obs (
   observer text not null,               -- lower(btrim(name))
@@ -101,6 +103,9 @@ begin
                now()
         from jsonb_array_elements(coalesce(v_json->'results', '[]'::jsonb)) x
         where x->>'id' ~ '^\d+$'
+          -- P131b: the Elurikkus phrase query also matches partial names; keep exact observers only
+          and exists (select 1 from jsonb_array_elements_text(case when jsonb_typeof(x->'recorded_by') = 'array'
+                         then x->'recorded_by' else '[]'::jsonb end) rb where lower(btrim(rb)) = v_key)
         on conflict (observer, sub_id) do update set taxon_name = excluded.taxon_name, common_name_est = excluded.common_name_est,
           observed_at = excluded.observed_at, locality = excluded.locality, county = excluded.county,
           individual_count = excluded.individual_count, fetched_at = excluded.fetched_at;
@@ -128,13 +133,16 @@ begin
       select o.observed_at, o.locality, o.county, o.individual_count
       from public.elurikkus_observer_obs o
       where o.observer = v_key and o.observed_at is not null
-        and ((p_sci is not null and p_sci <> '' and (o.taxon_name = p_sci or o.taxon_name like p_sci || ' %'))
-             or lower(o.common_name_est) = lower(p_species))
+        -- P131b: Estonian name decides; the scientific name only for records without one
+        -- (Elurikkus 'vares' = Corvus corone s.l. must not count as Mustvares)
+        and (lower(o.common_name_est) = lower(p_species)
+             or (o.common_name_est is null and p_sci is not null and p_sci <> ''
+                 and (o.taxon_name = p_sci or o.taxon_name like p_sci || ' %')))
       union all
       select e.observed_at, e.locality, e.county, e.individual_count
       from public.elurikkus_observations e
       where e.species_name = p_species
-        and e.observer ilike '%' || replace(replace(replace(v_name, '\', '\\'), '%', '\%'), '_', '\_') || '%'
+        and e.observer ~* ('(^|,\s*)' || regexp_replace(v_name, '([.])', '\\\1', 'g') || '\s*(,|$)')
     ) u
     order by u.observed_at desc nulls last
     limit 1

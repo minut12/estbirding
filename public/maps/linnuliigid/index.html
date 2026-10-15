@@ -11361,7 +11361,8 @@ function __bmPucModal(sec, sci){
       var url = String((d.soundscape && d.soundscape.url) || '');
       if (!/^https:\/\/media\.birdweather\.com\/[A-Za-z0-9_\/.-]+\.(flac|mp3|wav)$/.test(url)) return;
       var st = Number(d.soundscape.startTime), en = Number(d.soundscape.endTime);
-      var frag = (Number.isFinite(st) && Number.isFinite(en) && en > st) ? ('#t=' + st + ',' + en) : '';
+      // P133: start at the detection and play on to the end of the soundscape (an end time cut it at ~3 s)
+      var frag = (Number.isFinite(st) && st > 0) ? ('#t=' + st) : '';
       var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(d.timestamp || ''));
       var when = m ? (m[3] + '.' + m[2] + '.' + m[1] + ' ' + m[4] + ':' + m[5]) : '';
       var conf = Number(d.confidence);

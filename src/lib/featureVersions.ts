@@ -115,6 +115,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-12', ref: 'P130', kind: 'patch', text: 'Liigiinfo j\u00e4rjekord: taksonoomia, haruldus, sinu viimane vaatlus' },
       { date: '2026-10-12', ref: 'P131', kind: 'minor', text: 'Sinu viimane vaatlus k\u00f5igil liikidel (kogu Elurikkuse ajalugu)' },
       { date: '2026-10-12', ref: 'P131b', kind: 'patch', text: 'Sinu viimane vaatlus: ainult t\u00e4pne vaatleja nimi ja liigi eestikeelne nimi' },
+      { date: '2026-10-15', ref: 'P133', kind: 'patch', text: 'PUC-salvestus m\u00e4ngib tuvastusest kuni l\u00f5puni' },
     ],
   },
   {

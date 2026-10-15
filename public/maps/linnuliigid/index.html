@@ -196,6 +196,9 @@ a.bm-sim-ext:hover{color:#2d7a4b;border-color:#c9d6cd}
 @media (max-width:600px){.bm-sim{padding:60px 8px 10px}.bm-sim-panel{padding:18px 14px 20px}.bm-sim-sec{padding:0 2px}.bm-sim-h{font-size:19px}}
 /* P135: compact species info card on phones */
 @media (max-width:520px){.bm-sim{padding:10px 6px 10px}.bm-sim-panel{padding:12px 12px 14px;border-radius:12px;font-size:13px}.bm-sim-sec{padding:0}.bm-sim-x{top:10px;right:10px;width:26px;height:26px;font-size:15px}.bm-sim-h{margin:0 36px 10px 0;font-size:17px}.bm-sim-h small{font-size:12px;margin-top:2px}.bm-sim-alt{font-size:13px}.bm-sim-tab{height:30px;margin-bottom:14px;font-size:12.5px;border-radius:9px}.bm-sim-l{margin-bottom:5px;font-size:12.5px}.bm-sim-chips{gap:5px;margin-bottom:12px}.bm-sim-chip{padding:2px 9px;font-size:11px}.bm-sim-txt{font-size:13px;line-height:1.55}.bm-sim-rar,.bm-sim-my{margin-bottom:12px;font-size:12.5px}.bm-sim-cred{margin-bottom:12px;font-size:11px}.bm-sim-xc{gap:8px}.bm-sim-xc figure{width:100%}.bm-sim-xc iframe{width:100%;height:96px}.bm-sim-pucbox{width:100%;height:96px;padding:10px 12px}.bm-sim-img{max-width:100%;margin-bottom:12px}.bm-sim-msg{font-size:13px;margin-bottom:12px}a.bm-sim-ext{height:34px;font-size:12.5px}}
+/* P145: on phones the app's top tabs and bottom dock float over the map; keep the panel between them and scroll inside it */
+@media (max-width:600px){.bm-sim{padding:56px 6px calc(var(--appBottomNav, 0px) + 8px);overflow:hidden}.bm-sim-panel{max-height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}}
+.bm-sim-pucwhere{font-size:11.5px;color:#6b7770;margin:2px 0 4px} /* P144 */
 .bm-card-sci{margin-top:2px;font:italic 12px/1.3 system-ui,Arial,sans-serif;color:#6c7f74;overflow-wrap:anywhere}
 .bm-card-date{margin-top:2px;font-size:12px;color:#6c7f74}
 .bm-card-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:12px;
@@ -11438,7 +11441,7 @@ function __bmPucLatest(sci){
       var sid = j && j.data && j.data.species && j.data.species.id;
       if (!sid) return null;
       return gql('query($sid:ID!){ station(id:"18105"){ detections(first:1, speciesId:$sid, confidenceGte:0.7){'
-        + ' nodes { timestamp confidence soundscape { url startTime endTime } } } } }', { sid: String(sid) })
+        + ' nodes { timestamp confidence soundscape { url startTime endTime duration } } } } }', { sid: String(sid) })
         .then(function(j2){
           var n = j2 && j2.data && j2.data.station && j2.data.station.detections && j2.data.station.detections.nodes;
           return (Array.isArray(n) && n[0]) ? n[0] : null;
@@ -11455,14 +11458,21 @@ function __bmPucModal(sec, sci){
       var url = String((d.soundscape && d.soundscape.url) || '');
       if (!/^https:\/\/media\.birdweather\.com\/[A-Za-z0-9_\/.-]+\.(flac|mp3|wav)$/.test(url)) return;
       var st = Number(d.soundscape.startTime), en = Number(d.soundscape.endTime);
-      // P133: start at the detection and play on to the end of the soundscape (an end time cut it at ~3 s)
-      var frag = (Number.isFinite(st) && st > 0) ? ('#t=' + st) : '';
+      // P144: the station keeps only a ~9 s soundscape per detection, so starting at the detection (P133)
+      // left 3-6 s. Play the whole clip from 0:00 and say where in it the bird is.
+      var frag = '';
+      var dur = Number(d.soundscape.duration);
+      var where = (Number.isFinite(st) && Number.isFinite(en) && en > st)
+        ? ((Number.isFinite(dur) && dur > 0 ? Math.round(dur) + ' s salvestus &middot; ' : '')
+          + 'lind k&otilde;lab ' + Math.floor(st) + '.&ndash;' + Math.ceil(en) + '. sekundil')
+        : '';
       var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(d.timestamp || ''));
       var when = m ? (m[3] + '.' + m[2] + '.' + m[1] + ' ' + m[4] + ':' + m[5]) : '';
       var conf = Number(d.confidence);
       var fig = '<figure><figcaption>PUC (Tartu)' + (when ? ' &middot; ' + when : '') + '</figcaption>'
         + '<div class="bm-sim-pucbox"><div><b>EstBirds-PUC</b>'
         + (Number.isFinite(conf) ? ' &middot; kindlus ' + Math.round(conf * 100) + '%' : '') + '</div>'
+        + (where ? '<div class="bm-sim-pucwhere">' + where + '</div>' : '')
         + '<audio controls preload="none" src="' + url + frag + '"></audio></div></figure>';
       var cred = '<div class="bm-sim-cred">Salvestus: BirdWeather, jaam EstBirds-PUC (automaatne tuvastus, kindlus v&auml;hemalt 70%)</div>';
       var xc = sec.querySelector('.bm-sim-xc');

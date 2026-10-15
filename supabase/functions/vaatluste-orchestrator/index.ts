@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-15 - P138 dryRun-only modelOverride (haiku/sonnet A/B) + full payload in the dry-run preview
 // redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
@@ -44,6 +45,8 @@ const EBIRD_RELAY_URL = Deno.env.get("EBIRD_RELAY_URL") ||
   "https://estbirds.netlify.app/api/ebird-relay";
 
 const DEFAULT_MODEL = "claude-sonnet-5-5";
+// P138: models a dry run may be pointed at for the Haiku/Sonnet side-by-side test.
+const MODEL_OVERRIDE_ALLOW: readonly string[] = ["claude-haiku-5-5", "claude-sonnet-5-5"];
 const MAX_TOKENS = 65536;
 
 // M7.4a: beforeunload ~360 s, hard kill ~400 s.
@@ -1432,9 +1435,10 @@ async function callSonnet(
   userMessage: string,
   maxTokens: number,
   timeoutMs: number,
+  modelOverride: string | null = null,
 ): Promise<AnthropicResponse> {
   if (!llmConfigured()) throw new Error("missing_env:ANTHROPIC_API_KEY");
-  const model = Deno.env.get("ANTHROPIC_MODEL_VAATLUSTE_RAPORT") ||
+  const model = modelOverride || Deno.env.get("ANTHROPIC_MODEL_VAATLUSTE_RAPORT") ||
     DEFAULT_MODEL;
 
   const ctrl = new AbortController();
@@ -1918,6 +1922,7 @@ async function insertRaport(payload: ParseOutput): Promise<InsertResponse> {
 interface RunOptions {
   dryRun: boolean;
   maxTokensOverride: number | null;
+  modelOverride: string | null; // P138: dry runs only
 }
 
 async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
@@ -1993,6 +1998,7 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
       topup.user_message,
       maxTokens,
       sonnetTimeout,
+      opts.dryRun ? opts.modelOverride : null,
     );
     calls = 1;
     timings.sonnet_ms = Date.now() - t2;
@@ -2033,6 +2039,9 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
           estonia: payload.estonia_entries.length,
           europe: payload.europe_entries.length,
           generation_meta: payload.generation_meta,
+          model: apiResp.model ?? null, // P138
+          usage: apiResp.usage ?? null,
+          payload, // P138: full report for the side-by-side comparison (dry run only)
         },
       };
       await heartbeat(sb, orch, "insert_skipped");
@@ -2137,6 +2146,12 @@ Deno.serve(async (req) => {
     listeners: { ...LISTENERS },
   };
   if (maxTokensOverride) baseState.max_tokens_override = maxTokensOverride;
+  // P138: dry-run-only model switch, allow-listed; the live run always uses the env/default model.
+  const modelOverride = dryRun && typeof body.modelOverride === "string" &&
+      MODEL_OVERRIDE_ALLOW.includes(body.modelOverride)
+    ? body.modelOverride
+    : null;
+  if (modelOverride) baseState.model_override = modelOverride;
 
   const rowId = await openRun(sb, "vaatluste-raport", runId, 0, baseState);
   if (rowId === null) {
@@ -2153,7 +2168,7 @@ Deno.serve(async (req) => {
   };
   OPEN_RUNS.set(rowId, orch);
 
-  const work = run(sb, orch, { dryRun, maxTokensOverride });
+  const work = run(sb, orch, { dryRun, maxTokensOverride, modelOverride });
   const registered = keepAlive(work);
   if (!registered) {
     work.catch((e) =>

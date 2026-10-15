@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-15 - P138 dryRun-only modelOverride + ids (re-translate chosen items, patches returned)
 // redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
 // redeploy: P86d 2026-10-01 - corrector moved to _shared/bird-names.ts (part-wise sameSpecies, multi-word dict names, title/body stem propagation), [retry N] error prefix
 // redeploy-marker: 2026-10-01 - P86d1 tolerant TITLE/BODY delimiters + raw head on parse failure
@@ -492,6 +493,16 @@ async function runIngest(): Promise<Record<string, unknown>> {
 }
 
 // n8n node: Get pending
+// P138: dry-run-only fetch of chosen items by id (any translation status).
+async function getByIds(sb: Admin, ids: string[]): Promise<PendingItem[]> {
+  const { data, error } = await sb
+    .from("news_items")
+    .select("id,source_slug,source_lang,title,body,translation_v2_error")
+    .in("id", ids);
+  if (error) throw new Error("news_items by id: " + error.message);
+  return (data ?? []) as PendingItem[];
+}
+
 async function getPending(limit: number): Promise<PendingItem[]> {
   const res = await fetch(
     SUPABASE_URL + "/functions/v1/get-news-untranslated-v2",
@@ -677,7 +688,20 @@ Deno.serve(async (req) => {
   const maxTokens = dryRun && Number.isFinite(rawOverride) && rawOverride > 0
     ? Math.floor(rawOverride)
     : 4096;
-  const model = Deno.env.get("ANTHROPIC_MODEL_NEWS") || "claude-sonnet-5-5";
+  // P138: dry runs may switch model (allow-listed) and re-translate chosen items
+  // by id, whatever their status; nothing is written and the patches come back.
+  const modelOverride = dryRun && typeof body.modelOverride === "string" &&
+      ["claude-haiku-5-5", "claude-sonnet-5-5"].includes(body.modelOverride)
+    ? body.modelOverride
+    : null;
+  const model = modelOverride || Deno.env.get("ANTHROPIC_MODEL_NEWS") ||
+    "claude-sonnet-5-5";
+  const dryIds = dryRun && Array.isArray(body.ids)
+    ? (body.ids as unknown[]).filter((x): x is string =>
+      typeof x === "string" && /^[0-9a-f-]{8,40}$/i.test(x)
+    ).slice(0, 10)
+    : [];
+  const previews: Array<{ id: string; patch: Patch }> = [];
 
   const started = Date.now();
   const runId = crypto.randomUUID();
@@ -711,7 +735,7 @@ Deno.serve(async (req) => {
     }
 
     // --- n8n node: Get pending --------------------------------------------
-    const items = await getPending(limit);
+    const items = dryIds.length ? await getByIds(sb, dryIds) : await getPending(limit);
     pending = items.length;
 
     // --- n8n node: Correct + patch (dictionary, once per run) --------------
@@ -783,6 +807,7 @@ Deno.serve(async (req) => {
         }
       }
 
+      if (dryRun) previews.push({ id: item.id, patch }); // P138
       if (!dryRun) {
         try {
           await writeV2(item.id, patch);
@@ -844,5 +869,5 @@ Deno.serve(async (req) => {
     error: fatal,
   });
 
-  return json(ok ? 200 : 500, payload);
+  return json(ok ? 200 : 500, dryRun ? { ...payload, previews } : payload);
 });

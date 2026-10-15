@@ -1,3 +1,4 @@
+// redeploy-marker: P143 2026-10-15 (same-Latin alias rows count for the card, e.g. Mongoolia k\u00f5nnu\u00f5gija for K\u00f5nnu\u00f5gija)
 // redeploy-marker: P141 2026-10-15 (Latin-name fallback search when the Estonian name finds no dated record)
 // redeploy-marker: P129 2026-10-12 (re-label rows whose Elurikkus name is another species)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
@@ -1222,16 +1223,25 @@ Deno.serve(async (req) => {
         if (o.sub_id) relabeled.push({ obs: o, species: other });
         return false;
       });
+      // P143 (Kristian 15.10): rows relabelled to a name with the SAME Latin name (alias, e.g.
+      // Mongoolia k\u00f5nnu\u00f5gija for K\u00f5nnu\u00f5gija) still count for this species' card; they stay
+      // stored under the alias, so WRITE 2 below keeps using `observations`.
+      const latinMap = await loadLatin();
+      const mySci = latinMap.get(name.normalize("NFC"));
+      const aliasObs = mySci
+        ? relabeled.filter((r) => latinMap.get(r.species.normalize("NFC")) === mySci).map((r) => r.obs)
+        : [];
+      const cardObs = aliasObs.length > 0 ? observations.concat(aliasObs) : observations;
       totalSkippedNoDate += parseResult.skippedNoDate;
       totalSkippedFuture += parseResult.skippedFuture;
       // Sort by observed_at desc (string ISO sort works)
-      observations.sort((a, b) => (a.observed_at < b.observed_at ? 1 : a.observed_at > b.observed_at ? -1 : 0));
-      const mostRecent = observations[0] ?? null;
+      cardObs.sort((a, b) => (a.observed_at < b.observed_at ? 1 : a.observed_at > b.observed_at ? -1 : 0));
+      const mostRecent = cardObs[0] ?? null;
 
       // Existing summary fields
       const t = (mostRecent?.observed_at) || extractNewestIsoFromSearch(html);
-      const occ7 = observations.length > 0
-        ? countWithin7Days(observations)
+      const occ7 = cardObs.length > 0
+        ? countWithin7Days(cardObs)
         : (() => {
             // Fallback to legacy date-only counting if observation parsing yielded nothing
             const now = Date.now();
@@ -1258,13 +1268,13 @@ Deno.serve(async (req) => {
 
       const detailUrl = extractDetailUrl(html, name);
 
-      const resolved = pickResolvedObs(observations);
+      const resolved = pickResolvedObs(cardObs);
       const picked = resolved?.obs ?? null;
       const metaSource = picked ?? mostRecent;
 
       console.log('[elu-cache]', name, '→', {
         picked_idx: resolved?.idx ?? -1,
-        total_obs: observations.length,
+        total_obs: cardObs.length,
         coords_source: resolved?.coords_source ?? 'none',
         locality: metaSource?.locality ?? null,
         lat: resolved?.lat ?? null,

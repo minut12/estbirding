@@ -8764,6 +8764,11 @@ async function _loadElurikkusCacheFromSupabase(){
       var _pObsMs = p.t_dt ? Date.parse(p.t_dt) : (p.t ? Date.parse(String(p.t).slice(0, 10) + 'T00:00:00Z') : NaN);
       var _serverObsNewer = Number.isFinite(_rowObsMs) && (!Number.isFinite(_pObsMs) || _rowObsMs > _pObsMs);
       if(cacheTs <= existingTs && !_serverObsNewer) continue;
+      // P143: never mix two records. When the browser already holds a NEWER sighting than the server
+      // row, keep the browser's record whole (date, place, observers, coords) instead of pairing its
+      // date with the server row's place and observers.
+      var _clientObsNewer = Number.isFinite(_pObsMs) && (!Number.isFinite(_rowObsMs) || _pObsMs > _rowObsMs);
+      if(_clientObsNewer) continue;
       var hasCoords = Number.isFinite(row.lat) && Number.isFinite(row.lon);
       /* PRE-STAGE-C BLOCK (kept for rollback until verification passes):
       var merged_OLD = Object.assign({}, p, {

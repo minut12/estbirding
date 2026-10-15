@@ -122,6 +122,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-15', ref: 'P136b', kind: 'patch', text: 'Liigiinfo histogrammil t\u00e4nase p\u00e4eva joon' },
       { date: '2026-10-15', ref: 'P140', kind: 'minor', text: 'Harulduses ka dateerimata vaatlused ja "vaatlusi pole" rida; sama ladina nimega liigid koos' },
       { date: '2026-10-15', ref: 'P141', kind: 'patch', text: 'Elurikkuses eestikeelse nimeta liikide vaatlused leitakse ladina nime j\u00e4rgi' },
+      { date: '2026-10-15', ref: 'P142', kind: 'minor', text: 'Peidetud asukohaga SR/MR liigid kaardil valla v\u00f5i maakonna keskpunktis' },
     ],
   },
   {

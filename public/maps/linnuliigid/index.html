@@ -10784,7 +10784,7 @@ function updateMarker(key) {
   const markerCount = getMarkerCount(p);
   const passesRecent = (!window.__recentOnly) || hasRecentObservation(p);
   const passesSidebarFilter = _speciesPassesSidebarFilter(key);
-  const isVisible = (p.visible !== false) && passesRecent && hasCoords && !coordsRestricted && passesSidebarFilter;
+  const isVisible = (p.visible !== false) && passesRecent && hasCoords && (!coordsRestricted || __bmRestrictedPinOk(key, p)) && passesSidebarFilter; // P142
   if (key === 'Punanokk-vart') {
     console.log('[NETTA-TRACE] render DECISION:', JSON.stringify({
       hasLat: !!Number.isFinite(p?.lat),
@@ -11062,9 +11062,14 @@ function buildPopupHtml(key, p, opts){
     (!isEb && beh !== '-') ? `<div class="bm-card-row">${SVG_EYE}<span>K&auml;itumine: <code>${escapeHtml(beh)}</code></span></div>` : '',
     isEb ? `<div class="bm-card-row bm-card-cl">${SVG_EYE}<span></span></div>` : ''
   ].join('');
-  const approxNote = coordsApprox
-    ? `<div class="bm-card-note">${SVG_LOCK}<span>T&auml;psed koordinaadid on peidetud &mdash; markeri asukoht on ligikaudne, p&auml;rineb varasemast vaatlusest.</span></div>`
-    : '';
+  // P142: a centroid pin says which centre it stands on instead of "from an earlier observation".
+  const _p142src = String(p.coords_source || p.coordsSource || '');
+  const _p142ctr = /municipality_centroid/i.test(_p142src) ? { w: 'valla', n: x.municipality || x.locality || '' }
+    : (/county_centroid/i.test(_p142src) ? { w: 'maakonna', n: x.county || '' } : null);
+  const approxNote = !coordsApprox ? ''
+    : (_p142ctr
+      ? `<div class="bm-card-note">${SVG_LOCK}<span>T&auml;psed koordinaadid on peidetud, marker on ${_p142ctr.w} keskpunktis${_p142ctr.n ? ' (' + escapeHtml(String(_p142ctr.n)) + ')' : ''}.</span></div>`
+      : `<div class="bm-card-note">${SVG_LOCK}<span>T&auml;psed koordinaadid on peidetud &mdash; markeri asukoht on ligikaudne, p&auml;rineb varasemast vaatlusest.</span></div>`);
   const wazeBtn = (hasCoords && !coordsApprox)
     ? `<button class="bm-card-btn" onclick="openWaze(${p.lat},${p.lon})">${SVG_WAZE}Ava Waze'is</button>`
     : '';
@@ -11248,6 +11253,17 @@ function __bmSpeciesInfoOpen(btn, code, nameArg){
 // sounds (species_info.xc_recordings, filled by species-info-save action=xc). Function
 // declarations only; one RPC per species per session.
 function __bmIsMegaOrSuper(level){ return level === 'super' || level === 'mega'; }
+// P142: a super/mega rarity whose Elurikkus coordinates are hidden still gets an approximate pin at
+// the municipality/county centre the server stored (coords_source *_centroid). Other levels keep
+// the P87 rule (no pin for hidden coordinates).
+function __bmRestrictedPinOk(key, p){
+  try {
+    if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return false;
+    if (!/centroid/i.test(String(p.coords_source || p.coordsSource || ''))) return false;
+    var m = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : null;
+    return !!(m && __bmIsMegaOrSuper(m.rarityLevel));
+  } catch (e) { return false; }
+}
 // P140: every Estonian name that shares the species' Latin name (SPECIES_SCINAMES, filled from
 // species meta), so alias pairs such as Punasaba-k&otilde;nnu&otilde;gija / Punasaba-&otilde;gija share one history. Max 5.
 function __bmSciAliases(species){

@@ -149,6 +149,17 @@
 .bm-sim-my:empty{display:none}
 .bm-sim-my--none{background:#f1f4f2;color:#6b7770} /* P131 */
 .bm-sim-hist:empty{display:none} /* P136 */
+.bm-sim-nb:empty{display:none} /* P137 */
+.bm-sim-nb{margin:0 0 18px}
+.bm-sim-nbt{width:100%;border-collapse:collapse;font-size:12.5px;line-height:1.4;table-layout:fixed}
+.bm-sim-nbt td{padding:3px 0;vertical-align:top}
+.bm-sim-nbt td.d{width:46px;color:#6b7770}
+.bm-sim-nbt td.p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bm-sim-nbt td.k{width:64px;text-align:right;color:#6b7770}
+.bm-sim-nb0{font-size:13px;color:#6b7770}
+.bm-sim-pct{display:flex;align-items:center;gap:10px;margin:8px 0 4px;padding:7px 11px;border-radius:9px;background:#eaf5ef;color:#2d6a48;font-size:13px;line-height:1.4}
+.bm-sim-pct b{font-size:18px;font-weight:600}
+.bm-sim-pct--none{background:#f1f4f2;color:#6b7770}
 .bm-sim-histsvg{display:block;width:100%;max-width:560px;height:auto;margin:2px 0 0}
 .bm-sim-xc{display:flex;flex-wrap:wrap;gap:10px;margin:2px 0 6px}
 .bm-sim-xc figure{margin:0;max-width:100%}
@@ -11165,7 +11176,7 @@ function __bmSpeciesInfoBodyHtml(row, code){
   var html = '';
   if (chips) html += '<div class="bm-sim-l">Taksonoomia</div><div class="bm-sim-chips">' + chips + '</div>';
   // P130: order is Taksonoomia, Haruldus (__bmRarityModal), own sighting (__bmMyObsModal), Tunnused.
-  html += '<div class="bm-sim-rarslot"></div><div class="bm-sim-my"></div><div class="bm-sim-hist"></div>'; // P136: histogram slot
+  html += '<div class="bm-sim-rarslot"></div><div class="bm-sim-my"></div><div class="bm-sim-nb"></div><div class="bm-sim-hist"></div>'; // P136: histogram slot, P137: neighbours
   html += '<div class="bm-sim-l">Tunnused</div><p class="bm-sim-txt">' + escapeHtml(txt) + '</p>'
     + '<div class="bm-sim-cred">Tekst: eBird.org' + (et ? ' &middot; masint&otilde;lge: '
       + ({ gemini: 'Gemini', mistral: 'Mistral', tartunlp: 'TartuNLP' }[String(row.translator || '')] || 'masin') : ' (inglise keeles)') + '</div>';
@@ -11222,6 +11233,7 @@ function __bmSpeciesInfoOpen(btn, code, nameArg){
       __bmRarityModal(sec, name); // P121
       if (row) __bmPucModal(sec, row.sci_name); // P127
       __bmMyObsModal(sec, name, row ? row.sci_name : ''); // P128/P131
+      __bmNeighbourModal(sec, name); // P137
       __bmHistModal(sec, name); // P136
     }).catch(function(){
       if (!m.isConnected) return;
@@ -11428,6 +11440,86 @@ function __bmMyObsModal(sec, name, sci, tries){
           + (place ? ', ' + escapeHtml(String(place)) : '') + cnt;
       })
       .catch(function(){});
+  } catch (e) {}
+}
+// P137: super/mega rarities only - last 30 days of eBird rare sightings in the neighbour countries
+// (public.ebird_rare_observations, anon-readable) and the Ennustus probability (public.ennustus_cache).
+// Newest first, one row per place and day, max 5. Function declarations only.
+function __bmNbDate(iso){
+  var m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? (m[3] + '.' + m[2]) : '';
+}
+function __bmNbPlace(loc){
+  var t = String(loc || '');
+  t = t.replace(/\s*\([-\d.,\s]+\)\s*$/, '');
+  t = t.replace(/[\s,]+-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+\s*$/, '');
+  t = t.replace(/,\s*[A-Z]{2}\s*$/, '');
+  t = t.replace(/^\d{3} \d{2},\s*/, '');
+  return t.trim();
+}
+function __bmNbPeriod(lbl){
+  var mon = { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' };
+  var m = String(lbl || '').match(/^(\d{1,2}) ([A-Z][a-z]{2})\D+(\d{1,2}) ([A-Z][a-z]{2})$/);
+  if (!m || !mon[m[2]] || !mon[m[4]]) return '';
+  var p2 = function(x){ return ('0' + x).slice(-2); };
+  return p2(m[1]) + '.' + mon[m[2]] + '&ndash;' + p2(m[3]) + '.' + mon[m[4]];
+}
+function __bmNeighbourModal(sec, name){
+  try {
+    var meta = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(name) : null;
+    if (!meta || !__bmIsMegaOrSuper(meta.rarityLevel)) return;
+    var cfg = resolveSupabaseConfig();
+    if (!cfg || !cfg.supabaseUrl || !cfg.anonKey) return;
+    var sp = encodeURIComponent(String(name || '').normalize('NFC'));
+    var hdr = { 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey };
+    var since = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    var get = function(u){ return fetch(cfg.supabaseUrl + '/rest/v1/' + u, { headers: hdr }).then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }); };
+    var obsP = get('ebird_rare_observations?select=country_code,obs_date,location,obs_count,distance_to_ee_km'
+      + '&species_et_name=eq.' + sp + '&country_code=in.(FI,SE,LV,LT,RU-LEN,RU-PSK,RU-KGD)'
+      + '&obs_date=gte.' + since + '&order=obs_date.desc&limit=100').catch(function(){ return null; });
+    var pctP = get('ennustus_cache?select=current_pct,best_period_pct,best_period_label,no_data&species_name=eq.' + sp + '&limit=1')
+      .catch(function(){ return null; });
+    Promise.all([obsP, pctP]).then(function(res){
+      var slot = sec && sec.isConnected ? sec.querySelector('.bm-sim-nb') : null;
+      if (!slot || (res[0] === null && res[1] === null)) return;
+      var cn = { FI: 'Soome', SE: 'Rootsi', LV: 'L&auml;ti', LT: 'Leedu', 'RU-LEN': 'Venemaa', 'RU-PSK': 'Venemaa', 'RU-KGD': 'Venemaa' };
+      var seen = {}, rows = [];
+      (Array.isArray(res[0]) ? res[0] : []).forEach(function(o){
+        if (rows.length >= 5 || !o) return;
+        var place = __bmNbPlace(o.location);
+        var key = String(o.obs_date || '').slice(0, 10) + '|' + place.toLowerCase();
+        if (seen[key]) return;
+        seen[key] = 1;
+        rows.push(o);
+      });
+      var html = '<div class="bm-sim-l">Naabermaades viimase 30 p&auml;eva jooksul</div>';
+      if (rows.length) {
+        html += '<table class="bm-sim-nbt">';
+        rows.forEach(function(o){
+          var place = __bmNbPlace(o.location);
+          var n = Number(o.obs_count), km = Math.round(Number(o.distance_to_ee_km));
+          html += '<tr><td class="d">' + __bmNbDate(o.obs_date) + '</td><td class="p" title="' + escapeHtml(place) + '">'
+            + (cn[o.country_code] || escapeHtml(String(o.country_code || ''))) + (place ? ' &middot; ' + escapeHtml(place) : '')
+            + ((Number.isFinite(n) && n > 1) ? ' (' + n + ')' : '') + '</td><td class="k">'
+            + (Number.isFinite(km) && km > 0 ? km + ' km' : '') + '</td></tr>';
+        });
+        html += '</table>';
+      } else {
+        html += '<div class="bm-sim-nb0">Naabermaades viimase 30 p&auml;eva jooksul vaatlusi pole</div>';
+      }
+      var e = Array.isArray(res[1]) ? res[1][0] : null;
+      var cur = e && !e.no_data ? Number(e.current_pct) : NaN;
+      if (e && !e.no_data && e.current_pct !== null && Number.isFinite(cur)) {
+        var bp = Number(e.best_period_pct), per = __bmNbPeriod(e.best_period_label);
+        html += '<div class="bm-sim-pct"><b>' + Math.round(cur) + '%</b><span>t&otilde;en&auml;osus Eestis praegu'
+          + ((per && Number.isFinite(bp) && Math.round(bp) !== Math.round(cur)) ? ' &middot; parim aeg ' + per + ' (' + Math.round(bp) + '%)' : '')
+          + '</span></div>';
+      } else {
+        html += '<div class="bm-sim-pct bm-sim-pct--none">T&otilde;en&auml;osuse hinnang puudub</div>';
+      }
+      html += '<div class="bm-sim-cred">Vaatlused: eBird (Soome, Rootsi, L&auml;ti, Leedu, Loode-Venemaa) &middot; t&otilde;en&auml;osus: EstBirds ennustus</div>';
+      slot.innerHTML = html;
+    }).catch(function(){});
   } catch (e) {}
 }
 // P136: 52 weekly bars of Elurikkus records (all years) from the Randeajad histograms already loaded by

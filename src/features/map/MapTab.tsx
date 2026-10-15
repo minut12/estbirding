@@ -50,7 +50,7 @@ import {
 const SIDEBAR_HALF: Record<string, number> = { 'linnuliigid-ee': 180, rariliin: 180, europe: 210 };
 // P109: feature versions passed to each map iframe as ?fv= (first id = the map itself, shown in the sidebar footer).
 const MAP_FEATURE_IDS: Record<string, readonly FeatureId[]> = {
-  'linnuliigid-ee': ['linnuliigid', 'ebird-ee', 'tuulekaart', 'kevadranne', 'toenaosus', 'toenaosus-ruudud', 'randeajad', 'ennustus', 'trektellen', 'juhend'],
+  'linnuliigid-ee': ['linnuliigid', 'ebird-ee', 'tuulekaart', 'kevadranne', 'toenaosus', 'toenaosus-ruudud', 'randeajad', 'oodatavad-randajad', 'ennustus', 'trektellen', 'juhend'],
   europe: ['euroopa'],
   rariliin: ['rariliin', 'ebird-ee', 'juhend'],
 };

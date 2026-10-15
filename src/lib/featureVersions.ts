@@ -18,6 +18,7 @@ export type FeatureId =
   | 'toenaosus'
   | 'toenaosus-ruudud'
   | 'randeajad'
+  | 'oodatavad-randajad'
   | 'ennustus'
   | 'trektellen'
   | 'juhend'
@@ -271,6 +272,14 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-10', ref: 'P116b', kind: 'patch', text: 'Hinnangulised r\u00e4ndeajad on kuni neli n\u00e4dalat pikad' },
       { date: '2026-10-10', ref: 'P117', kind: 'minor', text: 'Hinnangulised r\u00e4ndeajad naaberriikide eBirdi andmetest' },
       { date: '2026-10-10', ref: 'P118', kind: 'patch', text: 'Mandariinpart pole talvek\u00fclaline (\u00fcks lind \u00fchel talvel)' },
+    ],
+  },
+  {
+    id: 'oodatavad-randajad',
+    area: 'kaart',
+    name: 'Oodatavad r\u00e4ndajad',
+    changes: [
+      { date: '2026-10-15', ref: 'P148', kind: 'major', text: 'Kaardi avamisel teavitus liikidest, kelle r\u00e4ndeaeg praegu k\u00e4ib' },
     ],
   },
   {

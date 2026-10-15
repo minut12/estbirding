@@ -855,6 +855,43 @@ html:not(.sb-classic) .sb-rand-mx b{font-weight:600;color:var(--sb-ink2)}
 html:not(.sb-classic) .sb-rand-l em{font:600 10.5px system-ui;font-style:normal;padding:1px 7px;border-radius:999px;background:var(--sb-primary-soft);color:var(--sb-primary)}
 html:not(.sb-classic) .sb-rand-l b.a ~ em{background:var(--sb-warn-soft);color:#7c3a06}
 html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);padding:2px 0}
+/* P148: "Oodatavad r&auml;ndajad" popup (species whose R&auml;ndeajad window covers this week). Not scoped: works in both UIs. */
+#bmMigPop{position:absolute;top:12px;right:12px;z-index:1450;width:min(400px,calc(100% - 24px));max-height:calc(100% - 24px);display:flex;flex-direction:column;gap:6px;box-sizing:border-box;padding:12px 14px;border-radius:14px;border:1px solid var(--sb-line,#dde4df);background:var(--sb-bg,#fff);color:var(--sb-ink,#222a26);box-shadow:0 8px 30px rgba(20,40,30,.16);font:13px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#bmMigPop .bm-mig-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+#bmMigPop .bm-mig-top>div{min-width:0}
+#bmMigPop .bm-mig-kick{font:700 10.5px/1.2 system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--sb-warn,#b45309)}
+#bmMigPop .bm-mig-title{margin:3px 0 2px;font-size:15px;line-height:1.25;font-weight:700}
+#bmMigPop .bm-mig-sub{margin:0;font-size:12px;color:var(--sb-muted,#6c7f74)}
+#bmMigPop .bm-mig-x{flex:0 0 auto;width:26px;height:26px;padding:0;border:0;border-radius:999px;background:var(--sb-bg2,#f2f8f4);color:var(--sb-muted,#6c7f74);font-size:16px;line-height:1;cursor:pointer}
+#bmMigPop .bm-mig-x:hover{color:var(--sb-ink,#222a26)}
+#bmMigPop .bm-mig-months{display:grid;grid-template-columns:repeat(12,1fr);padding:0 6px;font:600 10px system-ui,sans-serif;color:var(--sb-muted,#6c7f74)}
+#bmMigPop .bm-mig-list{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column}
+#bmMigPop .bm-mig-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;padding:6px}
+#bmMigPop .bm-mig-row+.bm-mig-row{border-top:1px solid var(--sb-line2,#eef2ef)}
+#bmMigPop .bm-mig-nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bmMigPop .bm-mig-chip{justify-self:end;align-self:center;font:600 10.5px/1 system-ui,sans-serif;padding:4px 7px;border-radius:999px;white-space:nowrap}
+#bmMigPop .bm-mig-chip.up{background:var(--sb-primary-soft,#e4f1e8);color:var(--sb-primary,#2d7a4b)}
+#bmMigPop .bm-mig-chip.pk{background:var(--sb-warn-soft,#fbeedd);color:var(--sb-warn,#b45309)}
+#bmMigPop .bm-mig-chip.down{background:var(--sb-line2,#eef2ef);color:var(--sb-ink2,#4a5852)}
+#bmMigPop .bm-mig-chip.est{background:var(--sb-line2,#eef2ef);color:var(--sb-muted,#6c7f74)}
+#bmMigPop .bm-mig-chip.soon{background:transparent;color:var(--sb-primary,#2d7a4b);box-shadow:inset 0 0 0 1px var(--sb-primary,#2d7a4b)}
+#bmMigPop .bm-mig-strip{grid-column:1/-1;position:relative;height:22px;border-radius:3px;background:var(--sb-line2,#eef2ef);overflow:hidden}
+#bmMigPop .bm-mig-band{position:absolute;top:0;bottom:0}
+#bmMigPop .bm-mig-band.s{background:var(--sb-primary-soft,#e4f1e8)}
+#bmMigPop .bm-mig-band.a{background:var(--sb-warn-soft,#fbeedd)}
+#bmMigPop .bm-mig-band.e{background:var(--sb-line,#dde4df)}
+#bmMigPop .bm-mig-bars{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;gap:1px;padding:0 1px}
+#bmMigPop .bm-mig-bars i{flex:1 1 0;min-width:0;border-radius:1px;background:#9fb3a7}
+#bmMigPop .bm-mig-bars i.on{background:var(--sb-primary,#2d7a4b)}
+#bmMigPop .bm-mig-strip b{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--sb-ink2,#4a5852)}
+#bmMigPop .bm-mig-rng{grid-column:1/-1;font-size:11.5px;color:var(--sb-muted,#6c7f74);font-variant-numeric:tabular-nums}
+#bmMigPop .bm-mig-sep{font:700 10px/1.2 system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--sb-muted,#6c7f74);padding:8px 6px 2px}
+#bmMigPop .bm-mig-more{align-self:flex-start;border:0;background:none;padding:2px 6px;color:var(--sb-primary,#2d7a4b);font:600 12.5px system-ui,sans-serif;cursor:pointer}
+#bmMigPop .bm-mig-foot{font-size:11px;color:var(--sb-muted,#6c7f74);border-top:1px solid var(--sb-line2,#eef2ef);padding-top:6px}
+#bmMigPop .bm-mig-actions{display:flex}
+#bmMigPop .bm-mig-hide{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--sb-primary,#2d7a4b);background:var(--sb-primary,#2d7a4b);color:#fff;font:600 12px system-ui,sans-serif;cursor:pointer}
+#bmMigPop button:focus-visible{outline:2px solid var(--sb-primary,#2d7a4b);outline-offset:2px}
+@media (max-width:900px){#bmMigPop{top:auto;left:10px;right:10px;width:auto;bottom:calc(var(--appBottomNav,0px) + env(safe-area-inset-bottom,0px) + 66px);max-height:55vh}}
 </style>
 </head>
 <body>
@@ -888,7 +925,7 @@ html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);paddi
 <div id="debugProContent" style="display:none"></div>
     <div id="list"></div>
     <div id="sbVersion" class="sb-version hidden-in-export" style="padding:12px 12px 16px;font-size:11px;line-height:1.4;color:#6b7a72;text-align:center"></div>
-    <script>/* P109 feature version footer (reads ?fv= from MapTab) */(function(){try{var el=document.getElementById('sbVersion');if(!el)return;var fv=new URLSearchParams(location.search).get('fv')||'';if(!fv)return;var N={'linnuliigid':'Linnuliigid','euroopa':'Euroopa','rariliin':'Rariliin','ebird-ee':'eBird EE kiht','tuulekaart':'Tuulekaart','kevadranne':'Kevadr\u00e4nne','toenaosus':'T\u00f5en\u00e4osus','toenaosus-ruudud':'T\u00f5en\u00e4osuse ruudud','randeajad':'R\u00e4ndeajad','ennustus':'Ennustus','trektellen':'Trektellen','juhend':'Juhend'};var parts=fv.split(',').map(function(x){var i=x.lastIndexOf(':');return {id:x.slice(0,i),v:x.slice(i+1)};}).filter(function(p){return p.id&&p.v;});if(!parts.length)return;el.textContent=(N[parts[0].id]||parts[0].id)+' v'+parts[0].v;el.title=parts.map(function(p){return (N[p.id]||p.id)+' v'+p.v;}).join('\n');}catch(e){}})()</script>
+    <script>/* P109 feature version footer (reads ?fv= from MapTab) */(function(){try{var el=document.getElementById('sbVersion');if(!el)return;var fv=new URLSearchParams(location.search).get('fv')||'';if(!fv)return;var N={'linnuliigid':'Linnuliigid','euroopa':'Euroopa','rariliin':'Rariliin','ebird-ee':'eBird EE kiht','tuulekaart':'Tuulekaart','kevadranne':'Kevadr\u00e4nne','toenaosus':'T\u00f5en\u00e4osus','toenaosus-ruudud':'T\u00f5en\u00e4osuse ruudud','randeajad':'R\u00e4ndeajad','ennustus':'Ennustus','oodatavad-randajad':'Oodatavad r\u00E4ndajad','trektellen':'Trektellen','juhend':'Juhend'};var parts=fv.split(',').map(function(x){var i=x.lastIndexOf(':');return {id:x.slice(0,i),v:x.slice(i+1)};}).filter(function(p){return p.id&&p.v;});if(!parts.length)return;el.textContent=(N[parts[0].id]||parts[0].id)+' v'+parts[0].v;el.title=parts.map(function(p){return (N[p.id]||p.id)+' v'+p.v;}).join('\n');}catch(e){}})()</script>
     </div>
   </aside>
   <main id="mapWrap"><div id="map"></div></main>
@@ -12240,6 +12277,7 @@ window.toggleNotification = async function(speciesName) {
   var MW_URL = '/maps/shared/migration-windows.json';
   var mw = null;
   var mwSlugToKey = {};
+  var mwDone = typeof fetch !== 'function'; /* P148: popup waits for the curated windows (or their failure) */
   function lookupMw(key){
     if(!mw) return null;
     if(Object.prototype.hasOwnProperty.call(mw, key)) return mw[key];
@@ -12258,8 +12296,8 @@ window.toggleNotification = async function(speciesName) {
         mwSlugToKey = idx;
         memo = {};
       })
-      .then(function(){ if(typeof render === 'function') render(); },
-            function(e){ console.warn('[randeajad] curated windows load failed', e); mw = null; mwSlugToKey = {}; });
+      .then(function(){ mwDone = true; if(typeof render === 'function') render(); p148Kick(); },
+            function(e){ console.warn('[randeajad] curated windows load failed', e); mw = null; mwSlugToKey = {}; mwDone = true; p148Kick(); });
   }
 
   /* P95: one retry 20 s after a failed fetch (RPC used to time out for anon). */
@@ -12282,6 +12320,7 @@ window.toggleNotification = async function(speciesName) {
       setData(h);
       writeCache(h);
       if(typeof render === 'function') render();
+      p148Kick();
     }catch(e){ console.warn('[randeajad]', e); retryOnce(); }
   };
 
@@ -12435,6 +12474,160 @@ window.toggleNotification = async function(speciesName) {
       return { kind: res.kind, spring: res.kind === 'migrant' ? res.spring : null };
     }catch(e){ return null; }
   };
+
+  /* P148: "Oodatavad r\u00E4ndajad" popup on map open (Kristian 15.10). Species whose R\u00E4ndeajad window covers this
+     week, from one week before the window starts; the window end is unchanged. Data windows first, closest to their
+     peak; then estimated windows (fillGaps: curated or neighbour eBird) under a grey "hinnang" tag. Residents, winter
+     visitors, "few" species without an estimate and species crossed out on the sidebar (visible===false) are left out.
+     "\u00C4ra t\u00E4na ..." hides it until tomorrow (bm_migrants_popup_hide = local date, as Rariliin); x hides it for this visit. */
+  var P148_LEAD = 1;
+  var P148_TOP = 10;
+  var P148_LS = 'bm_migrants_popup_hide';
+  var p148Done = false;
+  var p148ShowAll = false;
+  function p148Today(){
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function p148HiddenToday(){ try{ return localStorage.getItem(P148_LS) === p148Today(); }catch(e){ return false; } }
+  function p148Seen(key){
+    try{ var p = (typeof points !== 'undefined' && points) ? points[key] : null; return !!p && p.visible === false; }
+    catch(e){ return false; }
+  }
+  function p148List(){
+    var R = window.__bmRandeajad;
+    if(!R || !hist) return null;
+    var doy = todayDoy();
+    var wk = Math.min(WEEKS, Math.floor((doy - 1) / 7) + 1);
+    var keys = (typeof SPECIES !== 'undefined' && SPECIES) ? SPECIES : [];
+    var done = {};
+    var data = [];
+    var est = [];
+    var seen = 0;
+    for(var i = 0; i < keys.length; i++){
+      var key = keys[i];
+      if(!key || done[key]) continue;
+      done[key] = true;
+      try{
+        var found = lookup(key);
+        if(!found || !found.pairs || !found.pairs.length) continue;
+        var resident = (typeof R.isResident === 'function') && (R.isResident(found.key) || R.isResident(key));
+        var res = R.analyse(found.pairs, { resident: resident });
+        var cur = lookupMw(found.key) || lookupMw(key);
+        if(cur && typeof R.fillGaps === 'function') res = R.fillGaps(res, cur);
+        if(res.kind !== 'migrant') continue;
+        var halves = [res.spring, res.autumn];
+        var w = null;
+        for(var h = 0; h < 2; h++){
+          var x = halves[h];
+          if(isReal(x) && typeof x.a === 'number' && typeof x.b === 'number' && wk >= x.a - P148_LEAD && wk <= x.b){ w = x; break; }
+        }
+        if(!w) continue;
+        if(p148Seen(key)){ seen++; continue; }
+        var s = R.series(found.pairs);
+        var isEst = !!w.manual || typeof w.pk !== 'number';
+        var item = { key: key, s: s, res: res, w: w, est: isEst, wk: wk, doy: doy,
+          score: (!isEst && s.v[w.pk] > 0) ? (s.v[wk] || 0) / s.v[w.pk] : 0 };
+        (isEst ? est : data).push(item);
+      }catch(e){ console.warn('[p148] skipped', key, e); }
+    }
+    data.sort(function(a, b){ return (b.score - a.score) || a.key.localeCompare(b.key, 'et'); });
+    est.sort(function(a, b){ return (a.w.a - b.w.a) || a.key.localeCompare(b.key, 'et'); });
+    return { items: data.concat(est), seen: seen, wk: wk };
+  }
+  function p148Phase(it){
+    if(it.est) return { cls: 'est', t: 'hinnang' };
+    if(it.wk < it.w.a) return { cls: 'soon', t: 'algab peagi' };
+    if(it.wk < it.w.pk) return { cls: 'up', t: 'r\u00E4nde algus' };
+    if(it.wk === it.w.pk) return { cls: 'pk', t: 'r\u00E4nde tipp' };
+    return { cls: 'down', t: 'r\u00E4nde l\u00F5pp' };
+  }
+  function p148Left(it){
+    if(it.wk < it.w.a) return 'algab j\u00E4rgmisel n\u00E4dalal';
+    var n = it.w.b - it.wk;
+    return n === 0 ? 'viimane n\u00E4dal' : (n === 1 ? 'veel 1 n\u00E4dal' : 'veel ' + n + ' n\u00E4dalat');
+  }
+  function p148Strip(it){
+    var s = it.s;
+    var bands = '';
+    [['s', it.res.spring], ['a', it.res.autumn]].forEach(function(pair){
+      var win = pair[1];
+      if(!isReal(win) || typeof win.a !== 'number') return;
+      var cls = win.manual ? 'e' : pair[0];
+      bands += '<span class="bm-mig-band ' + cls + '" style="left:' + pct(win.a - 1) + '%;width:' + pct(win.b - win.a + 1) + '%"></span>';
+    });
+    var bars = '';
+    for(var k = 1; k <= WEEKS; k++){
+      var hgt = (s.v[k] > 0 && s.vmax > 0) ? Math.max(8, s.v[k] / s.vmax * 100) : 0;
+      var on = (isReal(it.res.spring) && !it.res.spring.manual && k >= it.res.spring.a && k <= it.res.spring.b)
+        || (isReal(it.res.autumn) && !it.res.autumn.manual && k >= it.res.autumn.a && k <= it.res.autumn.b);
+      bars += '<i' + (on ? ' class="on"' : '') + ' style="height:' + hgt.toFixed(1) + '%"></i>';
+    }
+    return '<div class="bm-mig-strip" aria-hidden="true">' + bands + '<div class="bm-mig-bars">' + bars + '</div>'
+      + '<b style="left:' + (it.doy / 365 * 100).toFixed(1) + '%"></b></div>';
+  }
+  function p148Body(box, list){
+    var R = window.__bmRandeajad;
+    var items = list.items;
+    var vis = p148ShowAll ? items : items.slice(0, P148_TOP);
+    var rows = '';
+    var estOpen = false;
+    for(var i = 0; i < vis.length; i++){
+      var it = vis[i];
+      var ph = p148Phase(it);
+      if(it.est && !estOpen){ estOpen = true; rows += '<div class="bm-mig-sep">Hinnanguline r\u00E4ndeaeg</div>'; }
+      var lbl = it.est
+        ? 'R\u00E4ndeaeg (hinnang' + (it.w.src === 'ebird' && it.w.cc ? ' \u00B7 eBird ' + String(it.w.cc).replace(/\+/g, '/') : '') + ') '
+        : 'R\u00E4ndeaeg ';
+      rows += '<div class="bm-mig-row"><span class="bm-mig-nm">' + escapeHtml(it.key) + '</span>'
+        + '<span class="bm-mig-chip ' + ph.cls + '">' + ph.t + '</span>' + p148Strip(it)
+        + '<span class="bm-mig-rng">' + lbl + R.fmtRange(it.w) + ' \u00B7 ' + p148Left(it) + '</span></div>';
+    }
+    var months = MONTH_LETTERS.map(function(l){ return '<span>' + l + '</span>'; }).join('');
+    var more = items.length > P148_TOP
+      ? '<button type="button" class="bm-mig-more">' + (p148ShowAll ? 'N\u00E4ita v\u00E4hem' : 'N\u00E4ita k\u00F5iki (' + items.length + ')') + '</button>'
+      : '';
+    box.innerHTML = '<div class="bm-mig-top"><div>'
+      + '<div class="bm-mig-kick">Linnuliigid \u00B7 ' + list.wk + '. n\u00E4dal</div>'
+      + '<h4 class="bm-mig-title">Oodatavad r\u00E4ndajad</h4>'
+      + '<p class="bm-mig-sub">' + items.length + (items.length === 1 ? ' liik' : ' liiki') + ', kelle r\u00E4ndeaeg Eestis praegu k\u00E4ib</p></div>'
+      + '<button type="button" class="bm-mig-x" aria-label="Sulge">\u00D7</button></div>'
+      + '<div class="bm-mig-months" aria-hidden="true">' + months + '</div>'
+      + '<div class="bm-mig-list">' + rows + '</div>' + more
+      + '<div class="bm-mig-foot">R\u00E4ndeaeg Elurikkuse vaatluste j\u00E4rgi, k\u00F5ik aastad.'
+      + (list.seen ? ' ' + list.seen + ' n\u00E4htuks m\u00E4rgitud ' + (list.seen === 1 ? 'liik' : 'liiki') + ' on peidetud.' : '') + '</div>'
+      + '<div class="bm-mig-actions"><button type="button" class="bm-mig-hide">\u00C4ra t\u00E4na teavitust rohkem kuva</button></div>';
+  }
+  function p148Kick(){
+    if(p148Done || !hist || !mwDone) return;
+    try{
+      if(p148HiddenToday()){ p148Done = true; return; }
+      var wrap = document.getElementById('mapWrap');
+      if(!wrap) return;
+      var list = p148List();
+      if(!list) return;
+      p148Done = true;
+      if(!list.items.length) return;
+      var box = document.createElement('section');
+      box.id = 'bmMigPop';
+      box.setAttribute('aria-label', 'Oodatavad r\u00E4ndajad');
+      p148Body(box, list);
+      box.addEventListener('click', function(ev){
+        var t = ev.target;
+        if(!t || !t.closest) return;
+        if(t.closest('.bm-mig-x')){ box.remove(); return; }
+        if(t.closest('.bm-mig-hide')){
+          try{ localStorage.setItem(P148_LS, p148Today()); }catch(e){}
+          box.remove();
+          return;
+        }
+        if(t.closest('.bm-mig-more')){ p148ShowAll = !p148ShowAll; p148Body(box, list); }
+      });
+      wrap.appendChild(box);
+      console.log('[p148] popup shown: ' + list.items.length + ' species, week ' + list.wk + ', seen hidden ' + list.seen);
+    }catch(e){ console.warn('[p148] popup failed', e); }
+  }
+  p148Kick();
 })();
 
 function rowHTML(obj) {

@@ -887,10 +887,10 @@ html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);paddi
 #bmMigPop .bm-mig-sep{font:700 10px/1.2 system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--sb-muted,#6c7f74);padding:8px 6px 2px}
 #bmMigPop .bm-mig-more{align-self:flex-start;border:0;background:none;padding:2px 6px;color:var(--sb-primary,#2d7a4b);font:600 12.5px system-ui,sans-serif;cursor:pointer}
 #bmMigPop .bm-mig-foot{font-size:11px;color:var(--sb-muted,#6c7f74);border-top:1px solid var(--sb-line2,#eef2ef);padding-top:6px}
-#bmMigPop .bm-mig-actions{display:flex}
+#bmMigPop .bm-mig-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px}
 #bmMigPop .bm-mig-hide{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--sb-primary,#2d7a4b);background:var(--sb-primary,#2d7a4b);color:#fff;font:600 12px system-ui,sans-serif;cursor:pointer}
 #bmMigPop button:focus-visible{outline:2px solid var(--sb-primary,#2d7a4b);outline-offset:2px}
-@media (max-width:900px){#bmMigPop{top:auto;left:10px;right:10px;width:auto;padding:10px 12px;bottom:calc(var(--appBottomNav,0px) + env(safe-area-inset-bottom,0px) + 66px);max-height:calc(100% - var(--appBottomNav,0px) - env(safe-area-inset-bottom,0px) - 126px)}#bmMigPop .bm-mig-row{padding:4px 2px}#bmMigPop .bm-mig-foot{font-size:10.5px;padding-top:4px}#bmMigPop .bm-mig-sub{font-size:11.5px}} /* P148d: taller on phones so two species fit */
+@media (max-width:900px){#bmMigPop{top:auto;left:10px;right:10px;width:auto;padding:10px 12px;bottom:calc(var(--appBottomNav,0px) + env(safe-area-inset-bottom,0px) + 66px);max-height:55vh}#bmMigPop .bm-mig-row{padding:4px 2px}#bmMigPop .bm-mig-foot{font-size:10.5px;padding-top:4px}#bmMigPop .bm-mig-sub{font-size:11.5px}} /* P148d/P148e: compact on phones; JS sets max-height to stop just below the map's top controls */
 </style>
 </head>
 <body>
@@ -12645,26 +12645,37 @@ window.toggleNotification = async function(speciesName) {
       + '<h4 class="bm-mig-title">Oodatavad r\u00E4ndajad</h4>'
       + '<p class="bm-mig-sub">' + items.length + (items.length === 1 ? ' liik' : ' liiki') + ', kelle r\u00E4ndeaeg Eestis praegu k\u00E4ib</p></div>'
       + '<button type="button" class="bm-mig-x" aria-label="Sulge">\u00D7</button></div>'
-      + '<div class="bm-mig-list">' + rows + '</div>' + more + hidHtml
+      + '<div class="bm-mig-list">' + rows + '</div>' + hidHtml
       + '<div class="bm-mig-foot">R\u00E4ndeaeg Elurikkuse vaatluste j\u00E4rgi, k\u00F5ik aastad.'
       + (list.seen ? ' ' + list.seen + ' n\u00E4htuks m\u00E4rgitud ' + (list.seen === 1 ? 'liik' : 'liiki') + ' on peidetud.' : '') + '</div>'
-      + '<div class="bm-mig-actions"><button type="button" class="bm-mig-hide">\u00C4ra t\u00E4na teavitust rohkem kuva</button></div>';
+      + '<div class="bm-mig-actions"><button type="button" class="bm-mig-hide">\u00C4ra t\u00E4na teavitust rohkem kuva</button>' + more + '</div>'; /* P148e: "Naita koiki" sits next to the button */
     var nl = box.querySelector('.bm-mig-list');
     if(nl && scroll) nl.scrollTop = scroll;
   }
   /* P148b: on desktop the popup sits below the top-right map controls (Ennustus), so they stay clickable. */
+  /* P148b/P148e: keep the map's top controls (zoom, Ennustus, search) clickable. Desktop: open below the top-right
+     controls. Phones: the popup stays anchored above the Nimekiri button and grows up only to just below the
+     lowest top control (left or right). */
   function p148Place(box, wrap){
     try{
-      if(window.matchMedia && window.matchMedia('(max-width:900px)').matches){ box.style.top = ''; box.style.maxHeight = ''; return; }
-      var top = 12;
-      var c = wrap.querySelector('.leaflet-top.leaflet-right');
-      if(c){
+      var wr = wrap.getBoundingClientRect();
+      var phone = !!(window.matchMedia && window.matchMedia('(max-width:900px)').matches);
+      var limit = 12;
+      (phone ? ['.leaflet-top.leaflet-right', '.leaflet-top.leaflet-left'] : ['.leaflet-top.leaflet-right']).forEach(function(sel){
+        var c = wrap.querySelector(sel);
+        if(!c) return;
         var r = c.getBoundingClientRect();
-        var wr = wrap.getBoundingClientRect();
-        if(r.height > 0) top = Math.round(r.bottom - wr.top + 10);
+        if(r.height > 0 && r.bottom - wr.top < wr.height * 0.5) limit = Math.max(limit, Math.round(r.bottom - wr.top + 10));
+      });
+      if(phone){
+        box.style.top = '';
+        box.style.maxHeight = '';
+        var br = box.getBoundingClientRect();
+        box.style.maxHeight = Math.max(160, Math.round(br.bottom - wr.top - limit)) + 'px';
+        return;
       }
-      box.style.top = top + 'px';
-      box.style.maxHeight = 'calc(100% - ' + (top + 12) + 'px)';
+      box.style.top = limit + 'px';
+      box.style.maxHeight = 'calc(100% - ' + (limit + 12) + 'px)';
     }catch(e){}
   }
   function p148Kick(){

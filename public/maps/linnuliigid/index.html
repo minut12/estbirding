@@ -890,7 +890,7 @@ html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);paddi
 #bmMigPop .bm-mig-actions{display:flex}
 #bmMigPop .bm-mig-hide{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--sb-primary,#2d7a4b);background:var(--sb-primary,#2d7a4b);color:#fff;font:600 12px system-ui,sans-serif;cursor:pointer}
 #bmMigPop button:focus-visible{outline:2px solid var(--sb-primary,#2d7a4b);outline-offset:2px}
-@media (max-width:900px){#bmMigPop{top:auto;left:10px;right:10px;width:auto;bottom:calc(var(--appBottomNav,0px) + env(safe-area-inset-bottom,0px) + 66px);max-height:55vh}}
+@media (max-width:900px){#bmMigPop{top:auto;left:10px;right:10px;width:auto;padding:10px 12px;bottom:calc(var(--appBottomNav,0px) + env(safe-area-inset-bottom,0px) + 66px);max-height:calc(100% - var(--appBottomNav,0px) - env(safe-area-inset-bottom,0px) - 126px)}#bmMigPop .bm-mig-row{padding:4px 2px}#bmMigPop .bm-mig-foot{font-size:10.5px;padding-top:4px}#bmMigPop .bm-mig-sub{font-size:11.5px}} /* P148d: taller on phones so two species fit */
 </style>
 </head>
 <body>
@@ -12558,26 +12558,26 @@ window.toggleNotification = async function(speciesName) {
     var mx = 0;
     var k;
     for(k = half; k < half + 26; k++) if(n[k] > mx) mx = n[k];
-    var svg = '<line x1="0" y1="40.5" x2="' + W + '" y2="40.5" stroke="#dde4df" stroke-width="1"/>';
+    var svg = '<line x1="0" y1="32.5" x2="' + W + '" y2="32.5" stroke="#dde4df" stroke-width="1"/>'; /* P148d: flatter chart */
     for(k = half; k < half + 26; k++){
       if(!(n[k] > 0) || !mx) continue;
-      var bh = Math.max(2, Math.round(n[k] / mx * 38));
-      svg += '<rect x="' + ((k - half) * 10 + 1) + '" y="' + (40 - bh) + '" width="8" height="' + bh + '" rx="1.5" fill="'
+      var bh = Math.max(2, Math.round(n[k] / mx * 30));
+      svg += '<rect x="' + ((k - half) * 10 + 1) + '" y="' + (32 - bh) + '" width="8" height="' + bh + '" rx="1.5" fill="'
         + (k === it.wk ? '#2d9e6b' : '#bcc6c0') + '"><title>n\u00E4dal ' + k + ': ' + n[k] + (n[k] === 1 ? ' vaatlus' : ' vaatlust') + '</title></rect>';
     }
     var d0 = (half - 1) * 7;
     var nx = (it.doy - d0) / 182 * W;
     if(nx >= 0 && nx <= W){
       var x = Math.min(W - 1, Math.max(1, nx)).toFixed(1);
-      svg += '<line x1="' + x + '" y1="-2" x2="' + x + '" y2="41" stroke="#2a3530" stroke-width="1" stroke-dasharray="3 3"/>'
-        + '<text x="' + x + '" y="-4" font-size="9" fill="#2a3530" text-anchor="' + (nx > 236 ? 'end' : (nx < 20 ? 'start' : 'middle')) + '">t\u00E4na</text>';
+      svg += '<line x1="' + x + '" y1="-1" x2="' + x + '" y2="33" stroke="#2a3530" stroke-width="1" stroke-dasharray="3 3"/>'
+        + '<text x="' + x + '" y="-3" font-size="9" fill="#2a3530" text-anchor="' + (nx > 236 ? 'end' : (nx < 20 ? 'start' : 'middle')) + '">t\u00E4na</text>';
     }
     for(var m = 0; m < 12; m++){
       var mxp = (P148_MSTART[m] - 1 - d0) / 182 * W;
       if(mxp < -3 || mxp > W - 8) continue;
-      svg += '<text x="' + Math.max(1, mxp + 2).toFixed(1) + '" y="52" font-size="9" fill="#8a948f">' + MONTH_LETTERS[m] + '</text>';
+      svg += '<text x="' + Math.max(1, mxp + 2).toFixed(1) + '" y="43" font-size="9" fill="#8a948f">' + MONTH_LETTERS[m] + '</text>';
     }
-    return '<svg class="bm-mig-svg" viewBox="0 -12 260 66" aria-hidden="true">' + svg + '</svg>';
+    return '<svg class="bm-mig-svg" viewBox="0 -11 260 57" aria-hidden="true">' + svg + '</svg>';
   }
   /* P148b: species hidden from this popup only (not "seen"); kept in bm_migrants_popup_hidden. */
   var P148_LS_HIDDEN = 'bm_migrants_popup_hidden';

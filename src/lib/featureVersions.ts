@@ -282,6 +282,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-15', ref: 'P148', kind: 'major', text: 'Kaardi avamisel teavitus liikidest, kelle r\u00e4ndeaeg praegu k\u00e4ib' },
       { date: '2026-10-15', ref: 'P148b', kind: 'minor', text: 'Liikide peitmine, poolaasta graafik liigikaardi stiilis, aken Ennustuse nupu all' },
       { date: '2026-10-15', ref: 'P148c', kind: 'minor', text: 'Liigiavatarid nime ees; j\u00e4rjestus tipp, l\u00f5pp, algus, hinnang' },
+      { date: '2026-10-15', ref: 'P148d', kind: 'patch', text: 'Mobiilis k\u00f5rgem aken ja madalam graafik, mahub kaks liiki' },
     ],
   },
   {

@@ -126,6 +126,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-15', ref: 'P143', kind: 'patch', text: 'Kaart ei sega enam kahe vaatluse andmeid; sama ladina nimega liigi uusim vaatlus kehtib m\u00f5lemale nimele' },
       { date: '2026-10-15', ref: 'P144', kind: 'patch', text: 'PUC-salvestus m\u00e4ngib algusest; kirjas, mis sekunditel lind k\u00f5lab' },
       { date: '2026-10-15', ref: 'P145', kind: 'patch', text: 'Liigiinfo telefonis ei j\u00e4\u00e4 enam vahelehtede ja men\u00fc\u00fc alla' },
+      { date: '2026-10-15', ref: 'P146', kind: 'patch', text: 'Naabermaade vaatlused viimase 14 p\u00e4eva kohta (oli 30)' },
     ],
   },
   {

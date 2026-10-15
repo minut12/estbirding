@@ -11529,7 +11529,7 @@ function __bmMyObsModal(sec, name, sci, tries){
       .catch(function(){});
   } catch (e) {}
 }
-// P137: super/mega rarities only - last 30 days of eBird rare sightings in the neighbour countries
+// P137: super/mega rarities only - last 14 days (P146; was 30) of eBird rare sightings in the neighbour countries
 // (public.ebird_rare_observations, anon-readable) and the Ennustus probability (public.ennustus_cache).
 // Newest first, one row per place and day, max 5. Function declarations only.
 function __bmNbDate(iso){
@@ -11559,7 +11559,7 @@ function __bmNeighbourModal(sec, name){
     if (!cfg || !cfg.supabaseUrl || !cfg.anonKey) return;
     var sp = encodeURIComponent(String(name || '').normalize('NFC'));
     var hdr = { 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey };
-    var since = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    var since = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10); // P146: 14 days (was 30)
     var get = function(u){ return fetch(cfg.supabaseUrl + '/rest/v1/' + u, { headers: hdr }).then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }); };
     var obsP = get('ebird_rare_observations?select=country_code,obs_date,location,obs_count,distance_to_ee_km'
       + '&species_et_name=eq.' + sp + '&country_code=in.(FI,SE,LV,LT,RU-LEN,RU-PSK,RU-KGD)'
@@ -11579,7 +11579,7 @@ function __bmNeighbourModal(sec, name){
         seen[key] = 1;
         rows.push(o);
       });
-      var html = '<div class="bm-sim-l">Naabermaades viimase 30 p&auml;eva jooksul</div>';
+      var html = '<div class="bm-sim-l">Naabermaades viimase 14 p&auml;eva jooksul</div>';
       if (rows.length) {
         html += '<table class="bm-sim-nbt">';
         rows.forEach(function(o){
@@ -11592,7 +11592,7 @@ function __bmNeighbourModal(sec, name){
         });
         html += '</table>';
       } else {
-        html += '<div class="bm-sim-nb0">Naabermaades viimase 30 p&auml;eva jooksul vaatlusi pole</div>';
+        html += '<div class="bm-sim-nb0">Naabermaades viimase 14 p&auml;eva jooksul vaatlusi pole</div>';
       }
       var e = Array.isArray(res[1]) ? res[1][0] : null;
       var cur = e && !e.no_data ? Number(e.current_pct) : NaN;

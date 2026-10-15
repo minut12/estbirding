@@ -117,6 +117,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-12', ref: 'P131b', kind: 'patch', text: 'Sinu viimane vaatlus: ainult t\u00e4pne vaatleja nimi ja liigi eestikeelne nimi' },
       { date: '2026-10-15', ref: 'P133', kind: 'patch', text: 'PUC-salvestus m\u00e4ngib tuvastusest kuni l\u00f5puni' },
       { date: '2026-10-15', ref: 'P135', kind: 'patch', text: 'Liigiinfo telefonis kompaktsem' },
+      { date: '2026-10-15', ref: 'P136', kind: 'minor', text: 'Liigiinfos vaatlused n\u00e4dalate kaupa (histogramm)' },
     ],
   },
   {

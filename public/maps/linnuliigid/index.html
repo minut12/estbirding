@@ -148,6 +148,8 @@
 .bm-sim-my{margin:0 0 18px;padding:7px 11px;border-radius:9px;background:#eaf5ef;color:#2d6a48;font-size:13.5px;line-height:1.5} /* P128 */
 .bm-sim-my:empty{display:none}
 .bm-sim-my--none{background:#f1f4f2;color:#6b7770} /* P131 */
+.bm-sim-hist:empty{display:none} /* P136 */
+.bm-sim-histsvg{display:block;width:100%;max-width:560px;height:auto;margin:2px 0 0}
 .bm-sim-xc{display:flex;flex-wrap:wrap;gap:10px;margin:2px 0 6px}
 .bm-sim-xc figure{margin:0;max-width:100%}
 .bm-sim-xc figcaption{font-size:11.5px;color:#6b7770;margin:0 0 3px}
@@ -11163,7 +11165,7 @@ function __bmSpeciesInfoBodyHtml(row, code){
   var html = '';
   if (chips) html += '<div class="bm-sim-l">Taksonoomia</div><div class="bm-sim-chips">' + chips + '</div>';
   // P130: order is Taksonoomia, Haruldus (__bmRarityModal), own sighting (__bmMyObsModal), Tunnused.
-  html += '<div class="bm-sim-rarslot"></div><div class="bm-sim-my"></div>';
+  html += '<div class="bm-sim-rarslot"></div><div class="bm-sim-my"></div><div class="bm-sim-hist"></div>'; // P136: histogram slot
   html += '<div class="bm-sim-l">Tunnused</div><p class="bm-sim-txt">' + escapeHtml(txt) + '</p>'
     + '<div class="bm-sim-cred">Tekst: eBird.org' + (et ? ' &middot; masint&otilde;lge: '
       + ({ gemini: 'Gemini', mistral: 'Mistral', tartunlp: 'TartuNLP' }[String(row.translator || '')] || 'masin') : ' (inglise keeles)') + '</div>';
@@ -11220,6 +11222,7 @@ function __bmSpeciesInfoOpen(btn, code, nameArg){
       __bmRarityModal(sec, name); // P121
       if (row) __bmPucModal(sec, row.sci_name); // P127
       __bmMyObsModal(sec, name, row ? row.sci_name : ''); // P128/P131
+      __bmHistModal(sec, name); // P136
     }).catch(function(){
       if (!m.isConnected) return;
       sec.innerHTML = '<div class="bm-sim-msg">Liigiinfot ei &otilde;nnestunud laadida.</div>'
@@ -11425,6 +11428,45 @@ function __bmMyObsModal(sec, name, sci, tries){
           + (place ? ', ' + escapeHtml(String(place)) : '') + cnt;
       })
       .catch(function(){});
+  } catch (e) {}
+}
+// P136: 52 weekly bars of Elurikkus records (all years) from the Randeajad histograms already loaded by
+// the map (rpc/get_species_week_histograms), current week highlighted. Shown after Haruldus and the
+// own-sighting line; nothing when the species has no records. Function declarations only.
+function __bmHistModal(sec, name){
+  try {
+    if (typeof window.__randeajadWeeks !== 'function') return;
+    window.__randeajadWeeks(String(name || '')).then(function(pairs){
+      var slot = sec && sec.isConnected ? sec.querySelector('.bm-sim-hist') : null;
+      if (!slot || !Array.isArray(pairs) || !pairs.length) return;
+      var wk = [], i, total = 0;
+      for (i = 0; i < 52; i++) wk.push(0);
+      pairs.forEach(function(p){
+        var w = Number(p && p[0]), n = Number(p && p[1]);
+        if (w >= 1 && w <= 52 && n > 0) { wk[w - 1] += n; total += n; }
+      });
+      if (!total) return;
+      var mx = Math.max.apply(null, wk);
+      var d = new Date();
+      var doy = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - new Date(d.getFullYear(), 0, 1)) / 864e5) + 1;
+      var cur = Math.min(52, Math.floor((doy - 1) / 7) + 1);
+      var svg = '<line x1="0" y1="62.5" x2="520" y2="62.5" stroke="#dde4df" stroke-width="1"/>';
+      for (i = 0; i < 52; i++) {
+        var v = wk[i];
+        if (!v) continue;
+        var bh = Math.max(2, Math.round(v / mx * 58));
+        svg += '<rect x="' + (i * 10 + 1) + '" y="' + (62 - bh) + '" width="8" height="' + bh + '" rx="1.5" fill="'
+          + (i + 1 === cur ? '#2d9e6b' : '#bcc6c0') + '"><title>n&auml;dal ' + (i + 1) + ': ' + v
+          + (v === 1 ? ' vaatlus' : ' vaatlust') + '</title></rect>';
+      }
+      svg += '<rect x="' + ((cur - 1) * 10) + '" y="0" width="10" height="63" fill="#2d9e6b" opacity="0.08"/>';
+      var mon = ['J', 'V', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+      for (i = 0; i < 12; i++) svg += '<text x="' + (i * 43.3 + 4) + '" y="76" font-size="10" fill="#8a948f">' + mon[i] + '</text>';
+      slot.innerHTML = '<div class="bm-sim-l">Vaatlused n&auml;dalate kaupa</div>'
+        + '<svg class="bm-sim-histsvg" viewBox="0 0 520 80" role="img" aria-label="Vaatlused n&auml;dalate kaupa">' + svg + '</svg>'
+        + '<div class="bm-sim-cred">Elurikkus, k&otilde;ik aastad &middot; ' + total + (total === 1 ? ' vaatlus' : ' vaatlust')
+        + ' &middot; roheline = praegune n&auml;dal</div>';
+    }).catch(function(){});
   } catch (e) {}
 }
 function __bmSpeciesInfoXcHtml(list){
@@ -12068,6 +12110,13 @@ window.toggleNotification = async function(speciesName) {
     var k = slugToKey[slug(key)];
     return k ? { key: k, pairs: hist[k] } : null;
   }
+  /* P136: weekly [w, n, birds, sq] pairs for the species info modal; loads the histograms on demand. */
+  window.__randeajadWeeks = function(key){
+    var r = lookup(key);
+    if (r) return Promise.resolve(r.pairs);
+    if (hist) return Promise.resolve(null);
+    return Promise.resolve(window.__randeajadLoad()).then(function(){ var r2 = lookup(key); return r2 ? r2.pairs : null; });
+  };
   function todayDoy(){
     var d = new Date();
     var y = d.getFullYear();

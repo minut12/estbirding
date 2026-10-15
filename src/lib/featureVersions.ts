@@ -120,6 +120,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-15', ref: 'P136', kind: 'minor', text: 'Liigiinfos vaatlused n\u00e4dalate kaupa (histogramm)' },
       { date: '2026-10-15', ref: 'P137', kind: 'minor', text: 'Haruldustel naabermaade viimased vaatlused ja t\u00f5en\u00e4osus Eestis' },
       { date: '2026-10-15', ref: 'P136b', kind: 'patch', text: 'Liigiinfo histogrammil t\u00e4nase p\u00e4eva joon' },
+      { date: '2026-10-15', ref: 'P140', kind: 'minor', text: 'Harulduses ka dateerimata vaatlused ja "vaatlusi pole" rida; sama ladina nimega liigid koos' },
     ],
   },
   {

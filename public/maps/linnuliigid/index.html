@@ -145,6 +145,7 @@
 .bm-card-recno small{font-weight:500;color:#6b7770}
 .bm-sim-rar{margin-bottom:18px;font-size:13.5px;line-height:1.55;color:#3a4540}
 .bm-sim-rar b{color:#2a3530}
+.bm-sim-rar--none{color:#6b7770} /* P140 */
 .bm-sim-my{margin:0 0 18px;padding:7px 11px;border-radius:9px;background:#eaf5ef;color:#2d6a48;font-size:13.5px;line-height:1.5} /* P128 */
 .bm-sim-my:empty{display:none}
 .bm-sim-my--none{background:#f1f4f2;color:#6b7770} /* P131 */
@@ -11247,21 +11248,66 @@ function __bmSpeciesInfoOpen(btn, code, nameArg){
 // sounds (species_info.xc_recordings, filled by species-info-save action=xc). Function
 // declarations only; one RPC per species per session.
 function __bmIsMegaOrSuper(level){ return level === 'super' || level === 'mega'; }
+// P140: every Estonian name that shares the species' Latin name (SPECIES_SCINAMES, filled from
+// species meta), so alias pairs such as Punasaba-k&otilde;nnu&otilde;gija / Punasaba-&otilde;gija share one history. Max 5.
+function __bmSciAliases(species){
+  var k = String(species || '').normalize('NFC');
+  var out = [k];
+  try {
+    var sci = (typeof SPECIES_SCINAMES === 'object' && SPECIES_SCINAMES) ? SPECIES_SCINAMES[k] : '';
+    if (sci) {
+      for (var n in SPECIES_SCINAMES) {
+        if (!SPECIES_SCINAMES.hasOwnProperty(n) || out.length >= 5) continue;
+        var nn = String(n).normalize('NFC');
+        if (nn !== k && SPECIES_SCINAMES[n] === sci) out.push(nn);
+      }
+    }
+  } catch (e) {}
+  return out;
+}
 function __bmRarityRecords(species){
   window.__bmRarRecCache = window.__bmRarRecCache || {};
   var c = window.__bmRarRecCache;
-  var k = String(species || '').normalize('NFC');
+  var names = __bmSciAliases(species);
+  var k = names.slice().sort().join('|');
   if (c[k]) return c[k];
   var cfg = resolveSupabaseConfig();
   if (!cfg || !cfg.supabaseUrl || !cfg.anonKey) return Promise.reject(new Error('no supabase config'));
-  c[k] = fetch(cfg.supabaseUrl + '/rest/v1/rpc/get_species_rarity_records', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey },
-      body: JSON.stringify({ p_species: k })
+  var hdr = { 'Content-Type': 'application/json', 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey };
+  var post = function(fn, body){
+    return fetch(cfg.supabaseUrl + '/rest/v1/rpc/' + fn, { method: 'POST', headers: hdr, body: JSON.stringify(body) });
+  };
+  c[k] = post('get_species_rarity_records_v2', { p_names: names })
+    .then(function(r){
+      // P140: fall back to the one-name RPC while v2 is not deployed
+      if (r.status === 404) return post('get_species_rarity_records', { p_species: names[0] });
+      return r;
     })
     .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(rows){ return Array.isArray(rows) ? rows : []; })
     .catch(function(err){ delete c[k]; throw err; });
+  return c[k];
+}
+// P140: undated Estonian Elurikkus records (mostly literature) per species; alias names share
+// one Latin name and so one count. 0 when there are none or the table is missing.
+function __bmRarityUndated(species){
+  window.__bmRarUndCache = window.__bmRarUndCache || {};
+  var c = window.__bmRarUndCache;
+  var names = __bmSciAliases(species);
+  var k = names.slice().sort().join('|');
+  if (c[k]) return c[k];
+  var cfg = resolveSupabaseConfig();
+  if (!cfg || !cfg.supabaseUrl || !cfg.anonKey) return Promise.resolve(0);
+  var inList = names.map(function(n){ return '"' + n.replace(/"/g, '') + '"'; }).join(',');
+  c[k] = fetch(cfg.supabaseUrl + '/rest/v1/elurikkus_rarity_undated?select=n&species_name=in.(' + encodeURIComponent(inList) + ')',
+      { headers: { 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey } })
+    .then(function(r){ return r.ok ? r.json() : []; })
+    .then(function(rows){
+      var t = 0;
+      (Array.isArray(rows) ? rows : []).forEach(function(x){ var v = Number(x && x.n); if (v > t) t = v; }); // alias rows hold the same count: max, not sum
+      return t;
+    })
+    .catch(function(){ return 0; });
   return c[k];
 }
 function __bmFmtDateEE(iso){
@@ -11329,13 +11375,23 @@ function __bmRarityModal(sec, name){
   try {
     var meta = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(name) : null;
     if (!meta || !__bmIsMegaOrSuper(meta.rarityLevel)) return;
-    __bmRarityRecords(name).then(function(records){
-      if (!records.length || !sec.isConnected) return;
-      var first = records[0], last = records[records.length - 1];
-      var html = '<div class="bm-sim-l">Haruldus</div><div class="bm-sim-rar"><b>Eestis ' + records.length + (records.length === 1 ? ' vaatlus' : ' vaatlust') + '</b> Elurikkuse andmetel'
-        + ' &middot; esimene ' + __bmFmtDateEE(first.first_date) + (first.locality ? ' (' + escapeHtml(first.locality) + ')' : '')
-        + (records.length > 1 ? ' &middot; viimane ' + __bmFmtDateEE(last.first_date) + (last.locality ? ' (' + escapeHtml(last.locality) + ')' : '') : '')
-        + '</div>';
+    Promise.all([__bmRarityRecords(name), __bmRarityUndated(name)]).then(function(res){
+      var records = res[0] || [], und = Number(res[1]) || 0;
+      if (!sec.isConnected) return;
+      var undTxt = und + ' dateerimata ' + (und === 1 ? 'vaatlus' : 'vaatlust');
+      var html;
+      if (records.length) {
+        var first = records[0], last = records[records.length - 1];
+        html = '<div class="bm-sim-l">Haruldus</div><div class="bm-sim-rar"><b>Eestis ' + records.length + (records.length === 1 ? ' vaatlus' : ' vaatlust') + '</b> Elurikkuse andmetel'
+          + ' &middot; esimene ' + __bmFmtDateEE(first.first_date) + (first.locality ? ' (' + escapeHtml(first.locality) + ')' : '')
+          + (records.length > 1 ? ' &middot; viimane ' + __bmFmtDateEE(last.first_date) + (last.locality ? ' (' + escapeHtml(last.locality) + ')' : '') : '')
+          + (und > 0 ? ' &middot; lisaks ' + undTxt + ' kirjandusallikatest' : '') // P140
+          + '</div>';
+      } else if (und > 0) { // P140: only undated (literature) records
+        html = '<div class="bm-sim-l">Haruldus</div><div class="bm-sim-rar"><b>Eestis ' + undTxt + '</b> kirjandusallikatest Elurikkuse andmetel</div>';
+      } else { // P140: nothing in Elurikkus
+        html = '<div class="bm-sim-l">Haruldus</div><div class="bm-sim-rar bm-sim-rar--none">Elurikkuses Eesti vaatlusi pole</div>';
+      }
       var rs = sec.querySelector('.bm-sim-rarslot'); // P130: after Taksonoomia
       if (rs) rs.innerHTML = html; else sec.insertAdjacentHTML('afterbegin', html);
     }).catch(function(){});

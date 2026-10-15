@@ -1,3 +1,4 @@
+// redeploy-marker: P141 2026-10-15 (Latin-name fallback search when the Estonian name finds no dated record)
 // redeploy-marker: P129 2026-10-12 (re-label rows whose Elurikkus name is another species)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
@@ -1131,6 +1132,33 @@ Deno.serve(async (req) => {
     throw new Error("PGNET_TIMEOUT no response before deadline");
   };
 
+  // P141: Latin names from species meta, loaded once per call, for the fallback search. Elurikkus has
+  // no Estonian name for some taxa (e.g. Glareola pratincola / K\u00f5nnu-p\u00e4\u00e4sujooksur), so the
+  // Estonian-name page search finds nothing for them.
+  let latinBySpecies: Map<string, string> | null = null;
+  const loadLatin = async (): Promise<Map<string, string>> => {
+    if (latinBySpecies) return latinBySpecies;
+    const m = new Map<string, string>();
+    latinBySpecies = m;
+    try {
+      const res = await fetch(
+        `${supabaseUrl}/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json?t=${Date.now()}`,
+        { cache: "no-store" },
+      );
+      if (res.ok) {
+        const j = await res.json() as { items?: Record<string, { scientificName?: unknown }> };
+        for (const [k, v] of Object.entries(j.items ?? {})) {
+          const sci = String(v?.scientificName ?? "").trim();
+          if (/^[A-Z][a-z]+ [a-z-]+( [a-z-]+)?$/.test(sci)) m.set(k.normalize("NFC"), sci);
+        }
+      }
+    } catch (e) {
+      console.log("[p141] species meta load failed", String(e).slice(0, 160));
+    }
+    return m;
+  };
+  let latinFallbacks = 0;
+
   let updated = 0;
   let totalObsParsed = 0;
   let totalWithSubId = 0;
@@ -1151,7 +1179,7 @@ Deno.serve(async (req) => {
     if (i > 0 && Date.now() - t0 > 30000) { attemptedCount = i; break; }
     const name = species[i];
     try {
-      const searchUrl = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(name)}`;
+      let searchUrl = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(name)}`;
       let html: string;
       try {
         html = await fetchViaPgnet(name, 12000);
@@ -1162,7 +1190,27 @@ Deno.serve(async (req) => {
       }
 
       // Parse per-observation rows from the HTML
-      const parseResult = parseObservationsFromHtml(html, name);
+      let parseResult = parseObservationsFromHtml(html, name);
+      // P141: no dated record under the Estonian name -> search once more by the Latin name.
+      if (parseResult.observations.length === 0) {
+        const sci = (await loadLatin()).get(name.normalize("NFC"));
+        if (sci) {
+          try {
+            const htmlLat = await fetchViaPgnet(sci, 12000);
+            const parsedLat = parseObservationsFromHtml(htmlLat, name);
+            if (parsedLat.observations.length > 0) {
+              html = htmlLat;
+              parseResult = parsedLat;
+              searchUrl = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(sci)}`;
+              latinFallbacks++;
+              console.log("[p141] latin fallback", name, sci, parsedLat.observations.length);
+            }
+          } catch (le) {
+            if (/HTTP (429|500|502|503)\b/.test(String(le))) throw le; // same stop rule as the main search
+            console.log("[p141] latin fallback failed", name, String(le).slice(0, 160));
+          }
+        }
+      }
       // P129: the text search for e.g. "Kivit\u00e4ks" also returns "nunn-kivit\u00e4ks" records. A row whose
       // Elurikkus Estonian name is ANOTHER species of DEFAULT_SPECIES belongs to that species: it is
       // kept out of this species' card/count and saved under the other name. Rows without a name,
@@ -1443,6 +1491,7 @@ Deno.serve(async (req) => {
     observations_updated: totalObsUpdated,
     cache_rows_upserted: totalCacheUpserts,
     coords_preserved: coordsPreserved,
+    latin_fallbacks: latinFallbacks, // P141
   };
 
   return new Response(JSON.stringify(result), {

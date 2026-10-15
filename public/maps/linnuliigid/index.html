@@ -864,9 +864,8 @@ html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);paddi
 #bmMigPop .bm-mig-sub{margin:0;font-size:12px;color:var(--sb-muted,#6c7f74)}
 #bmMigPop .bm-mig-x{flex:0 0 auto;width:26px;height:26px;padding:0;border:0;border-radius:999px;background:var(--sb-bg2,#f2f8f4);color:var(--sb-muted,#6c7f74);font-size:16px;line-height:1;cursor:pointer}
 #bmMigPop .bm-mig-x:hover{color:var(--sb-ink,#222a26)}
-#bmMigPop .bm-mig-months{display:grid;grid-template-columns:repeat(12,1fr);padding:0 6px;font:600 10px system-ui,sans-serif;color:var(--sb-muted,#6c7f74)}
 #bmMigPop .bm-mig-list{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column}
-#bmMigPop .bm-mig-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;padding:6px}
+#bmMigPop .bm-mig-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:3px 6px;padding:6px;align-items:center}
 #bmMigPop .bm-mig-row+.bm-mig-row{border-top:1px solid var(--sb-line2,#eef2ef)}
 #bmMigPop .bm-mig-nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #bmMigPop .bm-mig-chip{justify-self:end;align-self:center;font:600 10.5px/1 system-ui,sans-serif;padding:4px 7px;border-radius:999px;white-space:nowrap}
@@ -875,16 +874,15 @@ html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);paddi
 #bmMigPop .bm-mig-chip.down{background:var(--sb-line2,#eef2ef);color:var(--sb-ink2,#4a5852)}
 #bmMigPop .bm-mig-chip.est{background:var(--sb-line2,#eef2ef);color:var(--sb-muted,#6c7f74)}
 #bmMigPop .bm-mig-chip.soon{background:transparent;color:var(--sb-primary,#2d7a4b);box-shadow:inset 0 0 0 1px var(--sb-primary,#2d7a4b)}
-#bmMigPop .bm-mig-strip{grid-column:1/-1;position:relative;height:22px;border-radius:3px;background:var(--sb-line2,#eef2ef);overflow:hidden}
-#bmMigPop .bm-mig-band{position:absolute;top:0;bottom:0}
-#bmMigPop .bm-mig-band.s{background:var(--sb-primary-soft,#e4f1e8)}
-#bmMigPop .bm-mig-band.a{background:var(--sb-warn-soft,#fbeedd)}
-#bmMigPop .bm-mig-band.e{background:var(--sb-line,#dde4df)}
-#bmMigPop .bm-mig-bars{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;gap:1px;padding:0 1px}
-#bmMigPop .bm-mig-bars i{flex:1 1 0;min-width:0;border-radius:1px;background:#9fb3a7}
-#bmMigPop .bm-mig-bars i.on{background:var(--sb-primary,#2d7a4b)}
-#bmMigPop .bm-mig-strip b{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--sb-ink2,#4a5852)}
 #bmMigPop .bm-mig-rng{grid-column:1/-1;font-size:11.5px;color:var(--sb-muted,#6c7f74);font-variant-numeric:tabular-nums}
+#bmMigPop .bm-mig-svg{grid-column:1/-1;display:block;width:100%;height:auto;overflow:visible}
+#bmMigPop .bm-mig-eye{width:26px;height:26px;padding:0;border:0;border-radius:7px;background:none;color:var(--sb-muted,#6c7f74);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+#bmMigPop .bm-mig-eye:hover{background:var(--sb-bg2,#f2f8f4);color:var(--sb-ink,#222a26)}
+#bmMigPop .bm-mig-empty{padding:10px 6px;font-size:12.5px;color:var(--sb-muted,#6c7f74)}
+#bmMigPop .bm-mig-hidtog{align-self:flex-start;border:0;background:none;padding:2px 6px;color:var(--sb-ink2,#4a5852);font:500 12px system-ui,sans-serif;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+#bmMigPop .bm-mig-hidlist{display:flex;flex-wrap:wrap;gap:6px;padding:0 6px}
+#bmMigPop .bm-mig-hidit{display:inline-flex;align-items:center;gap:6px;padding:3px 4px 3px 10px;border-radius:999px;background:var(--sb-bg2,#f2f8f4);font-size:12px}
+#bmMigPop .bm-mig-unhide{border:0;border-radius:999px;padding:3px 8px;background:var(--sb-primary-soft,#e4f1e8);color:var(--sb-primary,#2d7a4b);font:600 11px system-ui,sans-serif;cursor:pointer}
 #bmMigPop .bm-mig-sep{font:700 10px/1.2 system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--sb-muted,#6c7f74);padding:8px 6px 2px}
 #bmMigPop .bm-mig-more{align-self:flex-start;border:0;background:none;padding:2px 6px;color:var(--sb-primary,#2d7a4b);font:600 12.5px system-ui,sans-serif;cursor:pointer}
 #bmMigPop .bm-mig-foot{font-size:11px;color:var(--sb-muted,#6c7f74);border-top:1px solid var(--sb-line2,#eef2ef);padding-top:6px}
@@ -12547,28 +12545,60 @@ window.toggleNotification = async function(speciesName) {
     var n = it.w.b - it.wk;
     return n === 0 ? 'viimane n\u00E4dal' : (n === 1 ? 'veel 1 n\u00E4dal' : 'veel ' + n + ' n\u00E4dalat');
   }
+  /* P148b: per-row histogram in the species-info style (records per week, grey bars, this week green,
+     dashed "t\u00E4na" line), showing only the half-year of the window that is on now. */
+  var P148_MSTART = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335];
   function p148Strip(it){
-    var s = it.s;
-    var bands = '';
-    [['s', it.res.spring], ['a', it.res.autumn]].forEach(function(pair){
-      var win = pair[1];
-      if(!isReal(win) || typeof win.a !== 'number') return;
-      var cls = win.manual ? 'e' : pair[0];
-      bands += '<span class="bm-mig-band ' + cls + '" style="left:' + pct(win.a - 1) + '%;width:' + pct(win.b - win.a + 1) + '%"></span>';
-    });
-    var bars = '';
-    for(var k = 1; k <= WEEKS; k++){
-      var hgt = (s.v[k] > 0 && s.vmax > 0) ? Math.max(8, s.v[k] / s.vmax * 100) : 0;
-      var on = (isReal(it.res.spring) && !it.res.spring.manual && k >= it.res.spring.a && k <= it.res.spring.b)
-        || (isReal(it.res.autumn) && !it.res.autumn.manual && k >= it.res.autumn.a && k <= it.res.autumn.b);
-      bars += '<i' + (on ? ' class="on"' : '') + ' style="height:' + hgt.toFixed(1) + '%"></i>';
+    var half = it.w.b <= 26 ? 1 : 27;
+    var W = 260;
+    var n = it.s.n;
+    var mx = 0;
+    var k;
+    for(k = half; k < half + 26; k++) if(n[k] > mx) mx = n[k];
+    var svg = '<line x1="0" y1="40.5" x2="' + W + '" y2="40.5" stroke="#dde4df" stroke-width="1"/>';
+    for(k = half; k < half + 26; k++){
+      if(!(n[k] > 0) || !mx) continue;
+      var bh = Math.max(2, Math.round(n[k] / mx * 38));
+      svg += '<rect x="' + ((k - half) * 10 + 1) + '" y="' + (40 - bh) + '" width="8" height="' + bh + '" rx="1.5" fill="'
+        + (k === it.wk ? '#2d9e6b' : '#bcc6c0') + '"><title>n\u00E4dal ' + k + ': ' + n[k] + (n[k] === 1 ? ' vaatlus' : ' vaatlust') + '</title></rect>';
     }
-    return '<div class="bm-mig-strip" aria-hidden="true">' + bands + '<div class="bm-mig-bars">' + bars + '</div>'
-      + '<b style="left:' + (it.doy / 365 * 100).toFixed(1) + '%"></b></div>';
+    var d0 = (half - 1) * 7;
+    var nx = (it.doy - d0) / 182 * W;
+    if(nx >= 0 && nx <= W){
+      var x = Math.min(W - 1, Math.max(1, nx)).toFixed(1);
+      svg += '<line x1="' + x + '" y1="-2" x2="' + x + '" y2="41" stroke="#2a3530" stroke-width="1" stroke-dasharray="3 3"/>'
+        + '<text x="' + x + '" y="-4" font-size="9" fill="#2a3530" text-anchor="' + (nx > 236 ? 'end' : (nx < 20 ? 'start' : 'middle')) + '">t\u00E4na</text>';
+    }
+    for(var m = 0; m < 12; m++){
+      var mxp = (P148_MSTART[m] - 1 - d0) / 182 * W;
+      if(mxp < -3 || mxp > W - 8) continue;
+      svg += '<text x="' + Math.max(1, mxp + 2).toFixed(1) + '" y="52" font-size="9" fill="#8a948f">' + MONTH_LETTERS[m] + '</text>';
+    }
+    return '<svg class="bm-mig-svg" viewBox="0 -12 260 66" aria-hidden="true">' + svg + '</svg>';
   }
+  /* P148b: species hidden from this popup only (not "seen"); kept in bm_migrants_popup_hidden. */
+  var P148_LS_HIDDEN = 'bm_migrants_popup_hidden';
+  var p148ShowHidden = false;
+  function p148HiddenSet(){
+    try{
+      var a = JSON.parse(localStorage.getItem(P148_LS_HIDDEN) || '[]');
+      var o = {};
+      if(Array.isArray(a)) a.forEach(function(k){ if(typeof k === 'string') o[k] = true; });
+      return o;
+    }catch(e){ return {}; }
+  }
+  function p148SetHidden(key, on){
+    var o = p148HiddenSet();
+    if(on) o[key] = true; else delete o[key];
+    try{ localStorage.setItem(P148_LS_HIDDEN, JSON.stringify(Object.keys(o))); }catch(e){}
+  }
+  var P148_EYE = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c5 0 9 5 10 7a14 14 0 0 1-3.3 4.2M6.6 6.6A14 14 0 0 0 2 12c1 2 5 7 10 7a9.6 9.6 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
   function p148Body(box, list){
     var R = window.__bmRandeajad;
-    var items = list.items;
+    var hid = p148HiddenSet();
+    var items = [];
+    var hidden = [];
+    list.items.forEach(function(it, idx){ it.idx = idx; (hid[it.key] ? hidden : items).push(it); });
     var vis = p148ShowAll ? items : items.slice(0, P148_TOP);
     var rows = '';
     var estOpen = false;
@@ -12580,23 +12610,52 @@ window.toggleNotification = async function(speciesName) {
         ? 'R\u00E4ndeaeg (hinnang' + (it.w.src === 'ebird' && it.w.cc ? ' \u00B7 eBird ' + String(it.w.cc).replace(/\+/g, '/') : '') + ') '
         : 'R\u00E4ndeaeg ';
       rows += '<div class="bm-mig-row"><span class="bm-mig-nm">' + escapeHtml(it.key) + '</span>'
-        + '<span class="bm-mig-chip ' + ph.cls + '">' + ph.t + '</span>' + p148Strip(it)
+        + '<span class="bm-mig-chip ' + ph.cls + '">' + ph.t + '</span>'
+        + '<button type="button" class="bm-mig-eye" data-i="' + it.idx + '" title="Peida see liik siin" aria-label="Peida see liik siin">' + P148_EYE + '</button>'
+        + p148Strip(it)
         + '<span class="bm-mig-rng">' + lbl + R.fmtRange(it.w) + ' \u00B7 ' + p148Left(it) + '</span></div>';
     }
-    var months = MONTH_LETTERS.map(function(l){ return '<span>' + l + '</span>'; }).join('');
+    if(!items.length) rows = '<div class="bm-mig-empty">K\u00F5ik selle n\u00E4dala r\u00E4ndajad on peidetud.</div>';
     var more = items.length > P148_TOP
       ? '<button type="button" class="bm-mig-more">' + (p148ShowAll ? 'N\u00E4ita v\u00E4hem' : 'N\u00E4ita k\u00F5iki (' + items.length + ')') + '</button>'
       : '';
+    var hidHtml = '';
+    if(hidden.length){
+      hidHtml = '<button type="button" class="bm-mig-hidtog" aria-expanded="' + (p148ShowHidden ? 'true' : 'false') + '">Peidetud liigid (' + hidden.length + ')</button>';
+      if(p148ShowHidden){
+        hidHtml += '<div class="bm-mig-hidlist">' + hidden.map(function(h){
+          return '<span class="bm-mig-hidit"><span>' + escapeHtml(h.key) + '</span><button type="button" class="bm-mig-unhide" data-i="' + h.idx + '">N\u00E4ita</button></span>';
+        }).join('') + '</div>';
+      }
+    }
+    var keep = box.querySelector('.bm-mig-list');
+    var scroll = keep ? keep.scrollTop : 0;
     box.innerHTML = '<div class="bm-mig-top"><div>'
       + '<div class="bm-mig-kick">Linnuliigid \u00B7 ' + list.wk + '. n\u00E4dal</div>'
       + '<h4 class="bm-mig-title">Oodatavad r\u00E4ndajad</h4>'
       + '<p class="bm-mig-sub">' + items.length + (items.length === 1 ? ' liik' : ' liiki') + ', kelle r\u00E4ndeaeg Eestis praegu k\u00E4ib</p></div>'
       + '<button type="button" class="bm-mig-x" aria-label="Sulge">\u00D7</button></div>'
-      + '<div class="bm-mig-months" aria-hidden="true">' + months + '</div>'
-      + '<div class="bm-mig-list">' + rows + '</div>' + more
+      + '<div class="bm-mig-list">' + rows + '</div>' + more + hidHtml
       + '<div class="bm-mig-foot">R\u00E4ndeaeg Elurikkuse vaatluste j\u00E4rgi, k\u00F5ik aastad.'
       + (list.seen ? ' ' + list.seen + ' n\u00E4htuks m\u00E4rgitud ' + (list.seen === 1 ? 'liik' : 'liiki') + ' on peidetud.' : '') + '</div>'
       + '<div class="bm-mig-actions"><button type="button" class="bm-mig-hide">\u00C4ra t\u00E4na teavitust rohkem kuva</button></div>';
+    var nl = box.querySelector('.bm-mig-list');
+    if(nl && scroll) nl.scrollTop = scroll;
+  }
+  /* P148b: on desktop the popup sits below the top-right map controls (Ennustus), so they stay clickable. */
+  function p148Place(box, wrap){
+    try{
+      if(window.matchMedia && window.matchMedia('(max-width:900px)').matches){ box.style.top = ''; box.style.maxHeight = ''; return; }
+      var top = 12;
+      var c = wrap.querySelector('.leaflet-top.leaflet-right');
+      if(c){
+        var r = c.getBoundingClientRect();
+        var wr = wrap.getBoundingClientRect();
+        if(r.height > 0) top = Math.round(r.bottom - wr.top + 10);
+      }
+      box.style.top = top + 'px';
+      box.style.maxHeight = 'calc(100% - ' + (top + 12) + 'px)';
+    }catch(e){}
   }
   function p148Kick(){
     if(p148Done || !hist || !mwDone) return;
@@ -12621,9 +12680,20 @@ window.toggleNotification = async function(speciesName) {
           box.remove();
           return;
         }
+        var b = t.closest('.bm-mig-eye') || t.closest('.bm-mig-unhide');
+        if(b){
+          var it = list.items[Number(b.getAttribute('data-i'))];
+          if(it) p148SetHidden(it.key, b.classList.contains('bm-mig-eye'));
+          p148Body(box, list);
+          return;
+        }
+        if(t.closest('.bm-mig-hidtog')){ p148ShowHidden = !p148ShowHidden; p148Body(box, list); return; }
         if(t.closest('.bm-mig-more')){ p148ShowAll = !p148ShowAll; p148Body(box, list); }
       });
       wrap.appendChild(box);
+      p148Place(box, wrap);
+      setTimeout(function(){ p148Place(box, wrap); }, 1500);
+      window.addEventListener('resize', function(){ if(box.isConnected) p148Place(box, wrap); });
       console.log('[p148] popup shown: ' + list.items.length + ' species, week ' + list.wk + ', seen hidden ' + list.seen);
     }catch(e){ console.warn('[p148] popup failed', e); }
   }

@@ -280,6 +280,7 @@ export const FEATURES: readonly Feature[] = [
     name: 'Oodatavad r\u00e4ndajad',
     changes: [
       { date: '2026-10-15', ref: 'P148', kind: 'major', text: 'Kaardi avamisel teavitus liikidest, kelle r\u00e4ndeaeg praegu k\u00e4ib' },
+      { date: '2026-10-15', ref: 'P148b', kind: 'minor', text: 'Liikide peitmine, poolaasta graafik liigikaardi stiilis, aken Ennustuse nupu all' },
     ],
   },
   {

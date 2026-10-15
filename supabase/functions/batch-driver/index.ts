@@ -458,6 +458,28 @@ async function closeRun(
 
 // ---------------------------------------------------------------------------
 
+// P147: true while an `elurikkus` full sweep is mid-run - its newest hop row is still open
+// (started in the last 4 min) or just closed as chained (the next hop is being enqueued).
+// Any read error -> false, so the recent job runs as before.
+async function fullSweepRunning(sb: Admin): Promise<boolean> {
+  try {
+    const { data, error } = await sb
+      .from("cron_runs")
+      .select("started_at, finished_at, state")
+      .eq("job", "elurikkus")
+      .order("started_at", { ascending: false })
+      .limit(1);
+    if (error || !Array.isArray(data) || data.length === 0) return false;
+    const row = data[0] as { started_at: string; finished_at: string | null; state: Record<string, unknown> | null };
+    const now = Date.now();
+    if (row.finished_at === null) return now - Date.parse(row.started_at) < 4 * 60_000;
+    return row.state?.chained === true && now - Date.parse(row.finished_at) < 90_000;
+  } catch (e) {
+    console.error("[p147 sweep check]", e instanceof Error ? e.message : String(e));
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -520,6 +542,25 @@ Deno.serve(async (req) => {
   const sb = adminClient();
   let state = normalizeState(body.state);
   const rowId = await openRun(sb, job, runId, hop, state);
+
+  // P147: the recent-feed job yields to a running full sweep. Both fetch Elurikkus via pg_net at
+  // the same time and the sweep's chunk then times out (elurikkus_no_progress at ~offset 100).
+  if (job === "elurikkus_recent" && hop === 0 && await fullSweepRunning(sb)) {
+    const skipState = { ...state, stopped: "yield_full_sweep", chained: false };
+    await closeRun(sb, rowId, { calls: 0, ok: true, state: skipState, error: null });
+    return json(200, {
+      ok: true,
+      job,
+      run_id: runId,
+      hop,
+      calls: 0,
+      state,
+      stopped: "yield_full_sweep",
+      chained: false,
+      took_ms: Date.now() - started,
+      error: null,
+    });
+  }
 
   let calls = 0; // this hop only; the cap lives in state.calls_total
   let lastCallAt = 0;

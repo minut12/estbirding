@@ -130,7 +130,12 @@ function mergeCloudOverLocal(localMap: Record<string, SpeciesMeta>, cloud: Speci
 export async function downloadSpeciesMetaJson(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<SpeciesMetaCloudJson | null> {
   try {
     validateCloudConfig(scope);
-    const { data, error } = await supabase.storage.from(BUCKET).download(scope.speciesMetaCloudFilePath);
+    // P132: a unique query + no-store bypasses the browser HTTP cache and the storage CDN cache.
+    // Without it, a read right after an upload got the previous file (HTTP 304), and the refresh
+    // that follows every save merged that old copy over the just-saved rarity level.
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .download(`${scope.speciesMetaCloudFilePath}?t=${Date.now()}`, undefined, { cache: 'no-store' });
     if (error) {
       const message = extractErrorMessage(error);
       if (/not found|404|object not found/i.test(message)) return null;
@@ -187,6 +192,13 @@ export async function refreshSpeciesMetaFromCloud(options?: { force?: boolean; s
   }
 
   const prevUpdatedAt = localStorage.getItem(scope.speciesMetaCloudUpdatedAtKey) || '';
+  // P132: never apply a cloud copy older than the one this device last saved or applied
+  // (a stale read would otherwise undo a fresh edit, even on a forced refresh).
+  if (cloud.updatedAt && prevUpdatedAt && cloud.updatedAt < prevUpdatedAt) {
+    console.warn('[species-meta-cloud] refresh skipped, cloud copy older than local', { cloud: cloud.updatedAt, local: prevUpdatedAt });
+    localStorage.setItem(scope.speciesMetaLastSyncAtKey, new Date().toISOString());
+    return { updated: false, merged: local };
+  }
   if (!force && cloud.updatedAt && prevUpdatedAt && cloud.updatedAt === prevUpdatedAt) {
     localStorage.setItem(scope.speciesMetaLastSyncAtKey, new Date().toISOString());
     return { updated: false, merged: local };

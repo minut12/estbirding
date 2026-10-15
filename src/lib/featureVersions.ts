@@ -481,6 +481,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-06', ref: 'P93c', kind: 'major', text: '\u00dcks leht kahe kaardi jaoks, loendivaade otsingu ja siltidega' },
       { date: '2026-10-07', ref: 'P97c3b', kind: 'minor', text: 'Avatari valik iNaturalistist ja Wikimediast koos litsentsiga' },
       { date: '2026-10-07', ref: 'P97c4a', kind: 'patch', text: 'Foto autori vahem\u00e4lu avatari aadressi j\u00e4rgi' },
+      { date: '2026-10-15', ref: 'P132', kind: 'patch', text: 'Harulduse taseme muudatus ei kao p\u00e4rast salvestamist' },
     ],
   },
   {

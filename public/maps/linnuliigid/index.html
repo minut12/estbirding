@@ -866,13 +866,15 @@ html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);paddi
 #bmMigPop .bm-mig-x:hover{color:var(--sb-ink,#222a26)}
 #bmMigPop .bm-mig-list{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column}
 #bmMigPop .bm-mig-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto auto;gap:3px 6px;padding:6px;align-items:center}
-#bmMigPop .bm-mig-av{width:28px;height:28px;box-sizing:border-box;border-radius:50%;border:2px solid var(--sb-line,#dde4df);background-color:var(--sb-bg2,#f2f8f4);background-size:cover;background-position:center}
+#bmMigPop .bm-mig-av{width:28px;height:28px;box-sizing:border-box;border-radius:50%;border:2px solid var(--sb-line,#dde4df);background-color:var(--sb-bg2,#f2f8f4);background-size:cover;background-position:center;position:relative}
+#bmMigPop .bm-mig-rar{position:absolute;right:-7px;top:-6px;min-width:16px;height:16px;box-sizing:border-box;padding:0 3px;border-radius:8px;background:var(--sb-ink,#222a26);color:#fff;font:800 9px/12px system-ui,sans-serif;text-align:center;border:2px solid var(--sb-bg,#fff)}
 #bmMigPop .bm-mig-row+.bm-mig-row{border-top:1px solid var(--sb-line2,#eef2ef)}
 #bmMigPop .bm-mig-nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #bmMigPop .bm-mig-chip{justify-self:end;align-self:center;font:600 10.5px/1 system-ui,sans-serif;padding:4px 7px;border-radius:999px;white-space:nowrap}
 #bmMigPop .bm-mig-chip.up{background:var(--sb-primary-soft,#e4f1e8);color:var(--sb-primary,#2d7a4b)}
 #bmMigPop .bm-mig-chip.pk{background:var(--sb-warn-soft,#fbeedd);color:var(--sb-warn,#b45309)}
 #bmMigPop .bm-mig-chip.down{background:var(--sb-line2,#eef2ef);color:var(--sb-ink2,#4a5852)}
+#bmMigPop .bm-mig-chip.past{background:transparent;color:var(--sb-warn,#b45309);box-shadow:inset 0 0 0 1px var(--sb-warn-soft,#fbeedd)}
 #bmMigPop .bm-mig-chip.est{background:var(--sb-line2,#eef2ef);color:var(--sb-muted,#6c7f74)}
 #bmMigPop .bm-mig-chip.soon{background:transparent;color:var(--sb-primary,#2d7a4b);box-shadow:inset 0 0 0 1px var(--sb-primary,#2d7a4b)}
 #bmMigPop .bm-mig-rng{grid-column:1/-1;font-size:11.5px;color:var(--sb-muted,#6c7f74);font-variant-numeric:tabular-nums}
@@ -12531,7 +12533,7 @@ window.toggleNotification = async function(speciesName) {
       }catch(e){ console.warn('[p148] skipped', key, e); }
     }
     /* P148c: fixed order by phase (Kristian 15.10): tipp, lopp, algus, algab peagi, then estimates; A-Z inside each group. */
-    var rank = { pk: 0, down: 1, up: 2, soon: 3, est: 4 };
+    var rank = { pk: 0, past: 1, down: 2, up: 3, soon: 4, est: 5 };
     var all = data.concat(est);
     all.sort(function(a, b){ return (rank[p148Phase(a).cls] - rank[p148Phase(b).cls]) || a.key.localeCompare(b.key, 'et'); });
     return { items: all, seen: seen, wk: wk };
@@ -12541,6 +12543,7 @@ window.toggleNotification = async function(speciesName) {
     if(it.wk < it.w.a) return { cls: 'soon', t: 'algab peagi' };
     if(it.wk < it.w.pk) return { cls: 'up', t: 'r\u00E4nde algus' };
     if(it.wk === it.w.pk) return { cls: 'pk', t: 'r\u00E4nde tipp' };
+    if(it.w.b - it.wk >= 2) return { cls: 'past', t: 'tipp m\u00F6\u00F6das' }; /* P148f: past the peak, 2+ weeks left */
     return { cls: 'down', t: 'r\u00E4nde l\u00F5pp' };
   }
   function p148Left(it){
@@ -12603,6 +12606,14 @@ window.toggleNotification = async function(speciesName) {
       return u.replace(/['"\\()\s]/g, function(c){ return encodeURIComponent(c); });
     }catch(e){ return ''; }
   }
+  /* P148g: R / SR / MR corner badge on the avatar, as on the sidebar row. */
+  function p148Rar(key){
+    try{
+      var meta = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : null;
+      var t = (meta && window.getRarityBadgeText) ? window.getRarityBadgeText(meta.rarityLevel) : '';
+      return t ? '<span class="bm-mig-rar" title="Haruldus">' + escapeHtml(t) + '</span>' : '';
+    }catch(e){ return ''; }
+  }
   function p148Body(box, list){
     var R = window.__bmRandeajad;
     var hid = p148HiddenSet();
@@ -12619,7 +12630,7 @@ window.toggleNotification = async function(speciesName) {
       var lbl = it.est
         ? 'R\u00E4ndeaeg (hinnang' + (it.w.src === 'ebird' && it.w.cc ? ' \u00B7 eBird ' + String(it.w.cc).replace(/\+/g, '/') : '') + ') '
         : 'R\u00E4ndeaeg ';
-      rows += '<div class="bm-mig-row"><span class="bm-mig-av" style="background-image:url(\'' + p148Av(it.key) + '\')"></span><span class="bm-mig-nm">' + escapeHtml(it.key) + '</span>'
+      rows += '<div class="bm-mig-row"><span class="bm-mig-av" style="background-image:url(\'' + p148Av(it.key) + '\')">' + p148Rar(it.key) + '</span><span class="bm-mig-nm">' + escapeHtml(it.key) + '</span>'
         + '<span class="bm-mig-chip ' + ph.cls + '">' + ph.t + '</span>'
         + '<button type="button" class="bm-mig-eye" data-i="' + it.idx + '" title="Peida see liik siin" aria-label="Peida see liik siin">' + P148_EYE + '</button>'
         + p148Strip(it)
@@ -12713,7 +12724,7 @@ window.toggleNotification = async function(speciesName) {
       });
       wrap.appendChild(box);
       p148Place(box, wrap);
-      setTimeout(function(){ p148Place(box, wrap); }, 1500);
+      setTimeout(function(){ if(box.isConnected){ p148Body(box, list); p148Place(box, wrap); } }, 1500); /* P148g: re-render once species meta (rarity) has loaded */
       window.addEventListener('resize', function(){ if(box.isConnected) p148Place(box, wrap); });
       console.log('[p148] popup shown: ' + list.items.length + ' species, week ' + list.wk + ', seen hidden ' + list.seen);
     }catch(e){ console.warn('[p148] popup failed', e); }

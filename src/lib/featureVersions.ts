@@ -284,6 +284,8 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-15', ref: 'P148c', kind: 'minor', text: 'Liigiavatarid nime ees; j\u00e4rjestus tipp, l\u00f5pp, algus, hinnang' },
       { date: '2026-10-15', ref: 'P148d', kind: 'patch', text: 'Mobiilis k\u00f5rgem aken ja madalam graafik, mahub kaks liiki' },
       { date: '2026-10-15', ref: 'P148e', kind: 'patch', text: 'Mobiilis aken ei kata kaardi nuppe (suum, Ennustus)' },
+      { date: '2026-10-15', ref: 'P148f', kind: 'patch', text: 'Uus etapp \u201etipp m\u00f6\u00f6das\u201c; \u201er\u00e4nde l\u00f5pp\u201c alles viimasel kahel n\u00e4dalal' },
+      { date: '2026-10-15', ref: 'P148g', kind: 'minor', text: 'Harulduse m\u00e4rk (R, SR, MR) liigiavataril' },
     ],
   },
   {

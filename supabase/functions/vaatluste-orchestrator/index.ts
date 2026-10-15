@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-15 - P139 prompt dictionary also covers the topup species (no more "eestikeelne nimi t\u00e4psustamata" for them)
 // redeploy-marker: 2026-10-15 - P138 dryRun-only modelOverride (haiku/sonnet A/B) + full payload in the dry-run preview
 // redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
@@ -1987,6 +1988,17 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
       return;
     }
 
+    // P139: the system prompt's Latin -> Estonian dictionary was built in the Code
+    // stage from the notable rows only, so species added by the topup were missing
+    // from it and Sonnet wrote "(eestikeelne nimi ...)" in the narrative even though
+    // the rows carried species_et. Rebuild it over everything Sonnet will see.
+    const dictAfterTopup: Record<string, string> = {};
+    for (const o of [...(ctx.source_data?.estonia || []), ...topup.balancedMerged]) {
+      const lat = o && o.species_lat;
+      if (lat && ctx.latinToEstonian[lat]) dictAfterTopup[lat] = ctx.latinToEstonian[lat];
+    }
+    const systemPrompt = buildSystemPrompt(dictAfterTopup);
+
     // --- stage 3: node "Anthropic API" ------------------------------------
     await heartbeat(sb, orch, "sonnet");
     const t2 = Date.now();
@@ -1994,7 +2006,7 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
       ? opts.maxTokensOverride
       : MAX_TOKENS;
     const apiResp = await callSonnet(
-      ctx.system_prompt,
+      systemPrompt,
       topup.user_message,
       maxTokens,
       sonnetTimeout,

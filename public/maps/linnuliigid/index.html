@@ -869,7 +869,9 @@ html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);paddi
 #bmMigPop .bm-mig-av{width:28px;height:28px;box-sizing:border-box;border-radius:50%;border:2px solid var(--sb-line,#dde4df);background-color:var(--sb-bg2,#f2f8f4);background-size:cover;background-position:center;position:relative}
 #bmMigPop .bm-mig-rar{position:absolute;right:-7px;top:-6px;min-width:16px;height:16px;box-sizing:border-box;padding:0 3px;border-radius:8px;background:var(--sb-ink,#222a26);color:#fff;font:800 9px/12px system-ui,sans-serif;text-align:center;border:2px solid var(--sb-bg,#fff)}
 #bmMigPop .bm-mig-row+.bm-mig-row{border-top:1px solid var(--sb-line2,#eef2ef)}
-#bmMigPop .bm-mig-nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bmMigPop .bm-mig-nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+#bmMigPop .bm-mig-nmw{display:flex;align-items:center;gap:6px;min-width:0}
+#bmMigPop .bm-mig-i{width:20px;height:20px;font-size:12px}
 #bmMigPop .bm-mig-chip{justify-self:end;align-self:center;font:600 10.5px/1 system-ui,sans-serif;padding:4px 7px;border-radius:999px;white-space:nowrap}
 #bmMigPop .bm-mig-chip.up{background:var(--sb-primary-soft,#e4f1e8);color:var(--sb-primary,#2d7a4b)}
 #bmMigPop .bm-mig-chip.pk{background:var(--sb-warn-soft,#fbeedd);color:var(--sb-warn,#b45309)}
@@ -12614,6 +12616,15 @@ window.toggleNotification = async function(speciesName) {
       return t ? '<span class="bm-mig-rar" title="Haruldus">' + escapeHtml(t) + '</span>' : '';
     }catch(e){ return ''; }
   }
+  /* P148h: "i" next to the name opens the species info modal (same as the sidebar "Liigiinfo" pill). */
+  function p148Info(key){
+    try{
+      var code = (typeof SPECIES_EBIRD_CODES !== 'undefined' && SPECIES_EBIRD_CODES[key]) || '';
+      if(!/^[a-z0-9]{3,12}$/.test(code) || typeof __bmSpeciesInfoOpen !== 'function') return '';
+      return '<button type="button" class="bm-info-btn bm-mig-i" title="Liigiinfo" aria-label="Liigiinfo" data-sim-code="' + code + '" data-sim-name="' + escapeHtml(String(key)) + '"'
+        + ' onclick="event.stopPropagation();__bmSpeciesInfoOpen(this,this.getAttribute(\'data-sim-code\'),this.getAttribute(\'data-sim-name\'))">i</button>';
+    }catch(e){ return ''; }
+  }
   function p148Body(box, list){
     var R = window.__bmRandeajad;
     var hid = p148HiddenSet();
@@ -12630,7 +12641,7 @@ window.toggleNotification = async function(speciesName) {
       var lbl = it.est
         ? 'R\u00E4ndeaeg (hinnang' + (it.w.src === 'ebird' && it.w.cc ? ' \u00B7 eBird ' + String(it.w.cc).replace(/\+/g, '/') : '') + ') '
         : 'R\u00E4ndeaeg ';
-      rows += '<div class="bm-mig-row"><span class="bm-mig-av" style="background-image:url(\'' + p148Av(it.key) + '\')">' + p148Rar(it.key) + '</span><span class="bm-mig-nm">' + escapeHtml(it.key) + '</span>'
+      rows += '<div class="bm-mig-row"><span class="bm-mig-av" style="background-image:url(\'' + p148Av(it.key) + '\')">' + p148Rar(it.key) + '</span><span class="bm-mig-nmw"><span class="bm-mig-nm">' + escapeHtml(it.key) + '</span>' + p148Info(it.key) + '</span>'
         + '<span class="bm-mig-chip ' + ph.cls + '">' + ph.t + '</span>'
         + '<button type="button" class="bm-mig-eye" data-i="' + it.idx + '" title="Peida see liik siin" aria-label="Peida see liik siin">' + P148_EYE + '</button>'
         + p148Strip(it)

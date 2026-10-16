@@ -286,6 +286,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-15', ref: 'P148e', kind: 'patch', text: 'Mobiilis aken ei kata kaardi nuppe (suum, Ennustus)' },
       { date: '2026-10-15', ref: 'P148f', kind: 'patch', text: 'Uus etapp \u201etipp m\u00f6\u00f6das\u201c; \u201er\u00e4nde l\u00f5pp\u201c alles viimasel kahel n\u00e4dalal' },
       { date: '2026-10-15', ref: 'P148g', kind: 'minor', text: 'Harulduse m\u00e4rk (R, SR, MR) liigiavataril' },
+      { date: '2026-10-16', ref: 'P148h', kind: 'minor', text: 'Liigiinfo nupp (i) nime k\u00f5rval' },
     ],
   },
   {

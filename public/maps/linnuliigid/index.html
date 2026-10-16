@@ -14992,7 +14992,7 @@ document.addEventListener('DOMContentLoaded', function(){
 document.getElementById('filterBox').addEventListener('input', function(){
   try { render(); } catch(e){}
   try {
-    var __pts = window.points || {};
+    var __pts = window.__bm_points || window.points || {}; /* P149: points is a top-level let, so window.points is undefined here */
     var __upd = window.updateMarker || (typeof updateMarker === 'function' ? updateMarker : null);
     if (__upd) {
       Object.keys(__pts).forEach(function(k){ try { __upd(k); } catch(e){} });

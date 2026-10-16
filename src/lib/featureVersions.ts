@@ -406,6 +406,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-09-28', ref: 'P85a', kind: 'major', text: 'Naabermaad (endine Arhiiv)' },
       { date: '2026-09-30', ref: 'P85f', kind: 'minor', text: 'P\u00e4evade kaupa ajajoon, lipufiltrid ja kaugus' },
       { date: '2026-09-30', ref: 'P85f2', kind: 'patch', text: 'Lippude suurus parandatud' },
+      { date: '2026-10-16', ref: 'P151', kind: 'minor', text: 'Naabermaade vaatlused uuenevad neli korda p\u00e4evas' },
     ],
   },
   {

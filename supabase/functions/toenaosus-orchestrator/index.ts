@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-16 - P151 mode "sightings": Naabermaad list + push only (no Sonnet, no raport)
 // redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-30 - P85g user_feedback.note (prediction_ratings.note) reaches Sonnet
@@ -3444,6 +3445,8 @@ function insertRaport(payload: ParseOutput): Promise<InsertResponse> {
 
 interface RunOptions {
   dryRun: boolean;
+  /** P151: stop after Persist + Notify (no ETA winds, no Sonnet, no raport insert). */
+  sightingsOnly: boolean;
   maxTokensOverride: number | null;
   notifyTest: { species: string } | null;
 }
@@ -3507,7 +3510,9 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
     // back to the null-ETA result and the rest of the raport is unchanged.
     await heartbeat(sb, orch, "eta_wind");
     const t2b = Date.now();
-    const etaWinds = await predictedSiteWinds(fc.candidates);
+    const etaWinds = opts.sightingsOnly
+      ? { byKey: new Map<string, WindSample>(), requested: 0, returned: 0, error: "skipped_sightings_only" } satisfies EtaWinds
+      : await predictedSiteWinds(fc.candidates);
     timings.eta_wind_ms = Date.now() - t2b;
     orch.state = {
       ...orch.state,
@@ -3574,6 +3579,23 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
       timings.notify_ms = Date.now() - t4;
       orch.state = { ...orch.state, timings, notify };
       await heartbeat(sb, orch, "notify_done");
+    }
+
+    // --- P151: sightings-only run ends here --------------------------------
+    // Scheduled 4x a day (m7-toenaosus-sightings) so the Naabermaad list and the
+    // near-Estonia pushes stay fresh; the Sonnet raport keeps its own 18:10 run.
+    if (opts.sightingsOnly) {
+      OPEN_RUNS.delete(orch.rowId);
+      if (!shuttingDown) {
+        await closeRun(sb, orch.rowId, {
+          calls,
+          ok: true,
+          state: { ...orch.state, stage: "sightings_done", elapsed_ms: elapsedOf(orch) },
+          error: null,
+        });
+      }
+      console.log(`[toenaosus-orch] sightings-only run done in ${elapsedOf(orch)} ms`);
+      return;
     }
 
     // --- stage 6: budget guard --------------------------------------------
@@ -3780,6 +3802,7 @@ Deno.serve(async (req) => {
     ? body.source
     : "schedule";
   const dryRun = body.dryRun === true;
+  const sightingsOnly = body.mode === "sightings"; // P151
   // Debug only: forces the max_tokens throw. Ignored unless dryRun.
   const overrideRaw = Number(body.maxTokensOverride);
   const maxTokensOverride =
@@ -3806,8 +3829,9 @@ Deno.serve(async (req) => {
   };
   if (maxTokensOverride) baseState.max_tokens_override = maxTokensOverride;
   if (notifyTest) baseState.notify_test_species = notifyTest.species;
+  if (sightingsOnly) baseState.mode = "sightings";
 
-  const rowId = await openRun(sb, "toenaosus-raport", runId, 0, baseState);
+  const rowId = await openRun(sb, sightingsOnly ? "toenaosus-sightings" : "toenaosus-raport", runId, 0, baseState);
   if (rowId === null) {
     // No row means no observability for a 3-minute background job.
     return json(500, { error: "cron_runs_open_failed", run_id: runId });
@@ -3822,7 +3846,7 @@ Deno.serve(async (req) => {
   };
   OPEN_RUNS.set(rowId, orch);
 
-  const work = run(sb, orch, { dryRun, maxTokensOverride, notifyTest });
+  const work = run(sb, orch, { dryRun, sightingsOnly, maxTokensOverride, notifyTest });
   const registered = keepAlive(work);
   if (!registered) {
     work.catch((e) => console.error("[toenaosus-orch] unawaited run", errMsg(e)));

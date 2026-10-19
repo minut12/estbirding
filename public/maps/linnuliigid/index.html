@@ -12497,11 +12497,32 @@ window.toggleNotification = async function(speciesName) {
     try{ var p = (typeof points !== 'undefined' && points) ? points[key] : null; return !!p && p.visible === false; }
     catch(e){ return false; }
   }
+  /* P152: the popup week is the calendar week Mon-Sun (Kristian 19.10), so it changes on Monday. Its data bin is the
+     7-day Randeajad bin that holds this week's Thursday (4+ of the 7 days); the dashed "tana" line stays on today. */
+  var P148_MON = ['jaan', 'veebr', 'm\u00E4rts', 'apr', 'mai', 'juuni', 'juuli', 'aug', 'sept', 'okt', 'nov', 'dets'];
+  function p148DoyOf(d){
+    var y = d.getFullYear();
+    var doy = Math.round((new Date(y, d.getMonth(), d.getDate()) - new Date(y, 0, 1)) / 864e5) + 1;
+    var leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+    if(leap && doy > 59) doy--;
+    return Math.min(365, doy);
+  }
+  function p148Week(){
+    var t = new Date();
+    var mon = new Date(t.getFullYear(), t.getMonth(), t.getDate() - ((t.getDay() + 6) % 7));
+    var thu = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 3);
+    var sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+    var lbl = mon.getMonth() === sun.getMonth()
+      ? mon.getDate() + '.\u2013' + sun.getDate() + '. ' + P148_MON[sun.getMonth()]
+      : mon.getDate() + '. ' + P148_MON[mon.getMonth()] + ' \u2013 ' + sun.getDate() + '. ' + P148_MON[sun.getMonth()];
+    return { wk: Math.min(WEEKS, Math.floor((p148DoyOf(thu) - 1) / 7) + 1), label: lbl };
+  }
   function p148List(){
     var R = window.__bmRandeajad;
     if(!R || !hist) return null;
     var doy = todayDoy();
-    var wk = Math.min(WEEKS, Math.floor((doy - 1) / 7) + 1);
+    var pw = p148Week();
+    var wk = pw.wk; /* P152: calendar week Mon-Sun, not the bin that holds today */
     var keys = (typeof SPECIES !== 'undefined' && SPECIES) ? SPECIES : [];
     var done = {};
     var data = [];
@@ -12538,7 +12559,7 @@ window.toggleNotification = async function(speciesName) {
     var rank = { pk: 0, past: 1, down: 2, up: 3, soon: 4, est: 5 };
     var all = data.concat(est);
     all.sort(function(a, b){ return (rank[p148Phase(a).cls] - rank[p148Phase(b).cls]) || a.key.localeCompare(b.key, 'et'); });
-    return { items: all, seen: seen, wk: wk };
+    return { items: all, seen: seen, wk: wk, label: pw.label };
   }
   function p148Phase(it){
     if(it.est) return { cls: 'est', t: 'hinnang' };
@@ -12663,7 +12684,7 @@ window.toggleNotification = async function(speciesName) {
     var keep = box.querySelector('.bm-mig-list');
     var scroll = keep ? keep.scrollTop : 0;
     box.innerHTML = '<div class="bm-mig-top"><div>'
-      + '<div class="bm-mig-kick">Linnuliigid \u00B7 ' + list.wk + '. n\u00E4dal</div>'
+      + '<div class="bm-mig-kick">Linnuliigid \u00B7 ' + list.label + '</div>'
       + '<h4 class="bm-mig-title">Oodatavad r\u00E4ndajad</h4>'
       + '<p class="bm-mig-sub">' + items.length + (items.length === 1 ? ' liik' : ' liiki') + ', kelle r\u00E4ndeaeg Eestis praegu k\u00E4ib</p></div>'
       + '<button type="button" class="bm-mig-x" aria-label="Sulge">\u00D7</button></div>'

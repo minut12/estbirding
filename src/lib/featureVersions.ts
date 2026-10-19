@@ -290,6 +290,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-15', ref: 'P148g', kind: 'minor', text: 'Harulduse m\u00e4rk (R, SR, MR) liigiavataril' },
       { date: '2026-10-16', ref: 'P148h', kind: 'minor', text: 'Liigiinfo nupp (i) nime k\u00f5rval' },
       { date: '2026-10-19', ref: 'P152', kind: 'patch', text: 'N\u00e4dal vahetub esmasp\u00e4eval; p\u00e4ises n\u00e4dala kuup\u00e4evad' },
+      { date: '2026-10-19', ref: 'P152b', kind: 'patch', text: 'T\u00e4na-joon on selle n\u00e4dala (rohelisel) tulbal' },
     ],
   },
   {

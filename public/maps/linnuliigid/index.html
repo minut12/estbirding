@@ -895,6 +895,33 @@ html:not(.sb-classic) .sb-rand-note{font-size:12.5px;color:var(--sb-muted);paddi
 #bmMigPop .bm-mig-hide{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--sb-primary,#2d7a4b);background:var(--sb-primary,#2d7a4b);color:#fff;font:600 12px system-ui,sans-serif;cursor:pointer}
 #bmMigPop button:focus-visible{outline:2px solid var(--sb-primary,#2d7a4b);outline-offset:2px}
 @media (max-width:900px){#bmMigPop{top:auto;left:10px;right:10px;width:auto;padding:10px 12px;bottom:calc(var(--appBottomNav,0px) + env(safe-area-inset-bottom,0px) + 66px);max-height:55vh}#bmMigPop .bm-mig-row{padding:4px 2px}#bmMigPop .bm-mig-foot{font-size:10.5px;padding-top:4px}#bmMigPop .bm-mig-sub{font-size:11.5px}} /* P148d/P148e: compact on phones; JS sets max-height to stop just below the map's top controls */
+/* P153: "Koik liigid" all-species grid popup (#bmAllSp) and its chip icon */
+html:not(.sb-classic) #allSpeciesBtn{--sb-ico:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'><rect x='4' y='4' width='6.5' height='6.5' rx='1.5'/><rect x='13.5' y='4' width='6.5' height='6.5' rx='1.5'/><rect x='4' y='13.5' width='6.5' height='6.5' rx='1.5'/><rect x='13.5' y='13.5' width='6.5' height='6.5' rx='1.5'/></svg>")}
+#bmAllSp{position:absolute;top:12px;right:12px;bottom:12px;left:12px;z-index:1460;display:flex;flex-direction:column;box-sizing:border-box;border-radius:14px;border:1px solid var(--sb-line,#dde4df);background:var(--sb-bg,#fff);color:var(--sb-ink,#222a26);box-shadow:0 10px 36px rgba(20,40,30,.22);overflow:hidden;font:13px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#bmAllSp .bm-as-h{flex:0 0 auto;display:flex;flex-direction:column;gap:8px;padding:12px 14px 10px;border-bottom:1px solid var(--sb-line2,#eef2ef)}
+#bmAllSp .bm-as-t{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+#bmAllSp .bm-as-title{margin:0;font-size:16px;line-height:1.25;font-weight:700}
+#bmAllSp .bm-as-cnt{margin:2px 0 0;font-size:12px;color:var(--sb-muted,#6c7f74);font-variant-numeric:tabular-nums}
+#bmAllSp .bm-as-cnt b{color:var(--sb-primary,#2d7a4b)}
+#bmAllSp .bm-as-meter{height:4px;width:180px;max-width:100%;margin-top:6px;border-radius:2px;background:var(--sb-line2,#eef2ef);overflow:hidden}
+#bmAllSp .bm-as-meter i{display:block;height:100%;width:0;background:var(--sb-primary,#2d7a4b)}
+#bmAllSp .bm-as-x{flex:0 0 auto;width:30px;height:30px;padding:0;border-radius:50%;border:1.5px solid var(--sb-primary,#2d7a4b);background:#fff;color:var(--sb-primary,#2d7a4b);font-size:18px;line-height:1;cursor:pointer}
+#bmAllSp .bm-as-q{height:36px;width:100%;box-sizing:border-box;padding:0 12px;border:1px solid var(--sb-line,#dde4df);border-radius:10px;background:var(--sb-bg2,#f2f8f4);color:var(--sb-ink,#222a26);font:13px system-ui,sans-serif}
+#bmAllSp .bm-as-grid{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));grid-auto-rows:max-content;gap:14px;align-content:start;padding:16px 18px 20px;background:linear-gradient(180deg,#e6e9e7,#cfd4d1)}
+#bmAllSp .bm-as-tile{position:relative;display:flex;flex-direction:column;padding:0;border:2px solid #fff;border-radius:9px;background:#fff;overflow:hidden;cursor:pointer;text-align:left;font:inherit;color:inherit;box-shadow:0 1px 3px rgba(0,0,0,.14);transition:transform .12s,box-shadow .12s}
+#bmAllSp .bm-as-tile:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.14)}
+#bmAllSp .bm-as-ph{flex:0 0 auto;display:block;aspect-ratio:1/1;width:100%;background:var(--sb-bg2,#f2f8f4);border-radius:7px 7px 0 0;overflow:hidden}
+#bmAllSp .bm-as-ph img{display:block;width:100%;height:100%;object-fit:cover}
+#bmAllSp .bm-as-nm{flex:0 0 auto;display:block;padding:9px 10px 10px;font-weight:600;font-size:13px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bmAllSp .bm-as-rar{position:absolute;top:6px;right:6px;min-width:20px;height:20px;box-sizing:border-box;padding:0 5px;border-radius:10px;border:2px solid #fff;background:var(--sb-ink,#222a26);color:#fff;font:800 10px/16px system-ui,sans-serif;text-align:center}
+#bmAllSp .bm-as-tile.seen .bm-as-ph img{filter:grayscale(1) contrast(.9) brightness(1.08);opacity:.55}
+#bmAllSp .bm-as-tile.seen .bm-as-nm{color:#8a958f;font-weight:500}
+#bmAllSp .bm-as-tile.seen .bm-as-rar{background:#8a958f}
+#bmAllSp .bm-as-tile.seen::after{content:"";position:absolute;left:6px;top:6px;width:20px;height:20px;border-radius:50%;background:#fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c7f74' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12l5 5L19 7'/></svg>") center/12px no-repeat;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+#bmAllSp .bm-as-empty{grid-column:1/-1;padding:16px 4px;color:var(--sb-muted,#6c7f74)}
+#bmAllSp button:focus-visible,#bmAllSp input:focus-visible{outline:2px solid var(--sb-primary,#2d7a4b);outline-offset:2px}
+@media (max-width:900px){#bmAllSp{position:fixed;left:0;right:0;top:var(--appHeader,0px);bottom:var(--appBottomNav,0px);z-index:4500;border-radius:0;border:0}#bmAllSp .bm-as-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px}#bmAllSp .bm-as-nm{font-size:12.5px;padding:8px 9px 9px}} /* P153: phones - full screen over the sidebar, under the info modal (5000) */
+@media (prefers-reduced-motion:reduce){#bmAllSp .bm-as-tile{transition:none}}
 </style>
 </head>
 <body>
@@ -12763,6 +12790,111 @@ window.toggleNotification = async function(speciesName) {
   }
   p148Kick();
 })();
+/* P153: "Koik liigid" - all species as an avatar grid over the map (chip after Toenaosus in
+   #windToggleBar). Seen (crossed-out, points[key].visible === false) tiles are greyscale only
+   while "Peida nahtud liigid" is on. Tile click opens the P120 species info modal; a species
+   without an eBird code is searched in the sidebar instead. No top-level let/const. */
+(function(){
+  var box = null;
+  var q = '';
+  function p153Esc(v){ return escapeHtml(String(v)).replace(/"/g, '&quot;'); }
+  function p153Av(key){
+    try{
+      var u = (typeof getDisplayAvatar === 'function') ? String(getDisplayAvatar(key) || '') : '';
+      return u.replace(/['"\\()\s]/g, function(c){ return encodeURIComponent(c); });
+    }catch(e){ return ''; }
+  }
+  function p153Rar(key){
+    try{
+      var meta = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : null;
+      return (meta && window.getRarityBadgeText) ? String(window.getRarityBadgeText(meta.rarityLevel) || '') : '';
+    }catch(e){ return ''; }
+  }
+  function p153Seen(key){ var pS = points[key]; return !!(pS && pS.visible === false); }
+  function p153Body(){
+    if(!box || !box.isConnected) return;
+    var all = [], have = {};
+    (Array.isArray(DATA) ? DATA : []).forEach(function(x){ if(x && x.est && !have[x.est]){ have[x.est] = true; all.push(x.est); } });
+    all.sort(function(a, b){ return a.localeCompare(b, 'et'); });
+    var seenN = 0;
+    all.forEach(function(k){ if(p153Seen(k)) seenN++; });
+    var gray = !!window.__hideSeen;
+    var ql = q.toLowerCase();
+    var html = '';
+    for(var i = 0; i < all.length; i++){
+      var key = all[i];
+      if(ql && key.toLowerCase().indexOf(ql) < 0) continue;
+      var seen = gray && p153Seen(key);
+      var r = p153Rar(key);
+      html += '<button type="button" class="bm-as-tile' + (seen ? ' seen' : '') + '" data-k="' + p153Esc(key) + '" title="' + p153Esc(key) + (seen ? ' (n\u00e4htud)' : '') + '">'
+        + '<span class="bm-as-ph"><img loading="lazy" decoding="async" alt="" src="' + p153Esc(p153Av(key)) + '"></span>'
+        + (r ? '<span class="bm-as-rar" title="Haruldus">' + escapeHtml(r) + '</span>' : '')
+        + '<span class="bm-as-nm">' + escapeHtml(key) + '</span></button>';
+    }
+    box.querySelector('.bm-as-cnt').innerHTML = 'N\u00e4htud <b>' + seenN + '</b> / ' + all.length + (gray ? ' \u00b7 n\u00e4htud liigid on hallid' : '');
+    box.querySelector('.bm-as-meter i').style.width = (all.length ? (100 * seenN / all.length) : 0).toFixed(1) + '%';
+    box.querySelector('.bm-as-grid').innerHTML = html || '<div class="bm-as-empty">\u00dchtegi liiki ei leitud.</div>';
+  }
+  function p153Chip(on){
+    var b = document.getElementById('allSpeciesBtn');
+    if(b){ b.classList.toggle('on', !!on); b.setAttribute('aria-expanded', on ? 'true' : 'false'); }
+  }
+  function p153Close(){
+    if(box && box.isConnected) box.remove();
+    box = null;
+    p153Chip(false);
+  }
+  function p153Open(){
+    try{
+      if(box && box.isConnected){ p153Close(); return; }
+      var wrap = document.getElementById('mapWrap');
+      if(!wrap) return;
+      box = document.createElement('section');
+      box.id = 'bmAllSp';
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-label', 'K\u00f5ik liigid');
+      box.innerHTML = '<div class="bm-as-h"><div class="bm-as-t"><div><h2 class="bm-as-title">K\u00f5ik liigid</h2><p class="bm-as-cnt"></p><div class="bm-as-meter"><i></i></div></div>'
+        + '<button type="button" class="bm-as-x" title="Sulge" aria-label="Sulge">&times;</button></div>'
+        + '<input type="search" class="bm-as-q" id="bmAllSpQ" placeholder="Otsi liiki&hellip;" autocomplete="off" aria-label="Otsi liiki"></div>'
+        + '<div class="bm-as-grid"></div>';
+      var inp = box.querySelector('.bm-as-q');
+      inp.value = q;
+      inp.addEventListener('input', function(){ q = inp.value.trim(); p153Body(); });
+      box.addEventListener('click', function(ev){
+        var t = ev.target;
+        if(!t || !t.closest) return;
+        if(t.closest('.bm-as-x')){ p153Close(); return; }
+        var tile = t.closest('.bm-as-tile');
+        if(!tile) return;
+        var key = tile.getAttribute('data-k') || '';
+        var code = (typeof SPECIES_EBIRD_CODES !== 'undefined' && SPECIES_EBIRD_CODES[key]) || '';
+        if(/^[a-z0-9]{3,12}$/.test(code) && typeof __bmSpeciesInfoOpen === 'function'){
+          __bmSpeciesInfoOpen(tile, code, key);
+          return;
+        }
+        p153Close();
+        var fb = document.getElementById('filterBox');
+        if(fb){ fb.value = key; fb.dispatchEvent(new Event('input', { bubbles: true })); }
+      });
+      wrap.appendChild(box);
+      p153Chip(true);
+      p153Body();
+      console.log('[p153] all-species popup opened');
+    }catch(e){ console.warn('[p153] popup failed', e); }
+  }
+  window.__bmAllSpOpen = p153Open;
+  /* Escape closes the grid only when no species info modal is on top (capture runs before its handler). */
+  document.addEventListener('keydown', function(ev){
+    if(ev.key !== 'Escape' || !box || !box.isConnected) return;
+    if(document.querySelector('.bm-sim')) return;
+    p153Close();
+  }, true);
+  /* Re-colour the tiles when "Peida nahtud liigid" is flipped while the grid is open. */
+  var p153OrigSetHideSeen = window.__setHideSeen;
+  if(typeof p153OrigSetHideSeen === 'function'){
+    window.__setHideSeen = function(on){ p153OrigSetHideSeen(on); p153Body(); };
+  }
+})();
 
 function rowHTML(obj) {
   const key = obj.est;
@@ -14463,6 +14595,7 @@ document.addEventListener('DOMContentLoaded', function(){
   <button id="toggleEbirdEE" class="btn secondary" style="white-space:nowrap">eBird EE</button>
   <button id="ennustusBtn" class="btn secondary" title="Näita liikide tõenäosust praegusel perioodil" onclick="window.__openEnnustus()">Tõenäosus</button>
 
+  <button id="allSpeciesBtn" class="btn secondary" type="button" title="K&otilde;ik liigid pildiruudustikuna" aria-haspopup="dialog" onclick="if(window.__bmAllSpOpen)window.__bmAllSpOpen()">K&otilde;ik liigid</button>
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
   <span id="hiddenSpeciesBadge" class="active7d-badge" title="Mitu liiki on sidebaris peidetud (klikitud ära, visible=false)">Peidetud: 0</span>
 </div>

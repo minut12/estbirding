@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-20 - P155 NEWS_THINKING (between_tools|low|medium) + dryRun thinkingOverride; output_tokens in the run summary
 // redeploy-marker: 2026-10-20 - P154b max_tokens error says what filled the cap (block types, output tokens, visible text length)
 // redeploy-marker: 2026-10-20 - P154 max_tokens 8192, Sonnet timeout 80 s, budget 65 s (long posts hit the 4096 cap)
 // redeploy-marker: 2026-10-15 - P138 dryRun-only modelOverride + ids (re-translate chosen items, patches returned)
@@ -413,6 +414,7 @@ async function runGlossaryPass(
   model: string,
   maxTokens: number,
   started: number,
+  thinking: NewsThinking,
 ): Promise<GlossaryOutcome> {
   const source: ItemText = {
     title: String(src.title || ""),
@@ -432,6 +434,7 @@ async function runGlossaryPass(
     model,
     maxTokens,
     GLOSSARY_TIMEOUT_MS,
+    thinking,
   );
   const usage = resp.usage;
   const parsed = parseGlossary(resp);
@@ -538,12 +541,29 @@ async function getPending(limit: number): Promise<PendingItem[]> {
 // continueRegularOutput fed the error body straight into Parse Sonnet, so the
 // item still gets an 'error' patch written and leaves `pending`.
 // The P86e glossary pass goes through the same function with GLOSSARY_PROMPT.
+// P155: Sonnet 5.5 thinks adaptively at high effort when the request says nothing,
+// and thinking counts toward max_tokens (a species-heavy post used 7-8k tokens of
+// thinking for ~1k of text). NEWS_THINKING picks a lower setting; unset = as before.
+type NewsThinking = "default" | "between_tools" | "low" | "medium";
+const NEWS_THINKING_MODES: readonly NewsThinking[] = ["default", "between_tools", "low", "medium"];
+function toNewsThinking(v: unknown): NewsThinking | null {
+  return typeof v === "string" && (NEWS_THINKING_MODES as readonly string[]).includes(v)
+    ? v as NewsThinking
+    : null;
+}
+function thinkingFields(mode: NewsThinking): Record<string, unknown> {
+  if (mode === "between_tools") return { thinking: { type: "between_tools" } };
+  if (mode === "low" || mode === "medium") return { output_config: { effort: mode } };
+  return {};
+}
+
 async function callAnthropic(
   system: string,
   userMsg: string,
   model: string,
   maxTokens: number,
   timeoutMs: number = SONNET_TIMEOUT_MS,
+  thinking: NewsThinking = "default",
 ): Promise<AnthropicResponse> {
   if (!llmConfigured()) throw new Error("missing_env:ANTHROPIC_API_KEY");
 
@@ -561,6 +581,7 @@ async function callAnthropic(
       },
     ],
     messages: [{ role: "user", content: userMsg }],
+    ...thinkingFields(thinking),
   };
 
   const ctrl = new AbortController();
@@ -705,6 +726,10 @@ Deno.serve(async (req) => {
     : null;
   const model = modelOverride || Deno.env.get("ANTHROPIC_MODEL_NEWS") ||
     "claude-sonnet-5-5";
+  // P155: dry runs may try another thinking mode; otherwise NEWS_THINKING, else "default".
+  const thinking: NewsThinking = (dryRun ? toNewsThinking(body.thinkingOverride) : null) ||
+    toNewsThinking(Deno.env.get("NEWS_THINKING")) || "default";
+  let outputTokens = 0;
   const dryIds = dryRun && Array.isArray(body.ids)
     ? (body.ids as unknown[]).filter((x): x is string =>
       typeof x === "string" && /^[0-9a-f-]{8,40}$/i.test(x)
@@ -770,8 +795,11 @@ Deno.serve(async (req) => {
         buildTranslateUserMsg(item),
         model,
         maxTokens,
+        SONNET_TIMEOUT_MS,
+        thinking,
       );
       calls++;
+      outputTokens += Number(resp.usage?.output_tokens ?? 0);
       cache.creation_tokens += Number(
         resp.usage?.cache_creation_input_tokens ?? 0,
       );
@@ -791,10 +819,12 @@ Deno.serve(async (req) => {
           model,
           maxTokens,
           started,
+          thinking,
         );
         glossaryTally[outcome.kind]++;
         if (outcome.kind !== "skipped") {
           calls++;
+          outputTokens += Number(outcome.usage?.output_tokens ?? 0);
           cache.creation_tokens += Number(
             outcome.usage?.cache_creation_input_tokens ?? 0,
           );
@@ -860,6 +890,8 @@ Deno.serve(async (req) => {
     skipped,
     errors,
     model,
+    thinking,
+    output_tokens: outputTokens,
     dry_run: dryRun,
     cache,
     glossary: glossaryTally,

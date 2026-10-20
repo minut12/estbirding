@@ -429,6 +429,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-01', ref: 'P86c4', kind: 'minor', text: 'Piltide suurendamine artiklis' },
       { date: '2026-10-07', ref: 'P99b-2a', kind: 'patch', text: 'Allika lipp andmebaasist, Islandi lipp' },
       { date: '2026-10-08', ref: 'P105', kind: 'patch', text: 'EO\u00dc uudised uuenevad neli korda p\u00e4evas' },
+      { date: '2026-10-20', ref: 'P154', kind: 'patch', text: 'Pikkade uudiste t\u00f5lge ei j\u00e4\u00e4 enam pooleli; nurjunud t\u00f5lke korral n\u00e4idatakse originaali' },
     ],
   },
   {

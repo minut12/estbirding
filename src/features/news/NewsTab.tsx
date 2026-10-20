@@ -1275,6 +1275,14 @@ export default function NewsTab() {
   );
 }
 
+/* P154: translation runs hourly (05-21 UTC) with 3 retries, so a row still untranslated
+   6 h after ingest has failed for good - show the original without the pending spinner. */
+const NEWS_PENDING_WINDOW_MS = 6 * 60 * 60 * 1000;
+function isRecentlyIngested(item: NewsItem): boolean {
+  const t = Date.parse(item.created_at || item.fetched_at || '');
+  return Number.isFinite(t) && Date.now() - t < NEWS_PENDING_WINDOW_MS;
+}
+
 /* News card view-model (shared by list row and grid card) */
 function useNewsCardModel(item: NewsItem, sources: NewsSource[], showEtContent: boolean) {
   const sourceName = sourceLabel(item, sources);
@@ -1305,7 +1313,7 @@ function useNewsCardModel(item: NewsItem, sources: NewsSource[], showEtContent: 
     [item.published_at, item.created_at, item.fetched_at],
   );
   const isVideo = /<(iframe|video)\b/i.test(item.content_html ?? '');
-  return { sourceName, isBirdingPoland, useEtDisplay, isPending, displayTitle, snippet, code, shortDate, isVideo };
+  return { sourceName, isBirdingPoland, useEtDisplay, isPending: isPending && isRecentlyIngested(item), displayTitle, snippet, code, shortDate, isVideo };
 }
 
 export type NewsCardModel = ReturnType<typeof useNewsCardModel>;

@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-20 - P154 max_tokens 8192, Sonnet timeout 80 s, budget 65 s (long posts hit the 4096 cap)
 // redeploy-marker: 2026-10-15 - P138 dryRun-only modelOverride + ids (re-translate chosen items, patches returned)
 // redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
 // redeploy: P86d 2026-10-01 - corrector moved to _shared/bird-names.ts (part-wise sameSpecies, multi-word dict names, title/body stem propagation), [retry N] error prefix
@@ -52,8 +53,8 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 // full 50 s -> 125 s, plus the write. Under the 150 s gateway cutoff.
 // P86e: the glossary pass (<= 30 s) only starts at <= 50 s elapsed, so it ends
 // by ~80 s and never extends that worst case.
-const BUDGET_MS = 75_000;
-const SONNET_TIMEOUT_MS = 50_000;
+const BUDGET_MS = 65_000; // P154: was 75 s; 65 + 80 s Sonnet stays under the 150 s request limit
+const SONNET_TIMEOUT_MS = 80_000; // P154: was 50 s; 8192 tokens take ~70 s
 // P86e glossary pass: its own shorter timeout, and it is only started while at
 // least GLOSSARY_BUDGET_RESERVE_MS of BUDGET_MS is left.
 const GLOSSARY_TIMEOUT_MS = 30_000;
@@ -687,7 +688,7 @@ Deno.serve(async (req) => {
   const rawOverride = Number(body.maxTokensOverride);
   const maxTokens = dryRun && Number.isFinite(rawOverride) && rawOverride > 0
     ? Math.floor(rawOverride)
-    : 4096;
+    : 8192; // P154: was 4096 - species-heavy posts (Latin after every name) hit the cap 3x
   // P138: dry runs may switch model (allow-listed) and re-translate chosen items
   // by id, whatever their status; nothing is written and the patches come back.
   const modelOverride = dryRun && typeof body.modelOverride === "string" &&

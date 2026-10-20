@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-20 - P155b glossary pass also after a slow translation (45 s, while it ends by 140 s)
 // redeploy-marker: 2026-10-20 - P155 NEWS_THINKING (between_tools|low|medium) + dryRun thinkingOverride; output_tokens in the run summary
 // redeploy-marker: 2026-10-20 - P154b max_tokens error says what filled the cap (block types, output tokens, visible text length)
 // redeploy-marker: 2026-10-20 - P154 max_tokens 8192, Sonnet timeout 80 s, budget 65 s (long posts hit the 4096 cap)
@@ -59,8 +60,12 @@ const BUDGET_MS = 65_000; // P154: was 75 s; 65 + 80 s Sonnet stays under the 15
 const SONNET_TIMEOUT_MS = 80_000; // P154: was 50 s; 8192 tokens take ~70 s
 // P86e glossary pass: its own shorter timeout, and it is only started while at
 // least GLOSSARY_BUDGET_RESERVE_MS of BUDGET_MS is left.
-const GLOSSARY_TIMEOUT_MS = 30_000;
-const GLOSSARY_BUDGET_RESERVE_MS = 25_000;
+const GLOSSARY_TIMEOUT_MS = 45_000; // P155b: was 30 s; a long post's glossary pass needs more
+const GLOSSARY_BUDGET_RESERVE_MS = 25_000; // P155b: no longer used by the glossary gate
+// P155b: the glossary pass may start after a slow translation as long as it ends by
+// HARD_LIMIT_MS (under the 150 s cutoff). The loop's BUDGET_MS check then ends the
+// batch after that item; the next hourly run takes the rest.
+const HARD_LIMIT_MS = 140_000;
 // n8n's Ingest node allowed 300 s. Only reachable via {skipIngest:false} on a
 // manual run -- under cron this EF never ingests. A slow ingest WILL get the
 // isolate killed by the gateway; that is the documented cost of the manual path.
@@ -425,7 +430,7 @@ async function runGlossaryPass(
     latinToEt,
   );
   if (glossary.length === 0) return { kind: "skipped", reason: "empty_glossary" };
-  if (Date.now() - started > BUDGET_MS - GLOSSARY_BUDGET_RESERVE_MS) {
+  if (Date.now() - started > HARD_LIMIT_MS - GLOSSARY_TIMEOUT_MS) {
     return { kind: "skipped", reason: "budget" };
   }
   const resp = await callAnthropic(

@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-20 - P154b max_tokens error says what filled the cap (block types, output tokens, visible text length)
 // redeploy-marker: 2026-10-20 - P154 max_tokens 8192, Sonnet timeout 80 s, budget 65 s (long posts hit the 4096 cap)
 // redeploy-marker: 2026-10-15 - P138 dryRun-only modelOverride + ids (re-translate chosen items, patches returned)
 // redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
@@ -227,6 +228,7 @@ interface AnthropicResponse {
   usage?: {
     cache_creation_input_tokens?: number;
     cache_read_input_tokens?: number;
+    output_tokens?: number;
   };
 }
 
@@ -309,7 +311,13 @@ function parseSonnet(src: PendingItem, resp: AnthropicResponse): ParsedItem {
       );
     }
     if (resp && resp.stop_reason === "max_tokens") {
-      throw new Error("max_tokens hit");
+      // P154b: record what filled the cap, e.g. types=[thinking,text]; out=8192; text_len=2400
+      const capBlocks = resp.content ? resp.content : [];
+      const capTypes = capBlocks.map((b) => (b && b.type) ? b.type : "?").join(",");
+      throw new Error(
+        "max_tokens hit; types=[" + capTypes + "]; out=" +
+          String(resp.usage?.output_tokens ?? "?") + "; text_len=" + extractText(resp).length,
+      );
     }
     const txt = extractText(resp);
     const split = splitTitleBody(stripCodeFence(txt));

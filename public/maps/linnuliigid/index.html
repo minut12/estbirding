@@ -12895,29 +12895,6 @@ window.toggleNotification = async function(speciesName) {
     window.__setHideSeen = function(on){ p153OrigSetHideSeen(on); p153Body(); };
   }
 })();
-/* P156 DEMO: "Hello world" popup when the Linnuliigid map opens; closes with Sulge, Escape or a click outside.
-   Self-contained IIFE, no top-level let/const. */
-(function(){
-  function demoClose(){ var o = document.getElementById('bmHelloDemo'); if(o) o.remove(); }
-  function demoOpen(){
-    if(document.getElementById('bmHelloDemo')) return;
-    var o = document.createElement('div');
-    o.id = 'bmHelloDemo';
-    o.setAttribute('role', 'dialog');
-    o.setAttribute('aria-modal', 'true');
-    o.setAttribute('aria-label', 'Hello world');
-    o.style.cssText = 'position:fixed;inset:0;z-index:6000;display:flex;align-items:center;justify-content:center;background:rgba(20,30,25,.35)';
-    o.innerHTML = '<div style="background:#fff;color:#222a26;border-radius:14px;padding:20px 22px;min-width:220px;max-width:calc(100% - 32px);box-sizing:border-box;box-shadow:0 10px 36px rgba(20,40,30,.25);text-align:center;font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif">'
-      + '<div style="font-size:20px;font-weight:700;margin-bottom:14px">Hello world</div>'
-      + '<button type="button" id="bmHelloDemoX" style="height:34px;padding:0 16px;border-radius:9px;border:0;background:#2d7a4b;color:#fff;font:600 13px system-ui,sans-serif;cursor:pointer">Sulge</button></div>';
-    o.addEventListener('click', function(ev){ if(ev.target === o || (ev.target && ev.target.id === 'bmHelloDemoX')) demoClose(); });
-    document.addEventListener('keydown', function(ev){ if(ev.key === 'Escape') demoClose(); });
-    document.body.appendChild(o);
-    try{ document.getElementById('bmHelloDemoX').focus(); }catch(e){}
-  }
-  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', demoOpen);
-  else setTimeout(demoOpen, 0);
-})();
 
 function rowHTML(obj) {
   const key = obj.est;

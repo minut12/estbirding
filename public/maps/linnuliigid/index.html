@@ -12947,6 +12947,9 @@ function rowHTML(obj) {
       + '</div>';
   })();
   const springVal = (typeof window.__kevadArrival === 'function') ? window.__kevadArrival(key) : '';
+  /* P157: the Kevadine saabumine row only for Randeajad migrants (Kristian 22.10); residents, winter visitors
+     and 'few' species get no row. A migrant not yet arrived keeps '-'. */
+  const springShow = (function(){ try{ var kf = window.__randeajadKind; var kk = (typeof kf === 'function') ? kf(key) : null; return !!(kk && kk.kind === 'migrant'); }catch(e){ return false; } })();
   const springTxt = '' +
     '<span class="kevadi-chip" style="display:inline-flex; gap:8px; align-items:center;">' +
       '<span class="pill">Kevadine saabumine:</span>' +
@@ -12955,7 +12958,7 @@ function rowHTML(obj) {
         ? '<button type="button" class="btn secondary" style="position:relative;z-index:50;pointer-events:auto" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDateDirect && window.editSpringDateDirect(\'' + String(key).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'); return false;">Muuda</button>'
         : '') +
     '</span>';
-  const springChip = '<div class="species-extra meta-row2">' + springTxt + '</div>';
+  const springChip = springShow ? ('<div class="species-extra meta-row2">' + springTxt + '</div>') : '';
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
   const openUrl = String((p.openUrl || (x.detailUrl || defaultSearchUrl)) || defaultSearchUrl);
 
@@ -13045,7 +13048,7 @@ function rowHTML(obj) {
       '<div class="sb-detail-acts">' +
         '<button type="button" class="btn prob-btn sb-arvuta" data-prob-species="' + key + '" title="Arvuta tõenäosus">' + SB_ICON.prob + 'Arvuta tõenäosus</button>' +
         __bmSpeciesInfoPillHtml(key) + // P124
-        springTxtNew +
+        (springShow ? springTxtNew : '') +
       '</div>' +
       (mig ? mig.card : '') +
       sbInfo +

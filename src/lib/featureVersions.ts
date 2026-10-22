@@ -224,6 +224,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-09-21', ref: 'P51c', kind: 'patch', text: 'K\u00fclgriba silt \u201eKevadine saabumine\u201c' },
       { date: '2026-09-21', ref: 'P53', kind: 'minor', text: 'R\u00e4ndeaja ajajoon iga saabunud liigi all' },
       { date: '2026-09-21', ref: 'P54b', kind: 'patch', text: 'Aasta vahetus Tallinna aja j\u00e4rgi, eelmise aasta saabumised kustuvad 1. jaanuaril' },
+      { date: '2026-10-22', ref: 'P157', kind: 'patch', text: 'Kevadine saabumine ainult r\u00e4ndlindudel' },
     ],
   },
   {

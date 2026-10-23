@@ -276,7 +276,6 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-10', ref: 'P116b', kind: 'patch', text: 'Hinnangulised r\u00e4ndeajad on kuni neli n\u00e4dalat pikad' },
       { date: '2026-10-10', ref: 'P117', kind: 'minor', text: 'Hinnangulised r\u00e4ndeajad naaberriikide eBirdi andmetest' },
       { date: '2026-10-10', ref: 'P118', kind: 'patch', text: 'Mandariinpart pole talvek\u00fclaline (\u00fcks lind \u00fchel talvel)' },
-      { date: '2026-10-23', ref: 'P158', kind: 'minor', text: 'R\u00e4ndeaegade tulbad vaatluste v\u00f5i isendite j\u00e4rgi' },
     ],
   },
   {

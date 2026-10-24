@@ -29,6 +29,13 @@ const NW_RUSSIA_REGIONS = ['RU-LEN', 'RU-SPE', 'RU-PSK', 'RU-NGR', 'RU-KR'];
 const NEW_SPECIES_TIMEOUT_MS = 12000;
 // P104: everything after the normal insert must finish by here (Netlify scheduled cap is 30 s).
 const NEW_SPECIES_DEADLINE_MS = 26000;
+// P160: full "recent" lists (every species seen in the last 7 days), not just "notable", so a species
+// that is common there but missing from our list also reaches europe-new-species. Fetched in parallel,
+// started only before FULL_SCAN_START_MS and finished by FULL_SCAN_END_MS, so the new-species call
+// keeps at least 6 s. Notable candidates are pushed first, so the 5-per-run cap prefers them.
+const FULL_SCAN_REGIONS = ['FI', 'SE', 'LV', 'LT', 'PL', 'BY', ...NW_RUSSIA_REGIONS];
+const FULL_SCAN_START_MS = 14000;
+const FULL_SCAN_END_MS = 20000;
 
 function env(name) {
   const v = (Netlify.env.get(name) || '').trim();
@@ -285,6 +292,44 @@ export async function runEuropeRefresh({ dry = false } = {}) {
     }
   }
 
+  // P160: full recent lists for brand-new species detection only (no cache rows come from these).
+  const fullScan = {};
+  const fullElapsed = Date.now() - started;
+  if (fullElapsed < FULL_SCAN_START_MS) {
+    const candKeys = new Set(candidates.map((c) => c.code + '|' + c.region));
+    const scanTimeout = Math.max(1000, Math.min(COUNTRY_TIMEOUT_MS, FULL_SCAN_END_MS - fullElapsed));
+    const results = await Promise.all(FULL_SCAN_REGIONS.map(async (region) => {
+      try {
+        const res = await ebirdGet(
+          `/data/obs/${region}/recent?back=7&maxResults=10000&detail=simple`,
+          { timeoutMs: scanTimeout },
+        );
+        if (!res.ok) return { region, error: 'HTTP ' + res.status };
+        let obs = JSON.parse(res.text);
+        if (!Array.isArray(obs)) obs = [];
+        return { region, obs };
+      } catch (e) {
+        return { region, error: String((e && e.message) || e) };
+      }
+    }));
+    for (const r of results) {
+      if (r.error) { fullScan[r.region] = { error: r.error }; continue; }
+      const agg = aggregateNotable(r.obs, sevenDaysAgo);
+      let n = 0;
+      for (const [code, a] of Object.entries(agg)) {
+        if (codeToName[code]) continue;
+        const key = code + '|' + r.region;
+        if (candKeys.has(key)) continue;
+        candKeys.add(key);
+        candidates.push(toCandidate(code, a, r.region));
+        n++;
+      }
+      fullScan[r.region] = { fetched: r.obs.length, candidates: n };
+    }
+  } else {
+    for (const region of FULL_SCAN_REGIONS) fullScan[region] = { error: 'skipped_budget' };
+  }
+
   // P104: hand unknown codes to europe-new-species within the time left; skipped codes come back next run.
   let newSpecies = { candidates: candidates.length };
   const nsBudget = NEW_SPECIES_DEADLINE_MS - (Date.now() - started);
@@ -329,7 +374,7 @@ export async function runEuropeRefresh({ dry = false } = {}) {
 
   if (dry) {
     return {
-      job: 'europe', ok: true, dry: true, rows: rows.length, countries, nwRegions, newSpecies,
+      job: 'europe', ok: true, dry: true, rows: rows.length, countries, nwRegions, fullScan, newSpecies,
       errors, trackedCodeCount, partial, took_ms: Date.now() - started,
     };
   }
@@ -338,12 +383,12 @@ export async function runEuropeRefresh({ dry = false } = {}) {
   if (!insert) {
     return {
       job: 'europe', ok: true, rows: 0, skipped: true, reason: 'no_rows',
-      countries, nwRegions, newSpecies, errors, trackedCodeCount, partial, took_ms: Date.now() - started,
+      countries, nwRegions, fullScan, newSpecies, errors, trackedCodeCount, partial, took_ms: Date.now() - started,
     };
   }
 
   return {
     job: 'europe', ok: insert.ok, stage: 'insert', status: insert.status, rows: rows.length,
-    countries, nwRegions, newSpecies, errors, trackedCodeCount, partial, ef: insert.text, took_ms: Date.now() - started,
+    countries, nwRegions, fullScan, newSpecies, errors, trackedCodeCount, partial, ef: insert.text, took_ms: Date.now() - started,
   };
 }

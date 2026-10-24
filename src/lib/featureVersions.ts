@@ -164,6 +164,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-09', ref: 'P111', kind: 'minor', text: 'eBirdi kinnitamata vaatlused kaardil m\u00e4rkega \u201ekinnitamata\u201c' },
       { date: '2026-10-10', ref: 'P119', kind: 'patch', text: 'Kaardil on ka kinnitamata haruldused eBirdi haruldaste voost' },
       { date: '2026-10-11', ref: 'P123', kind: 'patch', text: 'Ameerika viupardi vaatlusi ei n\u00e4idata enam ameerika piilpardina' },
+      { date: '2026-10-24', ref: 'P160', kind: 'minor', text: 'Uued liigid leitakse ka eBirdi k\u00f5igist viimase n\u00e4dala vaatlustest, mitte ainult teadetest' },
     ],
   },
   {

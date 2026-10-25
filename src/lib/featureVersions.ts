@@ -545,6 +545,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-06', ref: 'P93e', kind: 'major', text: 'Diagnostika leht: teavituste olek ja testteavitus' },
       { date: '2026-10-08', ref: 'P97f3', kind: 'minor', text: 'Tehisintellekti kaart: Claude\'i ja Gemini olek' },
       { date: '2026-10-09', ref: 'P108', kind: 'minor', text: 'Mistral kolmanda mudelina' },
+      { date: '2026-10-25', ref: 'P161', kind: 'patch', text: 'Gemini varumudel on kiirem ja t\u00f6\u00f6kindlam' },
     ],
   },
   {

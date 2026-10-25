@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-25 - P161 Gemini thinkingLevel (non-lite: GEMINI_THINKING, default low) + per-model time cap, a capped model steps to the next
 // redeploy-marker: 2026-10-11 - P120i freeMessages optional Gemini model list (per-caller override)
 // redeploy-marker: 2026-10-10 - P120g freeMessages (Gemini -> Mistral only, never Claude)
 // redeploy-marker: 2026-10-09 - P108b Mistral JSON mode when the prompt demands JSON output
@@ -20,6 +21,8 @@
 //                                  chain: Gemini models, then Mistral models (P108)
 // A timeout (AbortError from the caller's signal) is never retried on Gemini:
 // it is not a credit problem and the signal is already aborted.
+// P161: a single model running past GEMINI_MODEL_TIMEOUT_MS is not the caller's
+// timeout; the chain moves on to the next model.
 //
 // Env (Supabase Secrets): ANTHROPIC_API_KEY, GEMINI_API_KEY, MISTRAL_API_KEY,
 //   GEMINI_MODEL / MISTRAL_MODEL (comma-separated chains, tried in order;
@@ -296,6 +299,17 @@ const DEFAULT_GEMINI_MODELS = "gemini-3.8-flash,gemini-3.5-flash-lite,gemini-3.1
 const GEMINI_ATTEMPTS = 2;
 const GEMINI_RETRY_MS = 4000;
 const GEMINI_MIN_OUTPUT_TOKENS = 1024;
+// P161: Gemini 3.x thinks at "medium" by default on Flash (3.8 Flash: low|medium|high,
+// "minimal" is refused) and at "minimal" on Flash-Lite. Thinking at medium made
+// gemini-3.8-flash take 220-290 s for a daily report, so reports timed out once
+// Claude was out of credit. Non-lite models get generationConfig.thinkingConfig.
+// thinkingLevel = GEMINI_THINKING (default "low"; "off" sends nothing); lite models
+// keep their default. A 400 that names thinking is retried once without it.
+const GEMINI_THINKING_DEFAULT = "low";
+// P161: one model may use at most this long (GEMINI_MODEL_TIMEOUT_MS overrides); when
+// it runs out and the caller has time left, the chain moves to the next model
+// instead of the whole call failing. The caller's own timeout still ends everything.
+const GEMINI_MODEL_TIMEOUT_DEFAULT_MS = 150_000;
 
 type AnthropicTextBlock = { type?: string; text?: string };
 type AnthropicMessage = { role: string; content: string | AnthropicTextBlock[] };
@@ -372,7 +386,19 @@ function blocksToText(c: string | AnthropicTextBlock[] | undefined): string {
   return c.map((b) => (b && typeof b.text === "string" ? b.text : "")).filter(Boolean).join("\n");
 }
 
-function toGeminiBody(req: AnthropicMessagesRequest): Record<string, unknown> {
+function geminiThinkingLevel(model: string): string | null {
+  if (/lite/i.test(model)) return null;
+  const v = (Deno.env.get("GEMINI_THINKING") || GEMINI_THINKING_DEFAULT).trim().toLowerCase();
+  if (v === "low" || v === "medium" || v === "high" || v === "minimal") return v;
+  return null; // "off" or anything else: send no thinkingConfig
+}
+
+function geminiModelTimeoutMs(): number {
+  const n = Number((Deno.env.get("GEMINI_MODEL_TIMEOUT_MS") || "").trim());
+  return Number.isFinite(n) && n >= 10_000 ? n : GEMINI_MODEL_TIMEOUT_DEFAULT_MS;
+}
+
+function toGeminiBody(req: AnthropicMessagesRequest, thinkingLevel: string | null = null): Record<string, unknown> {
   const sys = blocksToText(req.system);
   const contents = (req.messages || []).map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
@@ -386,6 +412,8 @@ function toGeminiBody(req: AnthropicMessagesRequest): Record<string, unknown> {
     maxOutputTokens: Math.max(req.max_tokens, GEMINI_MIN_OUTPUT_TOKENS),
   };
   if (typeof req.temperature === "number") generationConfig.temperature = req.temperature;
+  // P161: thinkingLevel (not thinkingBudget, which Gemini 3.x refuses).
+  if (thinkingLevel) generationConfig.thinkingConfig = { thinkingLevel };
   const body: Record<string, unknown> = { contents, generationConfig };
   if (sys) body.systemInstruction = { parts: [{ text: sys }] };
   return body;
@@ -449,6 +477,7 @@ async function callGeminiOnce(
   model: string,
   fallback: boolean,
   signal?: AbortSignal,
+  thinkingLevel: string | null = null,
 ): Promise<Response> {
   const t0 = Date.now();
   let res: Response;
@@ -457,7 +486,7 @@ async function callGeminiOnce(
     res = await fetch(GEMINI_BASE + "/" + model + ":generateContent", {
       method: "POST",
       headers: { "x-goog-api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify(toGeminiBody(req)),
+      body: JSON.stringify(toGeminiBody(req, thinkingLevel)),
       signal,
     });
     text = await res.text();
@@ -515,19 +544,46 @@ async function callGemini(
   if (!apiKey) throw new Error("missing_env:GEMINI_API_KEY");
   let last: Response | null = null;
   for (const model of (models && models.length ? models : geminiModels())) {
+    // P161: one time cap per model (all its attempts), joined with the caller's signal.
+    const cap = AbortSignal.timeout(geminiModelTimeoutMs());
+    const modelSignal = signal ? AbortSignal.any([signal, cap]) : cap;
+    let thinking = geminiThinkingLevel(model);
+    let capped = false;
     for (let attempt = 1; attempt <= GEMINI_ATTEMPTS; attempt++) {
       if (signal?.aborted) break;
-      const res = await callGeminiOnce(req, apiKey, model, fallback, signal);
+      let res: Response;
+      try {
+        res = await callGeminiOnce(req, apiKey, model, fallback, modelSignal, thinking);
+      } catch (e) {
+        // Caller's timeout (or a network error): unchanged, the error goes up.
+        if (signal?.aborted || !cap.aborted) throw e;
+        // Only this model's cap ran out: try the next model with the time left.
+        console.log("[llm] gemini_fail model=" + model + " attempt=" + attempt + " model_time_cap next_model");
+        last = new Response("gemini model time cap: " + model, { status: 504 });
+        capped = true;
+        break;
+      }
       if (res.ok) return res;
       last = res;
+      // P161: a model that refuses thinkingConfig gets the same attempt again without it.
+      if (res.status === 400 && thinking) {
+        const body = await res.clone().text();
+        if (/thinking/i.test(body)) {
+          console.log("[llm] gemini_fail model=" + model + " status=400 thinking_refused retry_without");
+          thinking = null;
+          attempt--;
+          continue;
+        }
+      }
       const retry = geminiRetryable(res.status);
       console.log(
         "[llm] gemini_fail model=" + model + " attempt=" + attempt + " status=" + res.status +
           (retry ? (attempt < GEMINI_ATTEMPTS ? " retrying" : " next_model") : " not_retryable next_model"),
       );
       if (!retry) break;
-      if (attempt < GEMINI_ATTEMPTS) await sleep(GEMINI_RETRY_MS, signal);
+      if (attempt < GEMINI_ATTEMPTS) await sleep(GEMINI_RETRY_MS, modelSignal);
     }
+    if (capped) continue;
   }
   return last ?? new Response("gemini: no models configured", { status: 502 });
 }

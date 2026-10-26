@@ -11173,7 +11173,8 @@ function _bmEluThumbsHtml(x){
         var first = card.querySelector('.bm-card-thumbs') || box;
         first.parentNode.insertBefore(rem, first);
       }
-      try { var pp = el.__bmPopup; if (pp && pp.update) pp.update(); } catch(e){}
+      // P163b: layout only; popup.update() would rebuild the card from its content function.
+      try { var pp = el.__bmPopup; if (pp && pp._updateLayout) { pp._updateLayout(); pp._updatePosition(); if (pp._adjustPan) pp._adjustPan(); } } catch(e){}
     }, function(){ try { box.remove(); } catch(e){} });
   }
 
@@ -11188,6 +11189,19 @@ function _bmEluThumbsHtml(x){
           var el = pop && pop.getElement ? pop.getElement() : null;
           if (el) el.__bmPopup = pop;
           fill(el);
+          // P163b: the open card is re-rendered by later refreshes (new .bm-card node), which drops
+          // the extras; refill each new card from the cache while this popup stays open.
+          if (el && window.MutationObserver && !el.__p163obs) {
+            var obs = new MutationObserver(function(){ try { fill(el); } catch(e){} });
+            obs.observe(el, { childList: true, subtree: true });
+            el.__p163obs = obs;
+          }
+        } catch(e){}
+      });
+      window.map.on('popupclose', function(ev){
+        try {
+          var el = ev && ev.popup && ev.popup.getElement ? ev.popup.getElement() : null;
+          if (el && el.__p163obs) { el.__p163obs.disconnect(); el.__p163obs = null; }
         } catch(e){}
       });
     } else if (tries > 240) clearInterval(t);

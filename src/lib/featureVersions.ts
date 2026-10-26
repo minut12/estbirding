@@ -134,6 +134,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-24', ref: 'P159', kind: 'minor', text: 'K\u00f5ik liigid: filter SR + MR' },
       { date: '2026-10-26', ref: 'P163', kind: 'minor', text: 'Elurikkuse kaardil fotod ja viimased vaatlused' },
       { date: '2026-10-26', ref: 'P163b', kind: 'patch', text: 'Fotod ja viimased vaatlused j\u00e4\u00e4vad kaardile ka p\u00e4rast v\u00e4rskendust' },
+      { date: '2026-10-26', ref: 'P166', kind: 'patch', text: 'Foto avaneb kaardil suurelt, mitte uues aknas' },
     ],
   },
   {

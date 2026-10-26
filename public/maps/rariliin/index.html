@@ -3267,7 +3267,12 @@ async function _applyElurikkusPayloadToPoints(species, payload){
       }catch(e){}
     }
   }
-  if(best && !hasExactLock){
+  // P162: the server's exact list (elurikkus_observations, newest first) always moves the pin.
+  // The lock still protects exact coords against weaker sources (snapshot, detail-page scrape);
+  // before P162 it also froze the pin on its first location while the card text moved on.
+  const serverExact = items.some(function(it){ return !!it && it.coordSource === 'elurikkus_observations'; });
+  const lockHolds = hasExactLock && !serverExact;
+  if(best && !lockHolds){
     row.lat = best.lat;
     row.lon = best.lon;
     const foundSrc = String(best.source || 'detail').toLowerCase();
@@ -9363,7 +9368,8 @@ async function loadElurikkusPrimary(){
         const o = obs[j] || {};
         const lat = Number(o.lat), lon = Number(o.lon);
         if(!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-        items.push({ coordsStatus:'public', lat:lat, lon:lon, eventDate:String(o.d || ''), observedAt:String(o.d || ''), occurrenceUrl:null, coordSource:'elurikkus_observations' });
+        items.push({ coordsStatus:'public', lat:lat, lon:lon, eventDate:String(o.d || ''), observedAt:String(o.d || ''), occurrenceUrl:null, coordSource:'elurikkus_observations',
+          loc:String(o.loc || ''), cty:String(o.cty || ''), obr:String(o.obr || ''), n:o.n, bhv:String(o.bhv || '') });
       }
       if(!items.length) continue;
       const payload = { items: items, dataMaxAt: String((obs[0] && obs[0].d) || '') };
@@ -9372,6 +9378,19 @@ async function loadElurikkusPrimary(){
         if(window.points && window.points[name]){
           points[name] = Object.assign({}, points[name] || {}, window.points[name]);
           points[name].coordLock = 'exact';
+          // P162: card fields from the record the pin now sits on (same pick as the apply:
+          // newest date, first in server order on a tie), so place/observer match the coords.
+          var pick = null;
+          for(var pi = 0; pi < items.length; pi++){
+            if(!pick || String(items[pi].eventDate) > String(pick.eventDate)) pick = items[pi];
+          }
+          if(pick && Number(points[name].lat) === pick.lat && Number(points[name].lon) === pick.lon){
+            var ex = Object.assign({}, points[name].eluExtra || {});
+            ex.locality = pick.loc; ex.county = pick.cty; ex.collectors = pick.obr; ex.behavior = pick.bhv;
+            ex.individualCount = (pick.n == null) ? '' : String(pick.n);
+            points[name].eluExtra = ex;
+            if(window.points[name]) window.points[name].eluExtra = ex;
+          }
           if(typeof points[name].visible !== 'boolean') points[name].visible = true;
         }
         applied++;

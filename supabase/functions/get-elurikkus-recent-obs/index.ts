@@ -1,4 +1,5 @@
 // get-elurikkus-recent-obs
+// redeploy-marker: P164 2026-10-26 (same-day rows ordered by observed_dt, newest first; "t" in each obs)
 // Serves last-7-days elurikkus observations with coords, capped to newest 20 per species.
 // Public, read-only. Modeled on get-elurikkus-recent-rarities.
 
@@ -26,6 +27,7 @@ type Row = {
   behavior: string | null;
   sub_id: string | null;
   fetched_at: string | null;
+  observed_dt: string | null;
 };
 
 function compact(obj: Record<string, unknown>): Record<string, unknown> {
@@ -74,11 +76,14 @@ serve(async (req) => {
   let baseQuery = supabase
     .from("elurikkus_observations")
     .select(
-      "species_name, observed_at, lat, lon, locality, county, observer, individual_count, behavior, sub_id, fetched_at",
+      "species_name, observed_at, lat, lon, locality, county, observer, individual_count, behavior, sub_id, fetched_at, observed_dt",
     )
     .gte("observed_at", cutoffIso)
     .order("observed_at", { ascending: false })
-    .order("fetched_at", { ascending: false });
+    // P164: same-day sightings newest first by the observer's time; rows without a time last,
+    // then the Elurikkus id (higher = entered later) so the order never depends on fetch timing.
+    .order("observed_dt", { ascending: false, nullsFirst: false })
+    .order("sub_id", { ascending: false });
 
   if (speciesFilter && speciesFilter.length > 0) {
     baseQuery = baseQuery.in("species_name", speciesFilter);
@@ -130,6 +135,7 @@ serve(async (req) => {
         n: r.individual_count,
         bhv: r.behavior,
         sid: r.sub_id,
+        t: r.observed_dt,
       })
     );
     species[sp] = { total_7d: total, obs };

@@ -186,6 +186,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-09', ref: 'P111', kind: 'minor', text: 'eBirdi kinnitamata vaatlused kaardil m\u00e4rkega \u201ekinnitamata\u201c' },
       { date: '2026-10-10', ref: 'P115', kind: 'patch', text: 'Aegunud eBirdi n\u00f5el kaob kaardilt j\u00e4rgmisel v\u00e4rskendusel' },
       { date: '2026-10-26', ref: 'P162', kind: 'patch', text: 'N\u00f5el liigub uusima Elurikkuse vaatluse juurde, kaardi tekst on samast vaatlusest' },
+      { date: '2026-10-26', ref: 'P164', kind: 'patch', text: 'Sama p\u00e4eva vaatlustest n\u00e4idatakse kellaaja j\u00e4rgi uusimat' },
     ],
   },
   {

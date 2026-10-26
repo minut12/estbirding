@@ -1,3 +1,4 @@
+// redeploy-marker: P164 2026-10-26 (observed_dt = observer-recorded time, written with every elurikkus_observations row)
 // redeploy-marker: P143 2026-10-15 (same-Latin alias rows count for the card, e.g. Mongoolia k\u00f5nnu\u00f5gija for K\u00f5nnu\u00f5gija)
 // redeploy-marker: P141 2026-10-15 (Latin-name fallback search when the Estonian name finds no dated record)
 // redeploy-marker: P129 2026-10-12 (re-label rows whose Elurikkus name is another species)
@@ -839,6 +840,7 @@ Deno.serve(async (req) => {
         observer: trunc(observer, 200),
         individual_count: Number.isFinite(ic) ? ic : null,
         behavior: r.behavior ?? null,
+        observed_dt: preciseDateTime(r),
         fetched_at: new Date().toISOString(),
       };
     }
@@ -1368,6 +1370,7 @@ Deno.serve(async (req) => {
           individual_count: o.individual_count,
           behavior: o.behavior,
           sub_id: o.sub_id,
+          observed_dt: o.precise_dt ?? null,
           fetched_at: nowIso,
         }));
 
@@ -1385,6 +1388,7 @@ Deno.serve(async (req) => {
           individual_count: o.individual_count,
           behavior: o.behavior,
           sub_id: null,
+          observed_dt: o.precise_dt ?? null,
           fetched_at: nowIso,
         }));
 
@@ -1406,6 +1410,7 @@ Deno.serve(async (req) => {
           individual_count: r.obs.individual_count,
           behavior: r.obs.behavior,
           sub_id: r.obs.sub_id,
+          observed_dt: r.obs.precise_dt ?? null,
           fetched_at: nowIso,
         });
       }

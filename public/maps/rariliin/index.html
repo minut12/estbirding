@@ -8679,9 +8679,15 @@ function buildPopupHtml(key, p, opts){
   const hist = isEb ? null : rlHistGet('elu', key);
   const hv = (hist && hist.state === 'ok' && hist.val) ? hist.val : null;
   const hNew = (hv && Array.isArray(hv.rows) && hv.rows.length) ? hv.rows[0] : null;
-  const remark = isEb ? str(p.comment) : (str(x.remark || x.remarks) || str(hv && hv.remark));
+  /* P165: the history's photo flag and remark belong to one record; use them only when that record is the one
+     on this card (same date, same place). Before, the newest history row lent its photo to another same-day card. */
+  const cardDay = String(p.t || '').slice(0, 10);
+  const cardLoc = str(rlField(p, 'locality')).toLowerCase();
+  const hSame = function(r){ return !!r && String(r.iso || '').slice(0, 10) === cardDay && (!cardLoc || str(r.locality).toLowerCase() === cardLoc); };
+  const hRec = (hv && Array.isArray(hv.rows)) ? (hv.rows.filter(hSame)[0] || null) : null;
+  const remark = isEb ? str(p.comment) : (str(x.remark || x.remarks) || (hRec && hRec === hNew ? str(hv && hv.remark) : ''));
   const media = isEb ? p.media
-    : ((Array.isArray(x.media) && x.media.length) ? { p: Number(x.mediaN) || x.media.length } : (Number(x.mediaN) > 0 ? { p: Number(x.mediaN) } : ((hNew && hNew.hasImg) ? { p: 1 } : null)));
+    : ((Array.isArray(x.media) && x.media.length) ? { p: Number(x.mediaN) || x.media.length } : (Number(x.mediaN) > 0 ? { p: Number(x.mediaN) } : ((hRec && hRec.hasImg) ? { p: 1 } : null)));
   let extUrl = str(o.extUrl);
   if (!isEb && !extUrl) extUrl = str(p.openUrl || x.detailUrl || p.searchUrl) || ('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(key));
   const SVG_PIN = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3.3 4.5 8.5 4.5 8.5s4.5-5.2 4.5-8.5A4.5 4.5 0 0 0 8 1.5Zm0 6.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4Z"/></svg>';

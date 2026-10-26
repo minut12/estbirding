@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-26 - P161b Gemini per-model cap = 40% of the call timeout (translation 32 s, glossary 18 s)
 // redeploy-marker: 2026-10-20 - P155b glossary pass also after a slow translation (45 s, while it ends by 140 s)
 // redeploy-marker: 2026-10-20 - P155 NEWS_THINKING (between_tools|low|medium) + dryRun thinkingOverride; output_tokens in the run summary
 // redeploy-marker: 2026-10-20 - P154b max_tokens error says what filled the cap (block types, output tokens, visible text length)
@@ -592,7 +593,11 @@ async function callAnthropic(
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await anthropicMessages(areq, ctrl.signal);
+    // P161b: when Claude is out and Gemini serves, one slow Gemini model may use at
+    // most 40% of this call's time, so the next (lite) model still gets a turn.
+    const res = await anthropicMessages(areq, ctrl.signal, {
+      geminiModelTimeoutMs: Math.max(10_000, Math.floor(timeoutMs * 0.4)),
+    });
     const text = await res.text();
     if (!res.ok) {
       return {

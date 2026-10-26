@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-26 - P161b per-call Gemini model cap (anthropicMessages opts.geminiModelTimeoutMs) for callers with a short own timeout
 // redeploy-marker: 2026-10-25 - P161 Gemini thinkingLevel (non-lite: GEMINI_THINKING, default low) + per-model time cap, a capped model steps to the next
 // redeploy-marker: 2026-10-11 - P120i freeMessages optional Gemini model list (per-caller override)
 // redeploy-marker: 2026-10-10 - P120g freeMessages (Gemini -> Mistral only, never Claude)
@@ -310,6 +311,9 @@ const GEMINI_THINKING_DEFAULT = "low";
 // it runs out and the caller has time left, the chain moves to the next model
 // instead of the whole call failing. The caller's own timeout still ends everything.
 const GEMINI_MODEL_TIMEOUT_DEFAULT_MS = 150_000;
+// P161b: a caller whose own timeout is shorter than the cap (news: 80 s) passes its
+// own per-model cap, so a slow first model still leaves time for the next one.
+export type LlmCallOptions = { geminiModelTimeoutMs?: number };
 
 type AnthropicTextBlock = { type?: string; text?: string };
 type AnthropicMessage = { role: string; content: string | AnthropicTextBlock[] };
@@ -539,13 +543,16 @@ async function callGemini(
   fallback: boolean,
   signal?: AbortSignal,
   models?: string[],
+  modelTimeoutMs?: number,
 ): Promise<Response> {
   const apiKey = (Deno.env.get("GEMINI_API_KEY") || "").trim();
   if (!apiKey) throw new Error("missing_env:GEMINI_API_KEY");
   let last: Response | null = null;
   for (const model of (models && models.length ? models : geminiModels())) {
     // P161: one time cap per model (all its attempts), joined with the caller's signal.
-    const cap = AbortSignal.timeout(geminiModelTimeoutMs());
+    const cap = AbortSignal.timeout(
+      modelTimeoutMs && modelTimeoutMs >= 5_000 ? modelTimeoutMs : geminiModelTimeoutMs(),
+    );
     const modelSignal = signal ? AbortSignal.any([signal, cap]) : cap;
     let thinking = geminiThinkingLevel(model);
     let capped = false;
@@ -755,12 +762,13 @@ async function callBackups(
   fallback: boolean,
   signal?: AbortSignal,
   geminiModelList?: string[],
+  geminiModelTimeoutMs?: number,
 ): Promise<Response> {
   let last: Response | null = null;
   let lastError: unknown = null;
   if (geminiConfigured()) {
     try {
-      const res = await callGemini(req, fallback, signal, geminiModelList);
+      const res = await callGemini(req, fallback, signal, geminiModelList, geminiModelTimeoutMs);
       if (res.ok) return res;
       last = res;
     } catch (e) {
@@ -787,11 +795,13 @@ async function callBackups(
 export async function anthropicMessages(
   req: AnthropicMessagesRequest,
   signal?: AbortSignal,
+  opts: LlmCallOptions = {},
 ): Promise<Response> {
+  const gcap = opts.geminiModelTimeoutMs;
   const forced = forcedProvider();
   if (forced === "gemini") {
     console.log("[llm] provider=gemini reason=LLM_FORCE_PROVIDER");
-    return callGemini(req, false, signal);
+    return callGemini(req, false, signal, undefined, gcap);
   }
   if (forced === "mistral") {
     console.log("[llm] provider=mistral reason=LLM_FORCE_PROVIDER");
@@ -802,7 +812,7 @@ export async function anthropicMessages(
   if (!apiKey) {
     if (forced !== "anthropic" && backupConfigured()) {
       console.log("[llm] provider=backup reason=missing_env:ANTHROPIC_API_KEY");
-      return callBackups(req, true, signal);
+      return callBackups(req, true, signal, undefined, gcap);
     }
     throw new Error("missing_env:ANTHROPIC_API_KEY");
   }
@@ -825,7 +835,7 @@ export async function anthropicMessages(
     logCall({ ...anthropicRow(req.model, Date.now() - t0), error_class: aborted ? "timeout" : "network" });
     if (aborted || forced === "anthropic" || !backupConfigured()) throw e;
     console.log("[llm] provider=backup reason=anthropic_network:" + String(e).slice(0, 120));
-    return callBackups(req, true, signal);
+    return callBackups(req, true, signal, undefined, gcap);
   }
   const latency = Date.now() - t0;
 
@@ -845,5 +855,5 @@ export async function anthropicMessages(
     return new Response(body, { status: res.status, headers: res.headers });
   }
   console.log("[llm] provider=backup reason=anthropic_http_" + res.status + " " + body.slice(0, 160).replace(/\s+/g, " "));
-  return callBackups(req, true, signal);
+  return callBackups(req, true, signal, undefined, gcap);
 }

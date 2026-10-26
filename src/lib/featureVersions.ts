@@ -132,6 +132,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-16', ref: 'P150', kind: 'patch', text: '\u00dclevaade uueneb kord p\u00e4evas kell 18' },
       { date: '2026-10-19', ref: 'P153', kind: 'minor', text: 'K\u00f5ik liigid: k\u00f5igi liikide pildiruudustik, n\u00e4htud liigid hallid' },
       { date: '2026-10-24', ref: 'P159', kind: 'minor', text: 'K\u00f5ik liigid: filter SR + MR' },
+      { date: '2026-10-26', ref: 'P163', kind: 'minor', text: 'Elurikkuse kaardil fotod ja viimased vaatlused' },
     ],
   },
   {

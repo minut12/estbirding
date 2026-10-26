@@ -227,6 +227,9 @@ a.bm-sim-ext:hover{color:#2d7a4b;border-color:#c9d6cd}
 .bm-card-media b{font-weight:800;color:#8a4b06;margin-right:2px}
 .bm-card-media a{margin-left:auto;color:#155e75;font-weight:600;text-decoration:none;white-space:nowrap}
 .bm-card-media.is-off{display:none}
+/* P163: Elurikkus card - photo flag in the history list, loading row */
+.bm-card-recent-img{width:12px;height:12px;margin-right:4px;vertical-align:-1px;color:#8a4b06;flex:0 0 auto}
+.bm-card-recent-load{font-size:12px;color:#6c7f74}
 .bm-card-rem{display:flex;gap:8px;margin-top:10px;padding:8px 10px;border-radius:10px;background:#eef6f0;border:1px solid #cfe3d5;color:#1f5a36;font-size:12px;line-height:1.4}
 .bm-card-rem b{display:block;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#2d7a4b;margin-bottom:2px}
 .bm-card-thumbs{display:flex;gap:6px;margin-top:10px}
@@ -11025,6 +11028,171 @@ function _bmEluThumbsHtml(x){
     + '</div>';
   return html;
 }
+/* P163: Elurikkus card extras, fetched when the card opens (Rariliin P84g/P165 port).
+   One Elurikkus search page per species through _fetchHtmlWithFallback (elurikkus-proxy), cached
+   1 h (memory + localStorage). Adds: "Fotoga vaatlus" strip and photo tiles (and the remark) of the
+   record shown on the card only (same date and place), and the 5 newest own-species records.
+   Any failure removes the placeholder, so the card stays exactly as rendered before P163. */
+(function(){
+  var TTL_MS = 60 * 60 * 1000;
+  var LS_PREFIX = 'bm_linnuliigid_eluhist_v1:';
+  var MAX_ROWS = 5;
+  var mem = Object.create(null);
+  var inflight = Object.create(null);
+  var CAM = '<svg class="bm-card-recent-img" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Fotoga vaatlus"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+  var CAM_STRIP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+
+  function norm(v){ try { return String(v == null ? '' : v).normalize('NFC').toLowerCase().trim(); } catch(e){ return String(v == null ? '' : v).toLowerCase().trim(); } }
+  function lsGet(key){
+    try {
+      var raw = localStorage.getItem(LS_PREFIX + key);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (!o || !Array.isArray(o.rows) || !(Date.now() - Number(o.at) < TTL_MS)) return null;
+      return o;
+    } catch(e){ return null; }
+  }
+  function lsSet(key, o){ try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(o)); } catch(e){} }
+
+  function ownRows(results, key){
+    var wantA = norm(key), wantB = wantA;
+    try { if (window.normalizeUiText) wantB = norm(window.normalizeUiText(key)); } catch(e){}
+    var sci = '';
+    try { sci = _p81Binom((typeof SPECIES_SCINAMES !== 'undefined' && SPECIES_SCINAMES[key]) || ''); } catch(e){}
+    return results
+      .map(function(r, i){ return { r: r || {}, i: i }; })
+      .filter(function(o){
+        var cn = norm(o.r.common_name_est);
+        return (cn && (cn === wantA || cn === wantB)) || (sci && _p81Binom(o.r.taxon_name) === sci);
+      })
+      .sort(function(a, b){
+        var ka = String(a.r.event_datetime_precise || a.r.event_date || ''), kb = String(b.r.event_datetime_precise || b.r.event_date || '');
+        return kb.localeCompare(ka) || (a.i - b.i);
+      })
+      .slice(0, MAX_ROWS)
+      .map(function(o){
+        var r = o.r;
+        var files = Array.isArray(r.files) ? r.files : [];
+        var imgs = files.filter(function(f){ return f && f.media_type === 'Image'; });
+        var n = Number(r.individual_count);
+        return {
+          iso: String(r.event_date || '').slice(0, 10),
+          loc: String(r.locality || r.municipality || r.county || ''),
+          n: Number.isFinite(n) ? n : null,
+          occId: (r.id != null && r.id !== '') ? String(r.id) : '',
+          remark: String(r.remarks || r.identification_remarks || '').trim().slice(0, 300),
+          mediaN: imgs.length,
+          media: imgs.filter(function(f){ return f.preview_url; }).slice(0, 3).map(function(f){
+            return { t: String(f.preview_url), l: String(f.large_url || f.url || f.preview_url), by: String(f.rights_holder || (Array.isArray(f.creators) && f.creators[0]) || ''), lic: String(f.license || '') };
+          })
+        };
+      });
+  }
+
+  function load(key){
+    if (mem[key] && Date.now() - mem[key].at < TTL_MS) return Promise.resolve(mem[key]);
+    var cached = lsGet(key);
+    if (cached) { mem[key] = cached; return Promise.resolve(cached); }
+    if (inflight[key]) return inflight[key];
+    var url = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(_normText(key));
+    inflight[key] = _fetchHtmlWithFallback(url).then(function(html){
+      var res = _parseEluSearchJson(html);
+      if (!Array.isArray(res)) throw new Error('no search json');
+      var o = { at: Date.now(), rows: ownRows(res, key) };
+      mem[key] = o;
+      lsSet(key, o);
+      return o;
+    });
+    inflight[key].then(function(){ delete inflight[key]; }, function(){ delete inflight[key]; });
+    return inflight[key];
+  }
+
+  function histHtml(rows){
+    var out = '';
+    for (var i = 0; i < rows.length; i++){
+      var r = rows[i];
+      var when = r.iso ? formatDateEE(r.iso) : '';
+      var inner = '<span class="bm-card-recent-when">' + (when && when !== '-' ? escapeHtml(when) : '&mdash;') + '</span>'
+        + '<span class="bm-card-recent-place" title="' + escapeHtml(r.loc) + '">' + (r.mediaN > 0 ? CAM : '') + (r.loc ? escapeHtml(r.loc) : '&mdash;') + '</span>'
+        + '<span class="bm-card-recent-n">' + (r.n != null ? escapeHtml(String(r.n)) : '&ndash;') + '</span>';
+      out += r.occId
+        ? '<a class="bm-card-recent-row" href="https://elurikkus.ee/app/occurrences/occurrence/' + encodeURIComponent(r.occId) + '" target="_blank" rel="noopener">' + inner + '</a>'
+        : '<div class="bm-card-recent-row">' + inner + '</div>';
+    }
+    return out;
+  }
+
+  function fill(el){
+    if (!el || !el.querySelector) return;
+    var card = el.querySelector('.bm-card');
+    if (!card || card.getAttribute('data-p163')) return;
+    if (card.querySelector('.bm-card-stat--ebird')) return; // eBird card: has its own extras
+    var srcEl = card.querySelectorAll('.bm-card-stat b')[2];
+    if (!srcEl || String(srcEl.textContent || '').trim() !== 'Elurikkus') return; // Elurikkus cards only
+    var nameEl = card.querySelector('.bm-card-name');
+    var key = nameEl ? String(nameEl.textContent || '').trim() : '';
+    if (!key) return;
+    var pt = (typeof points === 'object' && points) ? points[key] : null;
+    if (!pt) return;
+    card.setAttribute('data-p163', '1');
+    var x = pt.eluExtra || {};
+    var cardDay = String(pt.t || '').slice(0, 10);
+    var cardLoc = norm(x.locality || x.municipality || pt.placeText || x.county || '');
+    var acts = card.querySelector('.bm-card-acts');
+    var box = document.createElement('div');
+    box.className = 'bm-card-recent';
+    box.innerHTML = '<div class="bm-card-recent-h">Viimased Elurikkuse vaatlused</div><div class="bm-card-recent-list"><div class="bm-card-recent-load">laadin&hellip;</div></div>';
+    if (acts && acts.parentNode) acts.parentNode.insertBefore(box, acts); else return;
+    load(key).then(function(o){
+      if (!box.isConnected) return;
+      var rows = (o && o.rows) || [];
+      if (!rows.length) { box.remove(); return; }
+      box.querySelector('.bm-card-recent-list').innerHTML = histHtml(rows);
+      // The record on this card: same date, same place (P165 rule).
+      var rec = null;
+      for (var i = 0; i < rows.length; i++){
+        if (rows[i].iso === cardDay && (!cardLoc || norm(rows[i].loc) === cardLoc)) { rec = rows[i]; break; }
+      }
+      if (!rec) return;
+      if (rec.mediaN > 0 && !card.querySelector('.bm-card-media')) {
+        var strip = document.createElement('div');
+        strip.className = 'bm-card-media';
+        strip.innerHTML = CAM_STRIP + '<b>Fotoga vaatlus</b><span class="mc">' + (rec.mediaN === 1 ? '1 foto' : rec.mediaN + ' fotot') + '</span>';
+        var stats = card.querySelector('.bm-card-stats');
+        if (stats && stats.parentNode) stats.parentNode.insertBefore(strip, stats);
+      }
+      if (rec.media.length && !card.querySelector('.bm-card-thumbs')) {
+        var th = document.createElement('div');
+        th.innerHTML = _bmEluThumbsHtml({ media: rec.media, mediaN: rec.mediaN, occId: rec.occId });
+        while (th.firstChild) box.parentNode.insertBefore(th.firstChild, box);
+      }
+      if (rec.remark && rec === rows[0] && !card.querySelector('.bm-card-rem')) {
+        var rem = document.createElement('div');
+        rem.className = 'bm-card-rem';
+        rem.innerHTML = '<div><b>Vaatleja m&auml;rkus</b><span>' + escapeHtml(rec.remark) + '</span></div>';
+        var first = card.querySelector('.bm-card-thumbs') || box;
+        first.parentNode.insertBefore(rem, first);
+      }
+      try { var pp = el.__bmPopup; if (pp && pp.update) pp.update(); } catch(e){}
+    }, function(){ try { box.remove(); } catch(e){} });
+  }
+
+  var tries = 0;
+  var t = setInterval(function(){
+    tries++;
+    if (window.map && typeof window.map.on === 'function') {
+      clearInterval(t);
+      window.map.on('popupopen', function(ev){
+        try {
+          var pop = ev && ev.popup;
+          var el = pop && pop.getElement ? pop.getElement() : null;
+          if (el) el.__bmPopup = pop;
+          fill(el);
+        } catch(e){}
+      });
+    } else if (tries > 240) clearInterval(t);
+  }, 500);
+})();
 function buildPopupHtml(key, p, opts){
   const isEb = !!(opts && opts.source === 'ebird');
   const x = (p && p.eluExtra) ? p.eluExtra : {};

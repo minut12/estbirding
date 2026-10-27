@@ -1955,6 +1955,49 @@ function rowHTML(name){
     </div>`;
 }
 
+/* P168: species pins at the very same spot (e.g. two species from one eBird hotspot) sat exactly on
+   top of each other, so only one could ever be clicked. Pins whose coordinates match (5 decimals) are
+   fanned out side by side, 34 px apart, at every zoom. Display only: the marker's lat/lng, card and
+   coordinates are unchanged; the shift sits on the icon's inner .bm-pin element. */
+(function(){
+  var FAN_PX = 34;
+  var timer = null;
+  function fan(){
+    timer = null;
+    try {
+      var groups = {};
+      markers.forEach(function(m, key){
+        if (!m || !map.hasLayer(m) || !m.getLatLng) return;
+        var ll = m.getLatLng();
+        var k = ll.lat.toFixed(5) + ',' + ll.lng.toFixed(5);
+        (groups[k] = groups[k] || []).push({ m: m, key: String(key) });
+      });
+      Object.keys(groups).forEach(function(k){
+        var g = groups[k];
+        g.sort(function(a, b){ return a.key.localeCompare(b.key); });
+        for (var i = 0; i < g.length; i++){
+          var el = g[i].m.getElement ? g[i].m.getElement() : null;
+          var inner = el ? el.firstElementChild : null;
+          if (!inner) continue;
+          var dx = g.length > 1 ? Math.round((i - (g.length - 1) / 2) * FAN_PX) : 0;
+          inner.style.transform = dx ? 'translateX(' + dx + 'px)' : '';
+          // keep the popup's arrow over the shifted pin
+          try {
+            var pop = g[i].m.getPopup ? g[i].m.getPopup() : null;
+            if (pop) {
+              var base = pop.options.__p168base || pop.options.offset || L.point(0, 7);
+              pop.options.__p168base = base;
+              pop.options.offset = L.point(base.x + dx, base.y);
+            }
+          } catch(e){}
+        }
+      });
+    } catch(e){}
+  }
+  function schedule(){ if (!timer) timer = setTimeout(fan, 120); }
+  map.on('layeradd layerremove zoomend', schedule);
+  schedule();
+})();
 function render(){
   const q = norm((filterBox.value || "").trim());
   listEl.innerHTML = "";

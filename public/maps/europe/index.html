@@ -1960,7 +1960,7 @@ function rowHTML(name){
     </div>`;
 }
 
-/* P168/P168b: species pins at the very same spot (e.g. several species from one eBird hotspot) sat
+/* P168/P168b/P168c: species pins at the very same spot (e.g. several species from one eBird hotspot) sat
    exactly on top of each other. Pins whose coordinates match (5 decimals) now stack under one pin -
    the rarest, then the newest - with a "+N" badge. Tapping that pin spreads the group into a ring
    around the spot with thin lines to it; each pin then opens its own card. A map tap or zoom closes
@@ -2029,12 +2029,20 @@ function rowHTML(name){
           if (!inner) return;
           var hide = n > 1 && !spread && i > 0;
           var badge = (n > 1 && !spread && i === 0) ? n - 1 : 0;
-          el.style.display = hide ? 'none' : '';
-          inner.style.transform = (pos[i].x || pos[i].y) ? 'translate(' + pos[i].x + 'px,' + pos[i].y + 'px)' : '';
+          // P168c: hide the inner .bm-pin, never the icon element. L.DivIcon reuses the icon <div> on
+          // setIcon() and only swaps its innerHTML, so a hide on the <div> outlived the badge and left
+          // species invisible. A rebuilt inner pin now always shows until the next pass.
+          if (el.style.display) el.style.display = '';
+          var hideVal = hide ? 'none' : '';
+          if (inner.style.display !== hideVal) inner.style.display = hideVal;
+          var peVal = hide ? 'none' : '';
+          if (el.style.pointerEvents !== peVal) el.style.pointerEvents = peVal;
+          var tf = (pos[i].x || pos[i].y) ? 'translate(' + pos[i].x + 'px,' + pos[i].y + 'px)' : '';
+          if (inner.style.transform !== tf) inner.style.transform = tf;
           var more = inner.querySelector('.bm-pin-more');
           if (badge) {
             if (!more) { more = document.createElement('div'); more.className = 'bm-pin-more'; inner.appendChild(more); }
-            more.textContent = '+' + badge;
+            if (more.textContent !== '+' + badge) more.textContent = '+' + badge;
           } else if (more) more.remove();
           inner.__p168 = { group: gk, stacked: badge > 0 };
           if (!inner.__p168bound) { inner.__p168bound = true; inner.addEventListener('click', onPinClick, true); }
@@ -2045,7 +2053,7 @@ function rowHTML(name){
             // The svg sits at the spot (the icon anchor); each pin tip is at its ring offset from it.
             for (var q = 0; q < pos.length; q++) out += '<line x1="0" y1="0" x2="' + pos[q].x + '" y2="' + pos[q].y + '"/>';
             out += '<circle cx="0" cy="0" r="3"/>';
-            svg.innerHTML = out;
+            if (svg.__p168html !== out) { svg.innerHTML = out; svg.__p168html = out; }
           } else if (svg) svg.remove();
           try { it.m.setZIndexOffset(spread ? 2000 : (badge ? 500 : 0)); } catch(e){}
           setPopupOffset(it.m, pos[i].x, pos[i].y);
@@ -2058,8 +2066,9 @@ function rowHTML(name){
   function collapse(){ if (spreadKey) { spreadKey = null; schedule(); } }
   map.on('layeradd layerremove', schedule);
   map.on('click zoomstart', collapse);
-  // setIcon() swaps the icon element without a layer event: watch the marker pane's children.
-  try { new MutationObserver(schedule).observe(map.getPane('markerPane'), { childList: true }); } catch(e){}
+  // setIcon() swaps the icon's innerHTML (same <div>) without a layer event: watch the whole marker
+  // pane subtree. Writes above only change what differs, so the observer settles after one pass.
+  try { new MutationObserver(schedule).observe(map.getPane('markerPane'), { childList: true, subtree: true }); } catch(e){}
   schedule();
 })();
 function render(){

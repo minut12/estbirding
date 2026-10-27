@@ -171,6 +171,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-24', ref: 'P160', kind: 'minor', text: 'Uued liigid leitakse ka eBirdi k\u00f5igist viimase n\u00e4dala vaatlustest, mitte ainult teadetest' },
       { date: '2026-10-27', ref: 'P168', kind: 'patch', text: 'Samas kohas olevad liigid on kaardil k\u00f5rvuti, mitte \u00fcksteise peal' },
       { date: '2026-10-27', ref: 'P168b', kind: 'patch', text: 'Samas kohas olevad liigid on \u00fche n\u00f5ela all (+N), puudutus laotab need ringi' },
+      { date: '2026-10-27', ref: 'P168c', kind: 'patch', text: 'Samas kohas olevad liigid ei kao enam kaardilt' },
     ],
   },
   {

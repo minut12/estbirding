@@ -1960,7 +1960,7 @@ function rowHTML(name){
     </div>`;
 }
 
-/* P168/P168b/P168c: species pins at the very same spot (e.g. several species from one eBird hotspot) sat
+/* P168/P168b/P168c/P168d: species pins at the very same spot (e.g. several species from one eBird hotspot) sat
    exactly on top of each other. Pins whose coordinates match (5 decimals) now stack under one pin -
    the rarest, then the newest - with a "+N" badge. Tapping that pin spreads the group into a ring
    around the spot with thin lines to it; each pin then opens its own card. A map tap or zoom closes
@@ -1979,8 +1979,12 @@ function rowHTML(name){
   }
   function groupsNow(){
     var groups = {};
+    // P168d: the markers Map holds the same marker under two keys ("Species" and "Species@@CC");
+    // counted twice, every pin stacked under itself and ended up hidden. One entry per marker.
+    var seen = new Set();
     markers.forEach(function(m, key){
-      if (!m || !map.hasLayer(m) || !m.getLatLng) return;
+      if (!m || seen.has(m) || !map.hasLayer(m) || !m.getLatLng) return;
+      seen.add(m);
       var ll = m.getLatLng();
       var k = ll.lat.toFixed(5) + ',' + ll.lng.toFixed(5);
       (groups[k] = groups[k] || []).push({ m: m, key: String(key), r: rank(key), t: newest(key) });

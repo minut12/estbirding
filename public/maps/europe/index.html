@@ -390,6 +390,11 @@ html:not(.sb-classic) #sbPill{display:none}
 @media (prefers-reduced-motion:reduce){ html:not(.sb-classic) #sidebar{transition:none} }
 /* P74c pin v2 markers (linnuliigid P58c look). Fixed 44x56; no zoom scaling in the new UI. */
 html:not(.sb-classic) .bm-pin{position:relative;width:44px;height:56px}
+/* P168b: same-spot pins stack under one pin with a "+N" badge; a tap spreads them in a ring with leader lines */
+.bm-pin-more{position:absolute;left:-12px;top:20px;min-width:22px;height:20px;padding:0 5px;box-sizing:border-box;border-radius:999px;background:#1f2a24;color:#fff;font:700 11px/20px system-ui,Arial,sans-serif;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.35);pointer-events:none}
+svg.bm-spread{position:absolute;left:22px;top:56px;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:-1}
+svg.bm-spread line{stroke:rgba(31,42,36,.6);stroke-width:1.5}
+svg.bm-spread circle{fill:#1f2a24}
 html:not(.sb-classic) .bm-pin-shape{position:absolute;left:2px;top:8px;width:40px;height:40px;box-sizing:border-box;background:#fff;border:1.5px solid #dde4df;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);box-shadow:0 2px 5px rgba(20,40,30,.28)}
 html:not(.sb-classic) .bm-pin-head{position:absolute;left:6px;top:12px;width:32px;height:32px;border-radius:50%;box-sizing:border-box;background-color:#29c;background-size:cover;background-position:center}
 html:not(.sb-classic) .bm-pin-rb{position:absolute;left:-4px;top:4px;min-width:18px;height:16px;padding:0 4px;border-radius:999px;background:#fff;border:1px solid currentColor;font:800 10px/14px system-ui,Arial,sans-serif;text-align:center;box-sizing:border-box;z-index:4;box-shadow:0 1px 2px rgba(0,0,0,.25)}
@@ -1955,47 +1960,106 @@ function rowHTML(name){
     </div>`;
 }
 
-/* P168: species pins at the very same spot (e.g. two species from one eBird hotspot) sat exactly on
-   top of each other, so only one could ever be clicked. Pins whose coordinates match (5 decimals) are
-   fanned out side by side, 34 px apart, at every zoom. Display only: the marker's lat/lng, card and
-   coordinates are unchanged; the shift sits on the icon's inner .bm-pin element. */
+/* P168/P168b: species pins at the very same spot (e.g. several species from one eBird hotspot) sat
+   exactly on top of each other. Pins whose coordinates match (5 decimals) now stack under one pin -
+   the rarest, then the newest - with a "+N" badge. Tapping that pin spreads the group into a ring
+   around the spot with thin lines to it; each pin then opens its own card. A map tap or zoom closes
+   the ring. Display only: marker lat/lng, cards and coordinates are unchanged. */
 (function(){
-  var FAN_PX = 34;
+  var RAR = { mega: 4, super: 3, rare: 2 };
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var spreadKey = null;
   var timer = null;
-  function fan(){
-    timer = null;
+  function speciesOf(key){ return String(key).split('@@')[0]; }
+  function rank(key){
+    try { return RAR[String((getSpeciesMeta(speciesOf(key)) || {}).rarityLevel || '')] || 0; } catch(e){ return 0; }
+  }
+  function newest(key){
+    try { var p = points[speciesOf(key)]; return String((p && p.t) || ''); } catch(e){ return ''; }
+  }
+  function groupsNow(){
+    var groups = {};
+    markers.forEach(function(m, key){
+      if (!m || !map.hasLayer(m) || !m.getLatLng) return;
+      var ll = m.getLatLng();
+      var k = ll.lat.toFixed(5) + ',' + ll.lng.toFixed(5);
+      (groups[k] = groups[k] || []).push({ m: m, key: String(key), r: rank(key), t: newest(key) });
+    });
+    Object.keys(groups).forEach(function(k){
+      groups[k].sort(function(a, b){ return (b.r - a.r) || b.t.localeCompare(a.t) || a.key.localeCompare(b.key); });
+    });
+    return groups;
+  }
+  function setPopupOffset(m, dx, dy){
     try {
-      var groups = {};
-      markers.forEach(function(m, key){
-        if (!m || !map.hasLayer(m) || !m.getLatLng) return;
-        var ll = m.getLatLng();
-        var k = ll.lat.toFixed(5) + ',' + ll.lng.toFixed(5);
-        (groups[k] = groups[k] || []).push({ m: m, key: String(key) });
-      });
-      Object.keys(groups).forEach(function(k){
-        var g = groups[k];
-        g.sort(function(a, b){ return a.key.localeCompare(b.key); });
-        for (var i = 0; i < g.length; i++){
-          var el = g[i].m.getElement ? g[i].m.getElement() : null;
-          var inner = el ? el.firstElementChild : null;
-          if (!inner) continue;
-          var dx = g.length > 1 ? Math.round((i - (g.length - 1) / 2) * FAN_PX) : 0;
-          inner.style.transform = dx ? 'translateX(' + dx + 'px)' : '';
-          // keep the popup's arrow over the shifted pin
-          try {
-            var pop = g[i].m.getPopup ? g[i].m.getPopup() : null;
-            if (pop) {
-              var base = pop.options.__p168base || pop.options.offset || L.point(0, 7);
-              pop.options.__p168base = base;
-              pop.options.offset = L.point(base.x + dx, base.y);
-            }
-          } catch(e){}
-        }
-      });
+      var pop = m.getPopup ? m.getPopup() : null;
+      if (!pop) return;
+      var base = pop.options.__p168base || pop.options.offset || L.point(0, 7);
+      pop.options.__p168base = base;
+      pop.options.offset = L.point(base.x + dx, base.y + dy);
     } catch(e){}
   }
-  function schedule(){ if (!timer) timer = setTimeout(fan, 120); }
-  map.on('layeradd layerremove zoomend', schedule);
+  function onPinClick(e){
+    var st = this.__p168;
+    if (!st || !st.stacked) return;
+    e.stopPropagation();
+    e.preventDefault();
+    spreadKey = st.group;
+    try { map.closePopup(); } catch(err){}
+    apply();
+  }
+  function apply(){
+    timer = null;
+    try {
+      var groups = groupsNow();
+      var alive = false;
+      Object.keys(groups).forEach(function(gk){
+        var g = groups[gk], n = g.length;
+        var spread = n > 1 && gk === spreadKey;
+        if (spread) alive = true;
+        var R = Math.max(48, Math.round(n * 12));
+        var pos = g.map(function(it, i){
+          if (!spread) return { x: 0, y: 0 };
+          var ang = -Math.PI / 2 + 2 * Math.PI * i / n;
+          return { x: Math.round(R * Math.cos(ang)), y: Math.round(R * Math.sin(ang)) };
+        });
+        g.forEach(function(it, i){
+          var el = it.m.getElement ? it.m.getElement() : null;
+          var inner = el ? el.firstElementChild : null;
+          if (!inner) return;
+          var hide = n > 1 && !spread && i > 0;
+          var badge = (n > 1 && !spread && i === 0) ? n - 1 : 0;
+          el.style.display = hide ? 'none' : '';
+          inner.style.transform = (pos[i].x || pos[i].y) ? 'translate(' + pos[i].x + 'px,' + pos[i].y + 'px)' : '';
+          var more = inner.querySelector('.bm-pin-more');
+          if (badge) {
+            if (!more) { more = document.createElement('div'); more.className = 'bm-pin-more'; inner.appendChild(more); }
+            more.textContent = '+' + badge;
+          } else if (more) more.remove();
+          inner.__p168 = { group: gk, stacked: badge > 0 };
+          if (!inner.__p168bound) { inner.__p168bound = true; inner.addEventListener('click', onPinClick, true); }
+          var svg = el.querySelector('svg.bm-spread');
+          if (spread && i === 0) {
+            if (!svg) { svg = document.createElementNS(SVGNS, 'svg'); svg.setAttribute('class', 'bm-spread'); svg.setAttribute('aria-hidden', 'true'); el.insertBefore(svg, el.firstChild); }
+            var out = '';
+            // The svg sits at the spot (the icon anchor); each pin tip is at its ring offset from it.
+            for (var q = 0; q < pos.length; q++) out += '<line x1="0" y1="0" x2="' + pos[q].x + '" y2="' + pos[q].y + '"/>';
+            out += '<circle cx="0" cy="0" r="3"/>';
+            svg.innerHTML = out;
+          } else if (svg) svg.remove();
+          try { it.m.setZIndexOffset(spread ? 2000 : (badge ? 500 : 0)); } catch(e){}
+          setPopupOffset(it.m, pos[i].x, pos[i].y);
+        });
+      });
+      if (spreadKey && !alive) spreadKey = null;
+    } catch(e){}
+  }
+  function schedule(){ if (!timer) timer = setTimeout(apply, 120); }
+  function collapse(){ if (spreadKey) { spreadKey = null; schedule(); } }
+  map.on('layeradd layerremove', schedule);
+  map.on('click zoomstart', collapse);
+  // setIcon() swaps the icon element without a layer event: watch the marker pane's children.
+  try { new MutationObserver(schedule).observe(map.getPane('markerPane'), { childList: true }); } catch(e){}
   schedule();
 })();
 function render(){

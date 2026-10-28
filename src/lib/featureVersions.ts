@@ -378,6 +378,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-07', ref: 'P98', kind: 'major', text: '\u00dcks kaart liigi kohta' },
       { date: '2026-10-08', ref: 'P102', kind: 'patch', text: 'Isendite arv on alati n\u00e4ha' },
       { date: '2026-10-10', ref: 'P114', kind: 'patch', text: 'Eesti loendis on ainult haruldased liigid' },
+      { date: '2026-10-28', ref: 'P170d', kind: 'minor', text: 'Liigikaardil HK taust: kinnitatud leiud, kuu ja rekordaasta' },
     ],
   },
   {

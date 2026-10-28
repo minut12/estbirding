@@ -25,6 +25,7 @@ import CorridorBadge from './CorridorBadge';
 import WindyChart from './WindyChart';
 import RareObservationsFeed from './RareObservationsFeed';
 import { groupEntriesBySpecies } from './entryGroups';
+import { HkBackground } from './HkBackground';
 
 function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
   const out = new Map<string, string>();
@@ -416,7 +417,7 @@ function ChecklistDetails({ subId, ebirdCode }: { subId: string; ebirdCode?: str
   );
 }
 
-function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId, hasMedia, onShowOnMap }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string; domId?: string; hasMedia?: boolean; onShowOnMap?: () => void }) {
+function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId, hasMedia, onShowOnMap, showHk }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string; domId?: string; hasMedia?: boolean; onShowOnMap?: () => void; showHk?: boolean }) {
   const tier = effectiveRarityTier(entry);
   const flag = entry.country_code && entry.country_code !== 'EE' && hasCountryFlag(entry.country_code) ? entry.country_code : undefined;
   const obs = formatObservers(entry.observers);
@@ -618,6 +619,7 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId, hasMedia, onShow
           </div>
         )
       )}
+      {showHk && entry.species_lat && <HkBackground sci={entry.species_lat} />}
       {!isUnverified && entry.sights_stats && typeof entry.sights_stats === 'object' && Number.isFinite(entry.sights_stats.total_obs) && (
         <div className="mt-3 pt-3 border-t border-border/40 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <BarChart3 className="h-3 w-3 shrink-0" />
@@ -973,7 +975,7 @@ function SpeciesObsRow({ entry, subId, hasMedia, ebirdCode }: { entry: VaatlusEn
   );
 }
 
-function SpeciesCard({ items, domIds, subIdFor, hasMediaFor, ebirdCode, avatarUrl, onShowOnMap }: {
+function SpeciesCard({ items, domIds, subIdFor, hasMediaFor, ebirdCode, avatarUrl, onShowOnMap, showHk }: {
   items: VaatlusEntry[];
   domIds: string[];
   subIdFor: (e: VaatlusEntry) => string | undefined;
@@ -981,6 +983,8 @@ function SpeciesCard({ items, domIds, subIdFor, hasMediaFor, ebirdCode, avatarUr
   ebirdCode?: string;
   avatarUrl?: string;
   onShowOnMap?: () => void;
+  /** P170d: HK taust box (Eesti cards only). */
+  showHk?: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
   const head = items[0];
@@ -1081,6 +1085,7 @@ function SpeciesCard({ items, domIds, subIdFor, hasMediaFor, ebirdCode, avatarUr
           </button>
         )}
       </div>
+      {showHk && head.species_lat && <HkBackground sci={head.species_lat} />}
       {statsBySource.length > 0 && (
         <div className="mt-3 pt-3 border-t border-border/40 space-y-1 text-xs text-muted-foreground">
           {statsBySource.map(({ src, stats }) => (
@@ -1736,6 +1741,7 @@ export default function OverviewTab() {
                           ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
                           avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
                           domId={entryDomId(scope, entry, idx)}
+                          showHk={scope === 'ee'}
                           onShowOnMap={scope === 'ee' ? () => navigate('/', { state: { estbirding: { activeTab: 'kaart', mapId: 'rariliin', focusSpecies: entry.species_et } } }) : undefined}
                         />
                       );
@@ -1750,6 +1756,7 @@ export default function OverviewTab() {
                         hasMediaFor={(e) => findHasMedia(e, activeMedia)}
                         ebirdCode={lookupEbirdCode(head.species_lat, ebirdCodeLookup)}
                         avatarUrl={lookupAvatarUrl(head.species_lat, avatarUrlLookup)}
+                        showHk={scope === 'ee'}
                         onShowOnMap={scope === 'ee' ? () => navigate('/', { state: { estbirding: { activeTab: 'kaart', mapId: 'rariliin', focusSpecies: head.species_et } } }) : undefined}
                       />
                     );

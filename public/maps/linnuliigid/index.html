@@ -11628,7 +11628,7 @@ function __bmSpeciesInfoOpen(btn, code, nameArg){
       }
       sec.innerHTML = __bmSpeciesInfoBodyHtml(row, code);
       __bmRarityModal(sec, name); // P121
-      if (row) __bmHkModal(sec, row.sci_name); // P170a
+      __bmHkModal(sec, row ? row.sci_name : '', name); // P170a, P174: Estonian name first
       if (row) __bmPucModal(sec, row.sci_name); // P127
       __bmMyObsModal(sec, name, row ? row.sci_name : ''); // P128/P131
       __bmNeighbourModal(sec, name); // P137
@@ -11810,31 +11810,50 @@ function __bmRarityModal(sec, name){
 // Shown for any species with HK records or HK text. Location is place + kihelkond + county as
 // published; for breeding records the place is left out (kihelkond only). Session cache per
 // scientific name. Function declarations only (no top-level let/const).
-function __bmHkFetch(sci){
+// P174: the EOU Estonian name decides first, species level before subspecies (eBird lumps e.g. all
+// redpolls as Acanthis flammea, so Hele-urvalind got Urvalind's data); the Latin name is the fallback.
+function __bmHkFetch(sci, et){
   window.__bmHkCache = window.__bmHkCache || {};
   var c = window.__bmHkCache;
   var k = String(sci || '').trim();
-  if (!/^[A-Z][a-z]+ [a-z-]+( [a-z-]+)?$/.test(k)) return Promise.resolve(null);
-  if (c[k]) return c[k];
+  if (!/^[A-Z][a-z]+ [a-z-]+( [a-z-]+)?$/.test(k)) k = '';
+  var nm = String(et || '').normalize('NFC').trim();
+  if (!k && !nm) return Promise.resolve(null);
+  var ck = nm + '|' + k;
+  if (c[ck]) return c[ck];
   var cfg = resolveSupabaseConfig();
   if (!cfg || !cfg.supabaseUrl || !cfg.anonKey) return Promise.resolve(null);
   var h = { headers: { 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey } };
   var base = cfg.supabaseUrl + '/rest/v1/';
-  var spUrl = base + 'hk_species?taxon_sci=eq.' + encodeURIComponent(k)
-    + '&select=taxon_sci,category,hk_status,hk_scope_et,hk_removed_from_year,origin_text_et,nth_record_et,counts_year,origin_report:hk_reports!origin_source_id(report_no,as_of)';
-  var recUrl = base + 'hk_records?status=eq.accepted&taxon_sci=like.' + encodeURIComponent(k + '*')
-    + '&select=taxon_sci,date_text,date_from,year,place,kihelkond,county,individuals_text,evidence,breeding&order=seq.asc&limit=2000';
+  var sel = '&select=taxon_sci,category,hk_status,hk_scope_et,hk_removed_from_year,origin_text_et,nth_record_et,counts_year,origin_report:hk_reports!origin_source_id(report_no,as_of)';
   function get(u){ return fetch(u, h).then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }); }
-  c[k] = Promise.all([get(spUrl), get(recUrl)]).then(function(res){
-    var sp = (Array.isArray(res[0]) && res[0][0]) ? res[0][0] : null;
-    var recs = (Array.isArray(res[1]) ? res[1] : []).filter(function(r){
-      var t = String((r && r.taxon_sci) || '');
-      return t === k || (t.indexOf(k + ' ') === 0 && t.indexOf(' x ') < 0);
+  function first(rows){ return (Array.isArray(rows) && rows[0]) ? rows[0] : null; }
+  var spP = (nm ? get(base + 'hk_species?et_name=eq.' + encodeURIComponent(nm) + sel + '&order=is_subspecies.asc&limit=1') : Promise.resolve([]))
+    .then(function(rows){
+      var hit = first(rows);
+      if (hit || !k) return hit;
+      return get(base + 'hk_species?taxon_sci=eq.' + encodeURIComponent(k) + sel).then(first);
     });
-    if (!recs.length && !(sp && (sp.hk_status || sp.origin_text_et))) return null;
-    return { sp: sp || {}, recs: recs };
-  }).catch(function(err){ delete c[k]; throw err; });
-  return c[k];
+  c[ck] = spP.then(function(sp){
+    var t = sp ? String(sp.taxon_sci || '') : k;
+    if (!t) return null;
+    return get(base + 'hk_records?status=eq.accepted&taxon_sci=like.' + encodeURIComponent(t + '*')
+      + '&select=taxon_sci,date_text,date_from,year,place,kihelkond,county,individuals_text,evidence,breeding&order=seq.asc&limit=2000')
+      .then(function(rows){
+        var recs = (Array.isArray(rows) ? rows : []).filter(function(r){
+          var x = String((r && r.taxon_sci) || '');
+          return x === t || (x.indexOf(t + ' ') === 0 && x.indexOf(' x ') < 0);
+        });
+        if (!recs.length && !(sp && (sp.hk_status || sp.origin_text_et))) return null;
+        return { sp: sp || {}, recs: recs };
+      });
+  }).catch(function(err){ delete c[ck]; throw err; });
+  return c[ck];
+}
+// P174: HK scope from the EOU list without the English part, e.g. "(15.V-31.VII, pesitsemine / breeding)"
+// -> "15.V-31.VII, pesitsemine".
+function __bmHkScope(v){
+  return String(v || '').replace(/\s*\/\s*breeding/gi, '').replace(/[()]/g, '').replace(/;\s*(?=;|$)/g, '').replace(/\s+/g, ' ').trim();
 }
 // P170c: EOU species list occurrence categories (www.eoy.ee/eesti-lindude-nimekiri). Function declaration only.
 function __bmHkCat(c){
@@ -11859,18 +11878,19 @@ function __bmHkRecPlace(r){
   if (r.county) p.push(escapeHtml(String(r.county)));
   return p.join(', ');
 }
-function __bmHkModal(sec, sci){
+function __bmHkModal(sec, sci, et){
   try {
-    __bmHkFetch(sci).then(function(d){
+    __bmHkFetch(sci, et).then(function(d){
       if (!d || !sec.isConnected) return;
       var panel = sec.parentNode, tab = panel ? panel.querySelector('.bm-sim-tab') : null; // P170b
       if (!panel || !tab || panel.querySelector('.bm-sim-hkpane')) return;
       var sp = d.sp, recs = d.recs;
       var html = '';
       var chips = '';
-      if (sp.hk_status === 'current') chips += '<span class="bm-sim-hkchip bm-sim-hkchip--hk">HK-s k&auml;sitletav liik</span>';
+      var scope = __bmHkScope(sp.hk_scope_et); // P174
+      if (sp.hk_status === 'current') chips += '<span class="bm-sim-hkchip bm-sim-hkchip--hk">HK-s k&auml;sitletav' + (scope ? ': ' + escapeHtml(scope) : ' liik') + '</span>';
       else if (sp.hk_status === 'historical') chips += '<span class="bm-sim-hkchip bm-sim-hkchip--o">HK k&auml;sitles varasemaid teateid'
-        + (sp.hk_scope_et ? ': ' + escapeHtml(String(sp.hk_scope_et)) : '') + '</span>';
+        + (scope ? ': ' + escapeHtml(scope) : '') + '</span>';
       if (sp.category) chips += '<span class="bm-sim-hkchip">Kategooria ' + escapeHtml(String(sp.category)) + '</span>';
       if (sp.nth_record_et) chips += '<span class="bm-sim-hkchip">' + escapeHtml(String(sp.nth_record_et)) + (sp.counts_year ? ' (' + Number(sp.counts_year) + ')' : '') + '</span>';
       if (sp.hk_removed_from_year) chips += '<span class="bm-sim-hkchip bm-sim-hkchip--o">HK nimestikust v&auml;lja alates ' + Number(sp.hk_removed_from_year) + '</span>';

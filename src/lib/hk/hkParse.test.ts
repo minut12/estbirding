@@ -396,3 +396,33 @@ describe("parseAcceptedList with 'khk.'", () => {
     expect(recs[0]).toMatchObject({ place: "Luuri", kihelkond: "Vändra", county: "Pärnumaa", individualsText: "ad", evidence: ["Foto"], observers: ["Leili Mihkelson"] });
   });
 });
+
+describe("classifyHirundoLines - 2010-2013 running heads (P174)", () => {
+  const known = ["Acanthis flammea", "Pinicola enucleator", "Alopochen aegyptiaca"];
+  const lines = classifyHirundoLines([
+    "Urvalind Acanthis flammea pesitsemine",
+    "pesitsemine on tõestatud vaid ühel korral (Ots 2009).",
+    "Hirundo 23(1), 2010 17",
+    "Männileevike Pinicola enucleator pesitsemine ja vaatlused 15.V – 31.VII",
+    "Põhjapoolse levilaga liik.",
+    "Ots ja Paal: Linnuharuldused Eestis 201246",
+    "kasvava Euroopa populatsiooni Hirundo 24(1), 201136 suuruseks hinnatakse",
+    "Hirundo 26(1), 2013 45 peetakse Euroopas leitud rebassidrikuid",
+  ].map((t) => ({ page: 1, t })), known);
+  it("treats the old Hirundo and author running heads as small text", () => {
+    expect(lines.find((l) => l.t === "Hirundo 23(1), 2010 17")?.role).toBe("small");
+    expect(lines.find((l) => l.t.startsWith("Ots ja Paal"))?.role).toBe("small");
+  });
+  it("recognises a heading with a scope and a date range", () => {
+    expect(lines.filter((l) => l.role === "heading").map((l) => l.t)).toEqual([
+      "Urvalind Acanthis flammea pesitsemine",
+      "Männileevike Pinicola enucleator pesitsemine ja vaatlused 15.V – 31.VII",
+    ]);
+  });
+  it("cuts a running head out of a body line", () => {
+    const bodies = lines.filter((l) => l.role === "body").map((l) => l.t);
+    expect(bodies).toContain("kasvava Euroopa populatsiooni suuruseks hinnatakse");
+    expect(bodies).toContain("peetakse Euroopas leitud rebassidrikuid");
+    expect(bodies.some((t) => /Hirundo \d+\(\d\)/.test(t))).toBe(false);
+  });
+});

@@ -619,7 +619,7 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl, domId, hasMedia, onShow
           </div>
         )
       )}
-      {showHk && entry.species_lat && <HkBackground sci={entry.species_lat} />}
+      {showHk && entry.species_lat && <HkBackground sci={entry.species_lat} et={entry.species_et} />}
       {!isUnverified && entry.sights_stats && typeof entry.sights_stats === 'object' && Number.isFinite(entry.sights_stats.total_obs) && (
         <div className="mt-3 pt-3 border-t border-border/40 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <BarChart3 className="h-3 w-3 shrink-0" />
@@ -1085,7 +1085,7 @@ function SpeciesCard({ items, domIds, subIdFor, hasMediaFor, ebirdCode, avatarUr
           </button>
         )}
       </div>
-      {showHk && head.species_lat && <HkBackground sci={head.species_lat} />}
+      {showHk && head.species_lat && <HkBackground sci={head.species_lat} et={head.species_et} />}
       {statsBySource.length > 0 && (
         <div className="mt-3 pt-3 border-t border-border/40 space-y-1 text-xs text-muted-foreground">
           {statsBySource.map(({ src, stats }) => (

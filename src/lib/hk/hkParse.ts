@@ -676,7 +676,12 @@ const RUNNING_HEADS = [
   /^\d{0,3}\s*[A-ZÄÖÜÕŠŽ][\p{L}-]+,\s*[A-Z]\.(?:\s*[A-Z]\.)?\s*(?:&|ja)\s*[A-ZÄÖÜÕŠŽ][\p{L}-]+,\s*[A-Z]\.\s*\d{0,3}$/u,
   /^Hirundo \d{4},\s*\d+/,
   /^ARUANNE$/,
+  // P174: 2010-2013 layouts: "Hirundo 23(1), 2010 17" and "Ots ja Paal: Linnuharuldused Eestis 201246"
+  /^Hirundo \d+\(\d\),\s*\d{4}\s*\d{0,3}$/,
+  /^[A-ZÄÖÜÕŠŽ][\p{L}-]+ ja [A-ZÄÖÜÕŠŽ][\p{L}-]+: Linnuharuldused Eestis \d{4}/u,
 ];
+// P174: an old-layout running head that pdf.js glued into a text line; cut out before classifying.
+const INLINE_RUNNING_HEAD = /\s*Hirundo \d+\(\d\),\s*\d{4}\s?\d{1,3}(?=\s|$)/g;
 const PARENS_ONLY = /^(\s*\([^()]*\))+\s*\.?$/;
 const ET_WORD = /^[\p{L}-]+,?$/u;
 // A heading whose genus is not in the known list (older names such as Ixobrychus) must still
@@ -695,7 +700,9 @@ function isReportHeading(t: string, idx: TaxonIndex): boolean {
   const after = t.slice(tx.end);
   if (/^(\s*\([^()]*\))*\s*\.?$/.test(after)) return true;
   // a known taxon may be followed by a short scope in words, e.g. "Alca torda pesitsemine"
-  return idx.sorted.includes(tx.sci) && /^(\s+[a-zõäöüšž,-]+){1,5}(\s*\([^()]*\))*\s*\.?$/.test(after);
+  // P174: ... or by a date range, e.g. "pesitsemine ja vaatlused 15.V – 31.VII"
+  return idx.sorted.includes(tx.sci)
+    && /^(\s+[a-zõäöüšž,-]+){1,5}(\s+\d{1,2}\.[IVX]+\s*[–-]\s*\d{1,2}\.[IVX]+)?(\s*\([^()]*\))*\s*\.?$/.test(after);
 }
 
 // Roles for pdf.js text lines of a Hirundo HK report when font sizes cannot be trusted
@@ -706,7 +713,9 @@ export function classifyHirundoLines(raw: HkRawLine[], known: string[]): HkLine[
   const idx = indexTaxa(known);
   const out: HkLine[] = [];
   for (const r of raw) {
-    const t = r.t.normalize("NFC").replace(/\s+/g, " ").trim();
+    const t0 = r.t.normalize("NFC").replace(/\s+/g, " ").trim();
+    const isHead = RUNNING_HEADS.some((re) => re.test(t0));
+    const t = isHead ? t0 : t0.replace(INLINE_RUNNING_HEAD, "").replace(/\s+/g, " ").trim();
     if (!t) continue;
     const prev = out[out.length - 1];
     if (PARENS_ONLY.test(t) && prev && prev.role === "heading" && !COUNTS_RE.test(prev.t)) {
@@ -715,7 +724,7 @@ export function classifyHirundoLines(raw: HkRawLine[], known: string[]): HkLine[
     }
     let role: HkLineRole = "body";
     if (SECTION_START.test(t)) role = "section";
-    else if (RUNNING_HEADS.some((re) => re.test(t))) role = "small";
+    else if (isHead) role = "small";
     else if (isReportHeading(t, idx)) role = "heading";
     out.push({ page: r.page, t, role });
   }

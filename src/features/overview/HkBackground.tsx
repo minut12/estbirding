@@ -35,49 +35,64 @@ export type HkBackgroundData = {
 const db = supabase as unknown as SupabaseClient;
 const cache = new Map<string, Promise<HkBackgroundData | null>>();
 
-function fetchHkBackground(sci: string): Promise<HkBackgroundData | null> {
-  const k = sci.trim();
-  if (!isHkTaxon(k)) return Promise.resolve(null);
-  const hit = cache.get(k);
+const SP_SELECT = 'taxon_sci,hk_status,hk_removed_from_year,origin_text_et,origin_report:hk_reports!origin_source_id(report_no,as_of)';
+
+// P174: the EOU Estonian name decides first, species level before subspecies (eBird lumps e.g. all
+// redpolls as Acanthis flammea); the Latin name is the fallback.
+async function findHkSpecies(k: string, nm: string): Promise<HkSpeciesRow | null> {
+  if (nm) {
+    const byName = await db.from('hk_species').select(SP_SELECT).eq('et_name', nm)
+      .order('is_subspecies', { ascending: true }).limit(1);
+    if (byName.error) throw byName.error;
+    // Untyped client infers the to-one embed as an array; PostgREST returns an object for it.
+    const hit = ((byName.data as unknown as HkSpeciesRow[] | null) ?? [])[0];
+    if (hit) return hit;
+  }
+  if (!k) return null;
+  const bySci = await db.from('hk_species').select(SP_SELECT).eq('taxon_sci', k).maybeSingle();
+  if (bySci.error) throw bySci.error;
+  return (bySci.data as unknown as HkSpeciesRow | null) ?? null;
+}
+
+function fetchHkBackground(sci: string, et: string): Promise<HkBackgroundData | null> {
+  const k = isHkTaxon(sci) ? sci.trim() : '';
+  const nm = et.normalize('NFC').trim();
+  if (!k && !nm) return Promise.resolve(null);
+  const ck = `${nm}|${k}`;
+  const hit = cache.get(ck);
   if (hit) return hit;
-  const p = Promise.all([
-    db.from('hk_species')
-      .select('taxon_sci,hk_status,hk_removed_from_year,origin_text_et,origin_report:hk_reports!origin_source_id(report_no,as_of)')
-      .eq('taxon_sci', k)
-      .maybeSingle(),
-    db.from('hk_records')
+  const p = findHkSpecies(k, nm).then(async (sp) => {
+    const t = sp ? sp.taxon_sci : k;
+    if (!t) return null;
+    const recRes = await db.from('hk_records')
       .select('taxon_sci,year,date_from')
       .eq('status', 'accepted')
-      .like('taxon_sci', `${k}%`)
-      .limit(2000),
-  ]).then(([spRes, recRes]) => {
-    if (spRes.error) throw spRes.error;
+      .like('taxon_sci', `${t}%`)
+      .limit(2000);
     if (recRes.error) throw recRes.error;
-    // Untyped client infers the to-one embed as an array; PostgREST returns an object for it.
-    const sp = (spRes.data as unknown as HkSpeciesRow | null) ?? null;
-    const recs = filterSpeciesRecords((recRes.data as HkRecordLite[] | null) ?? [], k);
+    const recs = filterSpeciesRecords((recRes.data as HkRecordLite[] | null) ?? [], t);
     if (!recs.length && !(sp && (sp.hk_status || sp.origin_text_et))) return null;
     return { sp, recs };
   });
-  cache.set(k, p);
-  p.catch(() => cache.delete(k));
+  cache.set(ck, p);
+  p.catch(() => cache.delete(ck));
   return p;
 }
 
 const LONG_TEXT = 220;
 
-export function HkBackground({ sci }: { sci: string }) {
+export function HkBackground({ sci, et }: { sci: string; et?: string }) {
   const [data, setData] = useState<HkBackgroundData | null>(null);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
     setData(null);
-    fetchHkBackground(sci)
+    fetchHkBackground(sci, et ?? '')
       .then((d) => { if (alive) setData(d); })
       .catch(() => { /* box is optional; stay hidden on error */ });
     return () => { alive = false; };
-  }, [sci]);
+  }, [sci, et]);
 
   if (!data) return null;
   const { sp, recs } = data;

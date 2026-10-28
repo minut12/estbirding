@@ -141,6 +141,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-28', ref: 'P170c', kind: 'minor', text: 'Liigiinfo: kategooriate selgitus ja vanemate HK aruannete tekstid' },
       { date: '2026-10-28', ref: 'P172a', kind: 'patch', text: 'K\u00f5ik liigid: sama ladinakeelse nimega liik on \u00fcks kord' },
       { date: '2026-10-28', ref: 'P172b', kind: 'patch', text: 'Liigiinfo: naabermaade vaatlustes ka Euroopa kaardi andmed' },
+      { date: '2026-10-28', ref: 'P174', kind: 'patch', text: 'Liigiinfo: HK andmed eestikeelse nime j\u00e4rgi, kiibil HK k\u00e4sitlusala' },
     ],
   },
   {
@@ -381,6 +382,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-08', ref: 'P102', kind: 'patch', text: 'Isendite arv on alati n\u00e4ha' },
       { date: '2026-10-10', ref: 'P114', kind: 'patch', text: 'Eesti loendis on ainult haruldased liigid' },
       { date: '2026-10-28', ref: 'P170d', kind: 'minor', text: 'Liigikaardil HK taust: kinnitatud leiud, kuu ja rekordaasta' },
+      { date: '2026-10-28', ref: 'P174', kind: 'patch', text: 'HK taust eestikeelse nime j\u00e4rgi' },
     ],
   },
   {

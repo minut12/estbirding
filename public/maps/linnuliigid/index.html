@@ -12078,6 +12078,24 @@ function __bmNbDate(iso){
   var m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? (m[3] + '.' + m[2]) : '';
 }
+// P172c: latest sighting per country for one species from the Euroopa map snapshot on this device
+// (bm_eu_last_good_snapshot; read only, never written or purged here). [] when absent.
+function __bmEuSnapRows(name){
+  try {
+    var raw = localStorage.getItem('bm_eu_last_good_snapshot');
+    var pts = raw ? ((JSON.parse(raw) || {}).payload || {}).points : null;
+    if (!pts) return [];
+    var k = String(name || '').normalize('NFC');
+    var e = pts[k] || pts[name] || null;
+    var regs = (e && e.regions) || {}, out = [];
+    Object.keys(regs).forEach(function(cc){
+      var r = regs[cc] || {};
+      if (!(Number(r.occ7) > 0) || !r.t) return;
+      out.push({ cc: cc, latest_obs_date: String(r.t), latest_loc: r.loc || '' });
+    });
+    return out;
+  } catch (e) { return []; }
+}
 function __bmNbPlace(loc){
   var t = String(loc || '');
   t = t.replace(/\s*\([-\d.,\s]+\)\s*$/, '');
@@ -12111,7 +12129,7 @@ function __bmNeighbourModal(sec, name){
     Promise.all([obsP, pctP]).then(function(res){
       var slot = sec && sec.isConnected ? sec.querySelector('.bm-sim-nb') : null;
       if (!slot || (res[0] === null && res[1] === null)) return;
-      var cn = { FI: 'Soome', SE: 'Rootsi', LV: 'L&auml;ti', LT: 'Leedu', 'RU-LEN': 'Venemaa', 'RU-PSK': 'Venemaa', 'RU-KGD': 'Venemaa' };
+      var cn = { FI: 'Soome', SE: 'Rootsi', LV: 'L&auml;ti', LT: 'Leedu', RU: 'Venemaa', 'RU-LEN': 'Venemaa', 'RU-PSK': 'Venemaa', 'RU-KGD': 'Venemaa' }; // P172c: RU = Euroopa snapshot
       var seen = {}, rows = [];
       (Array.isArray(res[0]) ? res[0] : []).forEach(function(o){
         if (rows.length >= 5 || !o) return;
@@ -12125,8 +12143,7 @@ function __bmNeighbourModal(sec, name){
       // "notable" there, so ebird_rare_observations has no rows for it. Add the latest sighting per
       // country from the Euroopa map snapshot on this device (bm_eu_last_good_snapshot, read only).
       try {
-        var snapAll = (typeof _loadNeighborDataLocal === 'function') ? _loadNeighborDataLocal() : null;
-        var snapRows = snapAll ? (snapAll[String(name || '').normalize('NFC')] || snapAll[name] || []) : [];
+        var snapRows = __bmEuSnapRows(name); // P172c
         snapRows.forEach(function(s){
           var d = String((s && s.latest_obs_date) || '').slice(0, 10);
           if (!s || !cn[s.cc] || !d || d < since) return;

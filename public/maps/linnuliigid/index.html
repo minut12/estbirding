@@ -192,6 +192,12 @@
 .bm-sim-tabs .bm-sim-tab{flex:1 1 0;min-width:0;margin:0;padding:0 10px;font-family:inherit;color:#5f7168;background:#f1f4f2;box-shadow:none;cursor:pointer}
 .bm-sim-tabs .bm-sim-tab--on{color:#2a3530;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 .bm-sim-sec[hidden]{display:none}
+/* P170c: category explanation in the Harulduskomisjon tab */
+.bm-sim-hkcat{margin:-4px 0 6px;font-size:12.5px;line-height:1.45;color:#3a4540}
+.bm-sim-hkcats{margin:0 0 10px;font-size:12.5px;color:#3a4540}
+.bm-sim-hkcats summary{cursor:pointer;padding:4px 0;color:#2d7a4b;font-weight:600}
+.bm-sim-hkcats ul{margin:4px 0 0;padding-left:18px;line-height:1.45}
+.bm-sim-hkcats li{margin:0 0 3px}
 .bm-sim-pct{display:flex;align-items:center;gap:10px;margin:8px 0 4px;padding:7px 11px;border-radius:9px;background:#eaf5ef;color:#2d6a48;font-size:13px;line-height:1.4}
 .bm-sim-pct b{font-size:18px;font-weight:600}
 .bm-sim-pct--none{background:#f1f4f2;color:#6b7770}
@@ -11815,7 +11821,7 @@ function __bmHkFetch(sci){
   var h = { headers: { 'apikey': cfg.anonKey, 'Authorization': 'Bearer ' + cfg.anonKey } };
   var base = cfg.supabaseUrl + '/rest/v1/';
   var spUrl = base + 'hk_species?taxon_sci=eq.' + encodeURIComponent(k)
-    + '&select=taxon_sci,category,hk_status,hk_scope_et,hk_removed_from_year,origin_text_et,nth_record_et,counts_year';
+    + '&select=taxon_sci,category,hk_status,hk_scope_et,hk_removed_from_year,origin_text_et,nth_record_et,counts_year,origin_report:hk_reports!origin_source_id(report_no,as_of)';
   var recUrl = base + 'hk_records?status=eq.accepted&taxon_sci=like.' + encodeURIComponent(k + '*')
     + '&select=taxon_sci,date_text,date_from,year,place,kihelkond,county,individuals_text,evidence,breeding&order=seq.asc&limit=2000';
   function get(u){ return fetch(u, h).then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }); }
@@ -11829,6 +11835,16 @@ function __bmHkFetch(sci){
     return { sp: sp || {}, recs: recs };
   }).catch(function(err){ delete c[k]; throw err; });
   return c[k];
+}
+// P170c: EOU species list occurrence categories (www.eoy.ee/eesti-lindude-nimekiri). Function declaration only.
+function __bmHkCat(c){
+  return ({
+    A: 'loodusliku p&auml;ritoluga liigid ja alamliigid, keda on kohatud alates 1950. aastast',
+    B: 'loodusliku p&auml;ritoluga liigid ja alamliigid, keda on kohatud ainult enne 1950. aastat',
+    C: 'liigid ja alamliigid, kes on introdutseeritud v&otilde;i vangistusest p&otilde;genenud isendite najal moodustanud looduses p&uuml;siva populatsiooni, samuti liigid, kes satuvad meile niisugusest populatsioonist v&auml;ljaspoolt Eestit',
+    D: 'ebaselge p&auml;ritoluga liigid ja alamliigid',
+    E: 'vangistusest p&auml;&auml;senud liigid'
+  })[c] || '';
 }
 function __bmHkMonthNow(){
   try {
@@ -11859,6 +11875,11 @@ function __bmHkModal(sec, sci){
       if (sp.nth_record_et) chips += '<span class="bm-sim-hkchip">' + escapeHtml(String(sp.nth_record_et)) + (sp.counts_year ? ' (' + Number(sp.counts_year) + ')' : '') + '</span>';
       if (sp.hk_removed_from_year) chips += '<span class="bm-sim-hkchip bm-sim-hkchip--o">HK nimestikust v&auml;lja alates ' + Number(sp.hk_removed_from_year) + '</span>';
       if (chips) html += '<div class="bm-sim-hkchips">' + chips + '</div>';
+      var catTxt = sp.category ? __bmHkCat(String(sp.category)) : ''; // P170c
+      if (catTxt) html += '<div class="bm-sim-hkcat"><b>Kategooria ' + escapeHtml(String(sp.category)) + '</b> &ndash; ' + catTxt + '.</div>';
+      html += '<details class="bm-sim-hkcats"><summary>K&otilde;ik kategooriad</summary><ul>'
+        + ['A', 'B', 'C', 'D', 'E'].map(function(k){ return '<li><b>' + k + '</b> &ndash; ' + __bmHkCat(k) + '</li>'; }).join('')
+        + '</ul><div class="bm-sim-cred" style="margin:4px 0 0">Allikas: EO&Uuml; Eesti lindude nimestik</div></details>';
       if (recs.length) {
         var years = recs.map(function(r){ return Number(r.year) || 0; }).filter(function(y){ return y > 0; });
         var yFirst = years.length ? Math.min.apply(null, years) : 0, yLast = years.length ? Math.max.apply(null, years) : 0;
@@ -11869,9 +11890,11 @@ function __bmHkModal(sec, sci){
           + '</div>';
       }
       if (sp.origin_text_et) {
-        html += '<div class="bm-sim-hkbox"><div class="bm-sim-hksub">P&auml;ritolu ja levila</div>'
+        var orep = sp.origin_report || null; // P170c: text may come from an older report
+        html += '<div class="bm-sim-hkbox"><div class="bm-sim-hksub">HK aruandest</div>'
           + '<p class="bm-sim-hktxt">' + escapeHtml(String(sp.origin_text_et)) + '</p>'
-          + '<div class="bm-sim-cred" style="margin:0">Tekst: Eesti linnuharulduste komisjoni aruanne (Hirundo)</div></div>';
+          + '<div class="bm-sim-cred" style="margin:0">Tekst: Eesti linnuharulduste komisjoni aruanne'
+          + (orep && orep.report_no ? ' nr ' + Number(orep.report_no) : '') + (orep && orep.as_of ? ' (' + String(orep.as_of).slice(0, 4) + ')' : '') + ', Hirundo</div></div>';
       }
       var months = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dated = 0;
       recs.forEach(function(r){

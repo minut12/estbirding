@@ -138,6 +138,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-26', ref: 'P167', kind: 'patch', text: '\u00dcks foto on sama suur kui mitme foto reas' },
       { date: '2026-10-28', ref: 'P170a', kind: 'minor', text: 'Liigiinfo: linnuharulduste komisjoni (HK) leiud, p\u00e4ritolu ja kuude graafik' },
       { date: '2026-10-28', ref: 'P170b', kind: 'patch', text: 'Liigiinfo: harulduskomisjoni andmed eraldi vahelehel' },
+      { date: '2026-10-28', ref: 'P170c', kind: 'minor', text: 'Liigiinfo: kategooriate selgitus ja vanemate HK aruannete tekstid' },
     ],
   },
   {

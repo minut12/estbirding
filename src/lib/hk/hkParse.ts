@@ -190,7 +190,7 @@ function indexTaxa(known: string[]): TaxonIndex {
   return { sorted, genera: new Set(sorted.map((s) => s.split(" ")[0])) };
 }
 
-function resolveTaxon(text: string, idx: TaxonIndex): { sci: string; start: number; end: number } | null {
+function resolveTaxon(text: string, idx: TaxonIndex, loose = false): { sci: string; start: number; end: number } | null {
   for (const sci of idx.sorted) {
     let from = 0;
     while (true) {
@@ -211,7 +211,7 @@ function resolveTaxon(text: string, idx: TaxonIndex): { sci: string; start: numb
   const re = /\b([A-Z][a-z]+) (sp\.|[a-z]{3,})(?: ([a-z]{3,}))?/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
-    if (!idx.genera.has(m[1])) continue;
+    if (!loose && !idx.genera.has(m[1])) continue;
     const sci = m[2] === "sp." ? `${m[1]} sp.` : m[0];
     return { sci, start: m.index, end: m.index + sci.length };
   }
@@ -286,14 +286,14 @@ function parseLocation(rest: string, memos: PlaceMemo[][]): ParsedLocation {
   const segs = main.split(/,\s*/).map((s) => s.trim()).filter(Boolean);
   const base = { evidence, observers, locationInherited: false };
 
-  const khk = segs.findIndex((s) => /\skhk$/.test(s));
+  const khk = segs.findIndex((s) => /\skhk\.?$/.test(s));
   if (khk >= 0) {
     const after = segs.slice(khk + 1).join(", ");
     const cm = COUNTY_RE.exec(after);
     return {
       ...base,
       place: nonEmpty(segs.slice(0, khk).join(", ")),
-      kihelkond: segs[khk].replace(/\s+khk$/, ""),
+      kihelkond: segs[khk].replace(/\s+khk\.?$/, ""),
       county: cm ? cm[1] : null,
       county2021: cm?.[2] ?? null,
       individualsText: cm ? nonEmpty(cm[3] ?? "") : nonEmpty(after),
@@ -510,13 +510,13 @@ export function parseAcceptedList(lines: HkLine[], known: string[]): HkRecord[] 
 
 /* ---------- Hirundo yearly HK report ---------- */
 
-const COUNT = "(X|ca\\s?\\d+|>?\\d+)";
+const COUNT = "(X|x|ca\\s?\\d+|>?\\d+)";
 const COUNTS_RE = new RegExp(`\\(\\s*(${COUNT}\\s*\\/\\s*${COUNT}\\s*[–-]\\s*${COUNT}\\s*\\/\\s*${COUNT})\\s*\\)`);
 const NTH_RE = /^(Eesti\s+\d+\.(?:\s?(?:[-–]|ja)\s?\d+\.)*\s+leid|Esmasleid)\.\s*/;
 const REMOVED_RE = /(\d{4})\.\s+aastast\s+HK-s\s+käsitletavate\s+liikide\s+nimestikust\s+välja/;
 
 function countNum(v: string): number | null {
-  return v === "X" ? null : +v.replace(/\D/g, "");
+  return v.toUpperCase() === "X" ? null : +v.replace(/\D/g, "");
 }
 
 function joinWrapped(lines: string[]): string {
@@ -619,7 +619,7 @@ export function parseHirundoReport(lines: HkLine[], known: string[]): { species:
     const dated = parseLeadingDate(t) !== null;
     const blocked = cur !== null && splitBlocker(cur.raw, cur.lines);
     if (l.role === "heading" && !dated && !blocked) {
-      const tx = resolveTaxon(t, idx);
+      const tx = resolveTaxon(t, idx, true);
       if (tx) {
         flushBlock();
         block = { heading: t, sci: tx.sci, category: section, status, page: l.page, records: [], text: [], memo: [] };
@@ -661,6 +661,63 @@ export function restoreCompoundHyphens(text: string, etNames: string[]): string 
       const rebuilt = name.split("").map((ch) => (ch === "-" ? "-" : word[i++])).join("");
       return pre + rebuilt;
     });
+  }
+  return out;
+}
+
+/* ---------- line roles for Hirundo HK reports of any year ---------- */
+
+export type HkRawLine = { page: number; t: string };
+
+const SECTION_START = /^(tunnustatud teated|tunnustamata teated|tänuavaldused|tänuavaldus|kasutatud kirjandus|summary)\b/i;
+const RUNNING_HEADS = [
+  /^\d{0,3}\s*Eesti linnuharulduste komisjoni aruanne/i,
+  /^\d{0,3}\s*Linnuharuldused Eestis \d{4}/,
+  /^\d{0,3}\s*[A-ZÄÖÜÕŠŽ][\p{L}-]+,\s*[A-Z]\.(?:\s*[A-Z]\.)?\s*(?:&|ja)\s*[A-ZÄÖÜÕŠŽ][\p{L}-]+,\s*[A-Z]\.\s*\d{0,3}$/u,
+  /^Hirundo \d{4},\s*\d+/,
+  /^ARUANNE$/,
+];
+const PARENS_ONLY = /^(\s*\([^()]*\))+\s*\.?$/;
+const ET_WORD = /^[\p{L}-]+,?$/u;
+// A heading whose genus is not in the known list (older names such as Ixobrychus) must still
+// look Latin; this keeps wrapped prose like "Euroopas ning" or "Briti saartel" out.
+const LOOSE_EPITHET = /(us|a|um|is|i|ae|ii|es|os|on|ax|ex|ix|ox)$/;
+const LOOSE_GENUS_BAD = /(sse|st|lt|le|ga|ks|ni|el|al|il|ul|as|es|is|ad|ed|id|l)$/;
+
+function isReportHeading(t: string, idx: TaxonIndex): boolean {
+  if (!/^[A-ZÄÖÜÕŠŽ]/.test(t) || parseLeadingDate(t)) return false;
+  const tx = resolveTaxon(t, idx, true);
+  if (!tx) return false;
+  const before = t.slice(0, tx.start).trim().split(/\s+/).filter(Boolean);
+  if (before.length < 1 || before.length > 6 || !before.every((w) => ET_WORD.test(w) && !w.endsWith(","))) return false;
+  const [genus, epithet] = tx.sci.split(" ");
+  if (!idx.genera.has(genus) && (LOOSE_GENUS_BAD.test(genus) || !LOOSE_EPITHET.test(epithet ?? ""))) return false;
+  const after = t.slice(tx.end);
+  if (/^(\s*\([^()]*\))*\s*\.?$/.test(after)) return true;
+  // a known taxon may be followed by a short scope in words, e.g. "Alca torda pesitsemine"
+  return idx.sorted.includes(tx.sci) && /^(\s+[a-zõäöüšž,-]+){1,5}(\s*\([^()]*\))*\s*\.?$/.test(after);
+}
+
+// Roles for pdf.js text lines of a Hirundo HK report when font sizes cannot be trusted
+// (older two-column layouts): sections and species headings are recognised by their text,
+// running heads become "small", and a counts line "(25/45 – 3/3)" wrapped below its
+// heading is merged into it.
+export function classifyHirundoLines(raw: HkRawLine[], known: string[]): HkLine[] {
+  const idx = indexTaxa(known);
+  const out: HkLine[] = [];
+  for (const r of raw) {
+    const t = r.t.normalize("NFC").replace(/\s+/g, " ").trim();
+    if (!t) continue;
+    const prev = out[out.length - 1];
+    if (PARENS_ONLY.test(t) && prev && prev.role === "heading" && !COUNTS_RE.test(prev.t)) {
+      prev.t = `${prev.t} ${t}`;
+      continue;
+    }
+    let role: HkLineRole = "body";
+    if (SECTION_START.test(t)) role = "section";
+    else if (RUNNING_HEADS.some((re) => re.test(t))) role = "small";
+    else if (isReportHeading(t, idx)) role = "heading";
+    out.push({ page: r.page, t, role });
   }
   return out;
 }

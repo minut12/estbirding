@@ -7,6 +7,7 @@ import {
   parseAcceptedList,
   parseHirundoReport,
   restoreCompoundHyphens,
+  classifyHirundoLines,
   type HkLine,
 } from "./hkParse";
 
@@ -300,5 +301,98 @@ describe("parseAcceptedList edge cases", () => {
   it("starts a new heading even after a record with an unclosed parenthesis", () => {
     expect(recs.map((r) => r.taxonSci)).toEqual(["Ardenna grisea", "Puffinus puffinus", "Ficedula albicollis x Ficedula hypoleuca"]);
     expect(recs[0].rawText).not.toContain("Põhja-tormilind");
+  });
+});
+
+describe("classifyHirundoLines", () => {
+  const known = ["Branta bernicla hrota", "Branta bernicla", "Gavia immer"];
+  const raw = [
+    "Tunnustatud teated. Kategooriad A, B ja C",
+    "Accepted records. Categories A, B and C",
+    "Lääne-mustlagle Branta bernicla hrota",
+    "(25/45 – 3/3)",
+    "18.09.2019 Põõsaspea neem, Noarootsi",
+    "khk, Läänemaa ad. (Juho Könönen, Jon",
+    "Jörpeland) (foto).",
+    "4 Eesti linnuharulduste komisjoni aruanne nr 17",
+    "Mustlagle läänepoolne alamliik, kes pesitseb",
+    "Gröönimaal.",
+    "Ots, M. & Paal, U. 5",
+    "32 Linnuharuldused Eestis 2022−2024: Eesti linnuharulduste komisjoni aruanne nr 20",
+    "Väikehüüp Ixobrychus minutus (X/X – 3/3)",
+    "02.06.2019 Jaama, Vaivara khk, Ida-Virumaa ♂ (Pelle Mellov).",
+    "Lõunapoolse levilaga liik.",
+    "Tunnustamata teated",
+    "Jääkaur Gavia immer",
+    "19.05.2018 Paldiski, Harju-Madise khk, Harjumaa (foto).",
+    "Foto ei toeta määrangut.",
+    "Tänuavaldus",
+  ].map((t) => ({ page: 1, t }));
+  const lines = classifyHirundoLines(raw, known);
+  it("marks sections, running heads and headings and merges a counts line into its heading", () => {
+    expect(lines.filter((l) => l.role === "section").map((l) => l.t)).toEqual(["Tunnustatud teated. Kategooriad A, B ja C", "Tunnustamata teated", "Tänuavaldus"]);
+    expect(lines.filter((l) => l.role === "heading").map((l) => l.t)).toEqual([
+      "Lääne-mustlagle Branta bernicla hrota (25/45 – 3/3)", "Väikehüüp Ixobrychus minutus (X/X – 3/3)", "Jääkaur Gavia immer",
+    ]);
+    expect(lines.find((l) => l.t.startsWith("4 Eesti"))?.role).toBe("small");
+    expect(lines.find((l) => l.t.startsWith("Ots, M."))?.role).toBe("small");
+    expect(lines.find((l) => l.t.startsWith("32 Linnuharuldused"))?.role).toBe("small");
+  });
+  it("feeds parseHirundoReport, including a heading whose genus is not in the known list", () => {
+    const r = parseHirundoReport(lines, known);
+    expect(r.species.map((s) => s.taxonSci)).toEqual(["Branta bernicla hrota", "Ixobrychus minutus"]);
+    expect(r.species[0]).toMatchObject({ recordsBefore: 25, indsYear: 3, originTextEt: "Mustlagle läänepoolne alamliik, kes pesitseb Gröönimaal." });
+    expect(r.species[1]).toMatchObject({ originTextEt: "Lõunapoolse levilaga liik." });
+    expect(r.rejected).toHaveLength(1);
+    expect(r.rejected[0]).toMatchObject({ taxonSci: "Gavia immer", rejectionReasonEt: "Foto ei toeta määrangut." });
+  });
+});
+
+describe("classifyHirundoLines prose guard", () => {
+  it("does not take wrapped prose with capitalised place names for a heading", () => {
+    const known = ["Gavia immer"];
+    const roles = classifyHirundoLines(
+      ["Lääne-Euroopas, Briti saartel", "Kesk-Euroopas ning", "Eestisse sattuda", "Väikehüüp Ixobrychus minutus", "Valgesilm-vart Aythya nyroca (15/ca 18 – 1/1)"].map((t) => ({ page: 1, t })),
+      known,
+    ).map((l) => l.role);
+    expect(roles).toEqual(["body", "body", "body", "heading", "heading"]);
+  });
+});
+
+describe("older Hirundo layouts", () => {
+  const known = ["Circaetus gallicus", "Alca torda", "Vanellus gregarius"];
+  const lines = classifyHirundoLines(
+    [
+      "Tunnustatud teated. Kategooriad A, B ja C",
+      "Madukotkas Circaetus gallicus",
+      "(kuni 2017) (x/x – 1/1)",
+      "25.06.2017 Vigala khk, Läänemaa (Eedi Lelov) (foto).",
+      "Lõunapoolse levilaga liik.",
+      "Stepikiivitaja Vanellus gregarius (0/0 – 1/1)",
+      "20.-27.06.2010 Luuri, Vändra khk., Pärnumaa ad. (Leili Mihkelson jpt.) (Foto).",
+      "Esmasleid. Kesk-Aasia steppide liik.",
+      "Alk Alca torda pesitsemine",
+      "25.06.2006 Allirahu, Püha khk., Saaremaa ad., võimalik pesitsemine (Mati Martinson).",
+      "Algi peamised pesitsusalad asuvad Loode-Euroopas.",
+      "Tänuavaldus",
+    ].map((t) => ({ page: 1, t })),
+    known,
+  );
+  const r = parseHirundoReport(lines, known);
+  it("merges a scope + counts line into the heading and keeps records out of the text", () => {
+    expect(r.species.map((s) => s.taxonSci)).toEqual(["Circaetus gallicus", "Vanellus gregarius", "Alca torda"]);
+    expect(r.species[0]).toMatchObject({ scopeEt: "kuni 2017", recordsYear: 1, indsBefore: null, originTextEt: "Lõunapoolse levilaga liik." });
+    expect(r.species[1]).toMatchObject({ nthRecordEt: "Esmasleid", originTextEt: "Kesk-Aasia steppide liik." });
+    expect(r.species[2]).toMatchObject({ originTextEt: "Algi peamised pesitsusalad asuvad Loode-Euroopas." });
+  });
+});
+
+describe("parseAcceptedList with 'khk.'", () => {
+  it("reads a parish written with a trailing period", () => {
+    const recs = parseAcceptedList(
+      [head("Stepikiivitaja Vanellus gregarius"), body("20.-27.06.2010 Luuri, Vändra khk., Pärnumaa ad. (Leili Mihkelson jpt.) (Foto).")],
+      ["Vanellus gregarius"],
+    );
+    expect(recs[0]).toMatchObject({ place: "Luuri", kihelkond: "Vändra", county: "Pärnumaa", individualsText: "ad", evidence: ["Foto"], observers: ["Leili Mihkelson"] });
   });
 });

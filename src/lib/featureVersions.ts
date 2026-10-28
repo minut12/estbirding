@@ -136,6 +136,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-26', ref: 'P163b', kind: 'patch', text: 'Fotod ja viimased vaatlused j\u00e4\u00e4vad kaardile ka p\u00e4rast v\u00e4rskendust' },
       { date: '2026-10-26', ref: 'P166', kind: 'patch', text: 'Foto avaneb kaardil suurelt, mitte uues aknas' },
       { date: '2026-10-26', ref: 'P167', kind: 'patch', text: '\u00dcks foto on sama suur kui mitme foto reas' },
+      { date: '2026-10-28', ref: 'P170a', kind: 'minor', text: 'Liigiinfo: linnuharulduste komisjoni (HK) leiud, p\u00e4ritolu ja kuude graafik' },
     ],
   },
   {

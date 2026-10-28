@@ -179,6 +179,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-27', ref: 'P168b', kind: 'patch', text: 'Samas kohas olevad liigid on \u00fche n\u00f5ela all (+N), puudutus laotab need ringi' },
       { date: '2026-10-27', ref: 'P168c', kind: 'patch', text: 'Samas kohas olevad liigid ei kao enam kaardilt' },
       { date: '2026-10-27', ref: 'P168d', kind: 'patch', text: 'K\u00f5ik liigid on Euroopa kaardil j\u00e4lle n\u00e4htaval' },
+      { date: '2026-10-28', ref: 'P176', kind: 'patch', text: 'Fotode ja helide rida ei l\u00e4he enam kaardi servast v\u00e4lja' },
     ],
   },
   {

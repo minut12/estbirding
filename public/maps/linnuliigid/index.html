@@ -12121,6 +12121,24 @@ function __bmNeighbourModal(sec, name){
         seen[key] = 1;
         rows.push(o);
       });
+      // P172b: a species that is common in the neighbour country (Mannileevike in Finland) is not eBird
+      // "notable" there, so ebird_rare_observations has no rows for it. Add the latest sighting per
+      // country from the Euroopa map snapshot on this device (bm_eu_last_good_snapshot, read only).
+      try {
+        var snapAll = (typeof _loadNeighborDataLocal === 'function') ? _loadNeighborDataLocal() : null;
+        var snapRows = snapAll ? (snapAll[String(name || '').normalize('NFC')] || snapAll[name] || []) : [];
+        snapRows.forEach(function(s){
+          var d = String((s && s.latest_obs_date) || '').slice(0, 10);
+          if (!s || !cn[s.cc] || !d || d < since) return;
+          var place = __bmNbPlace(s.latest_loc);
+          var key = d + '|' + place.toLowerCase();
+          if (seen[key]) return;
+          seen[key] = 1;
+          rows.push({ country_code: s.cc, obs_date: d, location: s.latest_loc, obs_count: null, distance_to_ee_km: null });
+        });
+        rows.sort(function(a, b){ return String(b.obs_date || '').slice(0, 10).localeCompare(String(a.obs_date || '').slice(0, 10)); });
+        rows = rows.slice(0, 5);
+      } catch (e) {}
       var html = '<div class="bm-sim-l">Naabermaades viimase 14 p&auml;eva jooksul</div>';
       if (rows.length) {
         html += '<table class="bm-sim-nbt">';
@@ -13320,11 +13338,46 @@ window.toggleNotification = async function(speciesName) {
       return (meta && window.getRarityBadgeText) ? String(window.getRarityBadgeText(meta.rarityLevel) || '') : '';
     }catch(e){ return ''; }
   }
-  function p153Seen(key){ var pS = points[key]; return !!(pS && pS.visible === false); }
+  /* P172a: one tile per Latin name. Alias names that share it (Mongoolia konnuogija / Konnuogija,
+     Punasaba-konnuogija / Punasaba-ogija) fold into the tracked name: the one with an eBird code,
+     then the one in the species list. A folded tile counts as seen when any of its names is. */
+  var p153Al = {};
+  function p153Better(a, b){
+    try{
+      var ca = !!(SPECIES_EBIRD_CODES && SPECIES_EBIRD_CODES[a]), cb = !!(SPECIES_EBIRD_CODES && SPECIES_EBIRD_CODES[b]);
+      if(ca !== cb) return ca;
+      var la = Array.isArray(SPECIES) && SPECIES.indexOf(a) >= 0, lb = Array.isArray(SPECIES) && SPECIES.indexOf(b) >= 0;
+      if(la !== lb) return la;
+    }catch(e){}
+    return false;
+  }
+  function p153Fold(keys){
+    p153Al = {};
+    var bySci = {}, out = [];
+    keys.forEach(function(k){
+      var sci = '';
+      try{ sci = (SPECIES_SCINAMES && SPECIES_SCINAMES[k]) || ''; }catch(e){}
+      if(!sci){ out.push(k); return; }
+      var cur = bySci[sci];
+      if(cur === undefined){ bySci[sci] = k; out.push(k); p153Al[k] = [k]; return; }
+      var list = p153Al[cur];
+      list.push(k);
+      var keep = p153Better(k, cur) ? k : cur;
+      if(keep !== cur){ out[out.indexOf(cur)] = keep; bySci[sci] = keep; delete p153Al[cur]; }
+      p153Al[keep] = list;
+    });
+    return out;
+  }
+  function p153Seen(key){
+    var ks = p153Al[key] || [key];
+    for(var i = 0; i < ks.length; i++){ var pS = points[ks[i]]; if(pS && pS.visible === false) return true; }
+    return false;
+  }
   function p153Body(){
     if(!box || !box.isConnected) return;
     var all = [], have = {};
     (Array.isArray(DATA) ? DATA : []).forEach(function(x){ if(x && x.est && !have[x.est]){ have[x.est] = true; all.push(x.est); } });
+    all = p153Fold(all); // P172a
     if(p153Rare) all = all.filter(p153IsSrMr);
     all.sort(function(a, b){ return a.localeCompare(b, 'et'); });
     var seenN = 0;

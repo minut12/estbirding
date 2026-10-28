@@ -187,6 +187,11 @@
 .bm-sim-hkrows.bm-sim-hk--all .bm-sim-hkrow:nth-child(n+4){display:flex}
 .bm-sim-hkmore{margin:2px 0 0;padding:6px 0;min-height:32px;border:0;background:none;color:#2d7a4b;font:600 13px/1.3 system-ui,Arial,sans-serif;cursor:pointer}
 @media (max-width:520px){.bm-sim-hkrow .d{width:88px}.bm-sim-hkstat b{font-size:17px}}
+/* P170b: Ulevaade | Harulduskomisjon tabs (the bar is created only when HK data exists) */
+.bm-sim-tabs{display:flex;gap:8px;margin-bottom:22px}
+.bm-sim-tabs .bm-sim-tab{flex:1 1 0;min-width:0;margin:0;padding:0 10px;font-family:inherit;color:#5f7168;background:#f1f4f2;box-shadow:none;cursor:pointer}
+.bm-sim-tabs .bm-sim-tab--on{color:#2a3530;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.bm-sim-sec[hidden]{display:none}
 .bm-sim-pct{display:flex;align-items:center;gap:10px;margin:8px 0 4px;padding:7px 11px;border-radius:9px;background:#eaf5ef;color:#2d6a48;font-size:13px;line-height:1.4}
 .bm-sim-pct b{font-size:18px;font-weight:600}
 .bm-sim-pct--none{background:#f1f4f2;color:#6b7770}
@@ -11562,7 +11567,7 @@ function __bmSpeciesInfoBodyHtml(row, code){
   var html = '';
   if (chips) html += '<div class="bm-sim-l">Taksonoomia</div><div class="bm-sim-chips">' + chips + '</div>';
   // P130: order is Taksonoomia, Haruldus (__bmRarityModal), own sighting (__bmMyObsModal), Tunnused.
-  html += '<div class="bm-sim-rarslot"></div><div class="bm-sim-hk"></div><div class="bm-sim-my"></div><div class="bm-sim-nb"></div><div class="bm-sim-hist"></div>'; // P136: histogram slot, P137: neighbours
+  html += '<div class="bm-sim-rarslot"></div><div class="bm-sim-my"></div><div class="bm-sim-nb"></div><div class="bm-sim-hist"></div>'; // P136: histogram slot, P137: neighbours
   html += '<div class="bm-sim-l">Tunnused</div><p class="bm-sim-txt">' + escapeHtml(txt) + '</p>'
     + '<div class="bm-sim-cred">Tekst: eBird.org' + (et ? ' &middot; masint&otilde;lge: '
       + ({ gemini: 'Gemini', mistral: 'Mistral', tartunlp: 'TartuNLP' }[String(row.translator || '')] || 'masin') : ' (inglise keeles)') + '</div>';
@@ -11842,10 +11847,10 @@ function __bmHkModal(sec, sci){
   try {
     __bmHkFetch(sci).then(function(d){
       if (!d || !sec.isConnected) return;
-      var slot = sec.querySelector('.bm-sim-hk');
-      if (!slot) return;
+      var panel = sec.parentNode, tab = panel ? panel.querySelector('.bm-sim-tab') : null; // P170b
+      if (!panel || !tab || panel.querySelector('.bm-sim-hkpane')) return;
       var sp = d.sp, recs = d.recs;
-      var html = '<div class="bm-sim-l">Linnuharulduste komisjon (HK)</div>';
+      var html = '';
       var chips = '';
       if (sp.hk_status === 'current') chips += '<span class="bm-sim-hkchip bm-sim-hkchip--hk">HK-s k&auml;sitletav liik</span>';
       else if (sp.hk_status === 'historical') chips += '<span class="bm-sim-hkchip bm-sim-hkchip--o">HK k&auml;sitles varasemaid teateid'
@@ -11894,7 +11899,7 @@ function __bmHkModal(sec, sci){
           return ka < kb ? 1 : (ka > kb ? -1 : 0);
         });
         var rows = sorted.map(function(r){
-          var sub = [r.individuals_text, (r.evidence || []).join(', ')].filter(function(x){ return !!x; })
+          var sub = [r.individuals_text, (r.evidence || []).filter(function(x, i, a){ return a.indexOf(x) === i; }).join(', ')].filter(function(x){ return !!x; })
             .map(function(x){ return escapeHtml(String(x)); }).join(' &middot; ');
           return '<div class="bm-sim-hkrow"><div class="d">' + escapeHtml(String(r.date_text || '')) + '</div><div>' + __bmHkRecPlace(r)
             + (sub ? '<small>' + sub + '</small>' : '') + '</div></div>';
@@ -11906,8 +11911,33 @@ function __bmHkModal(sec, sci){
           + '<div class="bm-sim-cred" style="margin:6px 0 0">Allikas: <a href="https://www.eoy.ee/hk" target="_blank" rel="noopener">EO&Uuml; linnuharulduste komisjon</a>'
           + ' &middot; asukoht kihelkonna t&auml;psusega</div></div>';
       }
-      slot.innerHTML = html;
+      var pane = document.createElement('div');
+      pane.className = 'bm-sim-sec bm-sim-hkpane';
+      pane.hidden = true;
+      pane.innerHTML = html;
+      panel.appendChild(pane);
+      var bar = document.createElement('div');
+      bar.className = 'bm-sim-tabs';
+      bar.setAttribute('role', 'tablist');
+      bar.innerHTML = '<button type="button" role="tab" aria-selected="true" class="bm-sim-tab bm-sim-tab--on" onclick="__bmSimTabSel(this,0)">&#9432; &Uuml;levaade</button>'
+        + '<button type="button" role="tab" aria-selected="false" class="bm-sim-tab" onclick="__bmSimTabSel(this,1)">Harulduskomisjon</button>';
+      tab.parentNode.replaceChild(bar, tab);
     }).catch(function(){});
+  } catch (e) {}
+}
+// P170b: switch between the Ulevaade content and the Harulduskomisjon pane. Function declaration only.
+function __bmSimTabSel(btn, idx){
+  try {
+    var panel = btn && btn.closest ? btn.closest('.bm-sim-panel') : null;
+    if (!panel) return;
+    var tabs = panel.querySelectorAll('.bm-sim-tabs .bm-sim-tab');
+    Array.prototype.forEach.call(tabs, function(t, i){
+      t.classList.toggle('bm-sim-tab--on', i === idx);
+      t.setAttribute('aria-selected', i === idx ? 'true' : 'false');
+    });
+    var main = panel.querySelector('.bm-sim-sec:not(.bm-sim-hkpane)'), hk = panel.querySelector('.bm-sim-hkpane');
+    if (main) main.hidden = idx !== 0;
+    if (hk) hk.hidden = idx !== 1;
   } catch (e) {}
 }
 // P127: latest EstBirds-PUC detection of the species (BirdWeather public GraphQL, station 18105,

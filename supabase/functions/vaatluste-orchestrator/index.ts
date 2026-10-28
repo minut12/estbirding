@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-10-28 - P171 species_et falls back to the Latin name when the dictionary has no entry
 // redeploy-marker: 2026-10-15 - P139 prompt dictionary also covers the topup species (no more "eestikeelne nimi t\u00e4psustamata" for them)
 // redeploy-marker: 2026-10-15 - P138 dryRun-only modelOverride (haiku/sonnet A/B) + full payload in the dry-run preview
 // redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
@@ -1547,6 +1548,12 @@ async function parseAnthropicResponse(
       if (!canonical) {
         overrides.missing += 1;
         missingLatins.add(lat);
+        // P171: never keep an Estonian name Sonnet made up (e.g. "Lammitallaja" for an eBird
+        // spelling the dictionary lacks); fall back to the Latin name, as the prompt requires.
+        if (entry.species_et !== lat) {
+          console.log("[species-dict-missing]", lat, 'sonnet="' + entry.species_et + '"');
+          entry.species_et = lat;
+        }
       } else if (entry.species_et === canonical) {
         overrides.agreed += 1;
       } else {

@@ -512,7 +512,8 @@ export function parseAcceptedList(lines: HkLine[], known: string[]): HkRecord[] 
 
 const COUNT = "(X|x|ca\\s?\\d+|>?\\d+)";
 const COUNTS_RE = new RegExp(`\\(\\s*(${COUNT}\\s*\\/\\s*${COUNT}\\s*[–-]\\s*${COUNT}\\s*\\/\\s*${COUNT})\\s*\\)`);
-const NTH_RE = /^(Eesti\s+\d+\.(?:\s?(?:[-–]|ja)\s?\d+\.)*\s+leid|Esmasleid)\.\s*/;
+// P175: report nr 7 writes "Eesti 2. ja 3. vaatlus" instead of "leid".
+const NTH_RE = /^(Eesti\s+\d+\.(?:\s?(?:[-–]|ja)\s?\d+\.)*\s+(?:leid|vaatlus)|Esmasleid)\.\s*/;
 const REMOVED_RE = /(\d{4})\.\s+aastast\s+HK-s\s+käsitletavate\s+liikide\s+nimestikust\s+välja/;
 
 function countNum(v: string): number | null {
@@ -607,7 +608,10 @@ export function parseHirundoReport(lines: HkLine[], known: string[]): { species:
       if (!/tunnusta/.test(norm)) continue;
       flushBlock();
       started = true;
-      if (norm.includes("tunnustamata")) status = "rejected";
+      if (norm.includes("tunnustamata")) {
+        status = "rejected";
+        section = "A-C"; // P175: rejected records have no occurrence category; do not keep the last one (E)
+      }
       else {
         status = "accepted";
         section = norm.includes("ebaselge") ? "D" : norm.includes("vangistusest") ? "E" : "A-C";
@@ -676,12 +680,13 @@ const RUNNING_HEADS = [
   /^\d{0,3}\s*[A-ZÄÖÜÕŠŽ][\p{L}-]+,\s*[A-Z]\.(?:\s*[A-Z]\.)?\s*(?:&|ja)\s*[A-ZÄÖÜÕŠŽ][\p{L}-]+,\s*[A-Z]\.\s*\d{0,3}$/u,
   /^Hirundo \d{4},\s*\d+/,
   /^ARUANNE$/,
-  // P174: 2010-2013 layouts: "Hirundo 23(1), 2010 17" and "Ots ja Paal: Linnuharuldused Eestis 201246"
-  /^Hirundo \d+\(\d\),\s*\d{4}\s*\d{0,3}$/,
-  /^[A-ZÄÖÜÕŠŽ][\p{L}-]+ ja [A-ZÄÖÜÕŠŽ][\p{L}-]+: Linnuharuldused Eestis \d{4}/u,
+  // P174/P175: 2009-2013 layouts: "Hirundo 23(1), 2010 17", "Hirundo 22 (2), 2009 65",
+  // "Ots ja Paal: Linnuharuldused Eestis 201246", "Ots: Linnuharuldused Eestis 2007–200866"
+  /^Hirundo \d+\s?\(\d\),\s*\d{4}\s*\d{0,3}$/,
+  /^[A-ZÄÖÜÕŠŽ][\p{L}-]+(?: ja [A-ZÄÖÜÕŠŽ][\p{L}-]+)?: Linnuharuldused Eestis \d{4}/u,
 ];
 // P174: an old-layout running head that pdf.js glued into a text line; cut out before classifying.
-const INLINE_RUNNING_HEAD = /\s*Hirundo \d+\(\d\),\s*\d{4}\s?\d{1,3}(?=\s|$)/g;
+const INLINE_RUNNING_HEAD = /\s*Hirundo \d+\s?\(\d\),\s*\d{4}\s?\d{1,3}(?=\s|$)/g;
 const PARENS_ONLY = /^(\s*\([^()]*\))+\s*\.?$/;
 const ET_WORD = /^[\p{L}-]+,?$/u;
 // A heading whose genus is not in the known list (older names such as Ixobrychus) must still
@@ -713,7 +718,8 @@ export function classifyHirundoLines(raw: HkRawLine[], known: string[]): HkLine[
   const idx = indexTaxa(known);
   const out: HkLine[] = [];
   for (const r of raw) {
-    const t0 = r.t.normalize("NFC").replace(/\s+/g, " ").trim();
+    // P175: report nr 7 uses U+2010 hyphens in Estonian names ("Kirde‐mustlagle")
+    const t0 = r.t.normalize("NFC").replace(/\u2010/g, "-").replace(/\s+/g, " ").trim();
     const isHead = RUNNING_HEADS.some((re) => re.test(t0));
     const t = isHead ? t0 : t0.replace(INLINE_RUNNING_HEAD, "").replace(/\s+/g, " ").trim();
     if (!t) continue;

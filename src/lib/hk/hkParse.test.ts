@@ -426,3 +426,45 @@ describe("classifyHirundoLines - 2010-2013 running heads (P174)", () => {
     expect(bodies.some((t) => /Hirundo \d+\(\d\)/.test(t))).toBe(false);
   });
 });
+
+describe("classifyHirundoLines - 2009 running heads (P175)", () => {
+  const lines = classifyHirundoLines([
+    "Hirundo 22 (2), 2009 65",
+    "Ots: Linnuharuldused Eestis 2007–200866",
+    "kasvava populatsiooni Hirundo 22 (2), 2009 67 suuruseks",
+  ].map((t) => ({ page: 1, t })), ["Pinicola enucleator"]);
+  it("treats single-author and spaced-issue running heads as small text and cuts them out of body lines", () => {
+    expect(lines.map((l) => l.role)).toEqual(["small", "small", "body"]);
+    expect(lines[2].t).toBe("kasvava populatsiooni suuruseks");
+  });
+});
+
+describe("Hirundo report nr 7 layout (P175)", () => {
+  const known = ["Branta bernicla nigricans", "Neophron percnopterus", "Gavia immer"];
+  const lines = classifyHirundoLines([
+    "Tunnustatud teated. Kategooriad A, B ja C",
+    "Kirde‐mustlagle Branta bernicla nigricans (0/0 – 1/1)",
+    "12.04.2008 Põõsaspea, Noarootsi khk., Läänemaa ad. (Uku Paal).",
+    "Raipekotkas Neophron percnopterus (1/1 – 2/2)",
+    "21.06.2008 Naha, Räpina khk., Võrumaa ad. (Urmas Sellis).",
+    "Eesti 2. ja 3. vaatlus. Raipekotka pesitsusalad on Lõuna‐Euroopas.",
+    "Tunnustatud teated. Vangistusest lahtipääsenud linnud (kategooria E)",
+    "Tunnustamata teated",
+    "Jääkaur Gavia immer",
+    "25.05.2008 Dirhami imm.",
+    "Fotodelt pole võimalik liiki määrata.",
+    "Tänuavaldus",
+  ].map((t) => ({ page: 1, t })), known);
+  const r = parseHirundoReport(lines, known);
+  it("reads headings with a U+2010 hyphen in the Estonian name", () => {
+    expect(r.species.map((s) => s.taxonSci)).toEqual(["Branta bernicla nigricans", "Neophron percnopterus"]);
+  });
+  it("takes 'Eesti N. ja M. vaatlus' as the nth-record note", () => {
+    const s = r.species.find((x) => x.taxonSci === "Neophron percnopterus");
+    expect(s?.nthRecordEt).toBe("Eesti 2. ja 3. vaatlus");
+    expect(s?.originTextEt).toBe("Raipekotka pesitsusalad on Lõuna-Euroopas.");
+  });
+  it("does not carry the last accepted category onto rejected records", () => {
+    expect(r.rejected.map((x) => x.category)).toEqual(["A-C"]);
+  });
+});

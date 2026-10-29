@@ -196,6 +196,9 @@ verify_jwt = false
 [functions.movebank-refresh]
 verify_jwt = false
 
+[functions.ext-rare-refresh]
+verify_jwt = false
+
 [functions.news-translate-v2]
 verify_jwt = false
 

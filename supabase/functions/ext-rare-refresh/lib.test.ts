@@ -8,7 +8,6 @@ import {
   ebirdToMergeItem,
   geocodeQuery,
   lofkMonths,
-  parseNominatimHit,
   toMergeItem,
   unwrapLofkReply,
 } from "./lib.ts";
@@ -132,17 +131,4 @@ Deno.test("unwrapLofkReply: success=false envelope throws with its data text", (
 
 Deno.test("unwrapLofkReply: success=true envelope yields its data HTML", () => {
   assertEquals(unwrapLofkReply('{"success":true,"data":"<table></table>"}'), "<table></table>");
-});
-
-Deno.test("parseNominatimHit: first result maps to numbers", () => {
-  const hit = parseNominatimHit([
-    { lat: "55.71", lon: "21.13", display_name: "Klaipeda", osm_type: "relation", osm_id: 123 },
-  ]);
-  assertEquals(hit, { lat: 55.71, lng: 21.13, display_name: "Klaipeda", osm_type: "relation", osm_id: 123 });
-});
-
-Deno.test("parseNominatimHit: empty or malformed reply -> null", () => {
-  assertEquals(parseNominatimHit([]), null);
-  assertEquals(parseNominatimHit({ error: "x" }), null);
-  assertEquals(parseNominatimHit([{ lat: "abc", lon: "1" }]), null);
 });

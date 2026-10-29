@@ -105,29 +105,3 @@ export function unwrapLofkReply(body: string): string {
   }
   return typeof data === "string" ? data : body;
 }
-
-export type NominatimHit = {
-  lat: number;
-  lng: number;
-  display_name: string | null;
-  osm_type: string | null;
-  osm_id: number | null;
-};
-
-// First element of a Nominatim jsonv2 search reply; null = no usable match.
-export function parseNominatimHit(json: unknown): NominatimHit | null {
-  if (!Array.isArray(json) || json.length === 0 || !isRecord(json[0])) return null;
-  const first = json[0];
-  const lat = Number(first.lat);
-  const lng = Number(first.lon);
-  if (first.lat === undefined || first.lon === undefined) return null;
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  const osmId = Number(first.osm_id);
-  return {
-    lat,
-    lng,
-    display_name: typeof first.display_name === "string" ? first.display_name : null,
-    osm_type: typeof first.osm_type === "string" ? first.osm_type : null,
-    osm_id: first.osm_id !== undefined && Number.isInteger(osmId) ? osmId : null,
-  };
-}

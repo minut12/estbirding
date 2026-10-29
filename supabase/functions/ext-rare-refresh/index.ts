@@ -1,14 +1,14 @@
-// redeploy-marker: P178d3 2026-10-29
+// redeploy-marker: P178d6 2026-10-29
 // ext-rare-refresh (P178d3)
 // pg_cron -> pg_net -> public.m7_call_ef('ext-rare-refresh', '{"mode":...}') -> here.
 //
 // Modes:
 //   dry_run  synchronous JSON summary. Fetches LOFK + Tarsiger, parses, maps
 //            Estonian names, reads the geocode cache, eBird and existing ext
-//            rows and computes merges. NO DB writes and NO Nominatim calls
-//            (needs_lookup counts distinct queries without a usable cache row).
-//   run      202 + background: same pipeline, plus Nominatim lookups for LOFK
-//            district hints (cached in ext_place_geocode), upsert of
+//            rows and computes merges. NO DB writes
+//            (needs_lookup counts distinct queries with no cache row).
+//   run      202 + background: same pipeline, plus queueing of uncached LOFK
+//            district hints in ext_place_geocode, upsert of
 //            ext_rare_observations and merged_into updates on existing rows.
 //            Ends with exactly one console.log(JSON summary) line.
 //
@@ -19,7 +19,8 @@
 // of HTTP replies that came back OK and were accepted as data.
 //
 // HTTP etiquette: own User-Agent, 20 s timeout per call, one retry on HTTP 5xx
-// or network error. Nominatim: >= 1100 ms between calls, max 20 per run.
+// or network error.
+// Geocoding via DB queue, see ext_geocode_step (P178d5).
 //
 // Auth on this function: X-Webhook-Secret must equal VAATLUSTE_WEBHOOK_SECRET.
 
@@ -35,8 +36,6 @@ import {
   ebirdToMergeItem,
   geocodeQuery,
   lofkMonths,
-  type NominatimHit,
-  parseNominatimHit,
   toMergeItem,
   unwrapLofkReply,
 } from "./lib.ts";
@@ -79,9 +78,8 @@ type Summary = {
   species_unmatched: number;
   geocode: {
     cached_hits: number;
-    looked_up: number;
-    misses: number;
-    skipped_cap: number;
+    queued: number;
+    pending: number;
     needs_lookup: number;
     errors: string[];
   };
@@ -103,14 +101,10 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const USER_AGENT = "EstBirds/1.0 (+https://estbirds.netlify.app)";
 const LOFK_URL = "https://birdlife.lt/wp-admin/admin-ajax.php";
 const TARSIGER_URL = "https://tarsiger.com/api/observations/?limit=100&offset=0";
-const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=lt&q=";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 20_000;
 const RETRY_PAUSE_MS = 1_000;
-const NOMINATIM_GAP_MS = 1_100;
-const MAX_LOOKUPS = 20;
-const MISS_RETRY_DAYS = 30;
 const MERGE_WINDOW_DAYS = 35;
 const GEOCODE_COUNTRY = "LT";
 const DB_CHUNK = 200;
@@ -150,7 +144,7 @@ function emptySummary(mode: Mode): Summary {
     },
     species_matched: 0,
     species_unmatched: 0,
-    geocode: { cached_hits: 0, looked_up: 0, misses: 0, skipped_cap: 0, needs_lookup: 0, errors: [] },
+    geocode: { cached_hits: 0, queued: 0, pending: 0, needs_lookup: 0, errors: [] },
     merged: { into_ebird: 0, into_ext: 0, mains: 0 },
     written: 0,
     sample: [],
@@ -281,62 +275,35 @@ async function readGeocodeCache(sb: Sb, queries: string[]): Promise<Map<string, 
   return new Map(rows.map((r) => [r.query, r]));
 }
 
-let lastNominatimAt = 0;
-
-async function nominatim(query: string): Promise<NominatimHit | null> {
-  const wait = lastNominatimAt + NOMINATIM_GAP_MS - Date.now();
-  if (wait > 0) await sleep(wait);
-  try {
-    return parseNominatimHit(JSON.parse(await fetchText(NOMINATIM_URL + encodeURIComponent(query))));
-  } finally {
-    lastNominatimAt = Date.now();
-  }
-}
-
-async function saveGeocode(sb: Sb, query: string, hit: NominatimHit | null): Promise<void> {
-  const now = new Date();
-  const row = hit
-    ? { ...hit, retry_after: null }
-    : {
-      lat: null, lng: null, display_name: null, osm_type: null, osm_id: null,
-      retry_after: new Date(now.getTime() + MISS_RETRY_DAYS * DAY_MS).toISOString(),
-    };
-  const { error } = await sb.from("ext_place_geocode").upsert(
-    { country_code: GEOCODE_COUNTRY, query, looked_up_at: now.toISOString(), ...row },
-    { onConflict: "country_code,query" },
-  );
-  if (error) throw new Error(`ext_place_geocode upsert: ${error.message}`);
-}
-
 type Coords = { lat: number; lng: number } | null;
 
-async function resolveQuery(
-  sb: Sb, query: string, cached: GeoCacheRow | undefined, mode: Mode, summary: Summary,
-): Promise<Coords> {
+// Cache-only. Uncached queries go to `toQueue` (run) for ext_geocode_step.
+function resolveQuery(
+  query: string, cached: GeoCacheRow | undefined, mode: Mode, summary: Summary, toQueue: Set<string>,
+): Coords {
   const g = summary.geocode;
   if (cached && cached.lat !== null && cached.lng !== null) {
     g.cached_hits++;
     return { lat: Number(cached.lat), lng: Number(cached.lng) };
   }
-  if (cached && cached.retry_after !== null && Date.parse(cached.retry_after) > Date.now()) return null;
-  if (mode === "dry_run") {
-    g.needs_lookup++;
+  if (cached) {
+    g.pending++; // pending or miss: the DB owns retries
     return null;
   }
-  if (g.looked_up >= MAX_LOOKUPS) {
-    g.skipped_cap++;
-    return null;
-  }
-  try {
-    g.looked_up++;
-    const hit = await nominatim(query);
-    if (hit === null) g.misses++;
-    await saveGeocode(sb, query, hit);
-    return hit ? { lat: hit.lat, lng: hit.lng } : null;
-  } catch (e) {
-    g.errors.push(`${query}: ${errMsg(e)}`);
-    return null;
-  }
+  if (mode === "dry_run") g.needs_lookup++;
+  else toQueue.add(query);
+  return null;
+}
+
+async function queueGeocodes(sb: Sb, queries: ReadonlySet<string>, summary: Summary): Promise<void> {
+  if (queries.size === 0) return;
+  const rows = [...queries].map((q) => ({ country_code: GEOCODE_COUNTRY, query: q }));
+  const { error } = await sb.from("ext_place_geocode").upsert(
+    rows,
+    { onConflict: "country_code,query", ignoreDuplicates: true },
+  );
+  summary.geocode.queued = rows.length;
+  if (error) summary.geocode.errors.push(`ext_place_geocode queue: ${error.message}`);
 }
 
 async function geocodeRows(sb: Sb, rows: readonly ExtRow[], mode: Mode, summary: Summary): Promise<ExtRow[]> {
@@ -344,8 +311,10 @@ async function geocodeRows(sb: Sb, rows: readonly ExtRow[], mode: Mode, summary:
     rows.filter((r) => r.lat === null).map(geocodeQuery).filter((q): q is string => q !== null),
   )];
   const cache = await readGeocodeCache(sb, queries);
-  const resolved = new Map<string, Coords>(); // in-memory per run: one lookup per query
-  for (const q of queries) resolved.set(q, await resolveQuery(sb, q, cache.get(q), mode, summary));
+  const resolved = new Map<string, Coords>();
+  const toQueue = new Set<string>();
+  for (const q of queries) resolved.set(q, resolveQuery(q, cache.get(q), mode, summary, toQueue));
+  if (mode === "run") await queueGeocodes(sb, toQueue, summary);
   return rows.map((r) => {
     const q = r.lat === null ? geocodeQuery(r) : null;
     const c = q === null ? null : resolved.get(q) ?? null;

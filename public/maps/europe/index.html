@@ -1999,7 +1999,9 @@ function rowHTML(name){
     try {
       var pop = m.getPopup ? m.getPopup() : null;
       if (!pop) return;
-      var base = pop.options.__p168base || pop.options.offset || L.point(0, 7);
+      // P177a: Leaflet's default offset is the array [0, 7]; base.x on it was undefined, so every card got a
+      // NaN offset, lost its left/bottom position and opened with its left edge on the pin. Normalise to L.point.
+      var base = L.point(pop.options.__p168base || pop.options.offset || [0, 7]);
       pop.options.__p168base = base;
       pop.options.offset = L.point(base.x + dx, base.y + dy);
     } catch(e){}

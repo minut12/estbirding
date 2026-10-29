@@ -495,6 +495,18 @@ html:not(.sb-classic) .sbh-body p{margin:0;color:var(--sb-ink2);font-size:13.5px
   html:not(.sb-classic) .sbh-head h2{font-size:19px}
   html:not(.sb-classic) .sbh-body{padding:14px 16px calc(20px + env(safe-area-inset-bottom,0px))}
 }
+/* P177b: mobile full-screen list + floating pill, same as Linnuliigid (EE) P37c */
+#sbPill{display:none}
+@media (max-width:900px){
+  html:not(.sb-classic) #sbPill{display:inline-flex;position:fixed;left:50%;bottom:calc(16px + var(--appBottomNav,0px) + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:4100;height:40px;padding:0 16px;border-radius:999px;border:0;background:var(--sb-ink);color:#fff;font:600 13px system-ui;align-items:center;gap:8px;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer;white-space:nowrap}
+  html:not(.sb-classic) #sidebar{position:fixed;left:0;right:0;top:var(--appHeader,0px);bottom:var(--appBottomNav,0px);height:auto;width:100%;max-width:none;transform:translateX(100%);transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:none;border-right:0;z-index:4000}
+  html:not(.sb-classic) #sidebar.open{transform:translateX(0)}
+  html:not(.sb-classic) .sidebar-backdrop,html:not(.sb-classic) .sidebar-backdrop.show{display:none!important}
+  html:not(.sb-classic) #closeSidebarBtn{display:none}
+  html:not(.sb-classic) .map-hamburger-leaflet{display:none!important}
+  html:not(.sb-classic) .panel-content-scroll{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+}
+@media (prefers-reduced-motion:reduce){ html:not(.sb-classic) #sidebar{transition:none} }
 </style>
 </head>
 <body>
@@ -9460,6 +9472,9 @@ setTimeout(autoDetectAvatarsForActive, 30000);
     document.body.classList.remove('sidebar-open');
     invalidateSoon();
   }
+  window.__sbOpen = openSidebar; // P177b: used by the mobile pill
+  window.__sbClose = closeSidebar;
+  window.__sbIsOpen = function(){ return sidebar.classList.contains('open'); };
 
   initMapHamburgerControl({
     map,
@@ -9480,6 +9495,32 @@ setTimeout(autoDetectAvatarsForActive, 30000);
 
   window.addEventListener('resize', invalidateSoon);
   window.addEventListener('orientationchange', invalidateSoon);
+})();
+
+/* P177b: mobile floating pill (new UI only), port of Linnuliigid (EE) P37c: "Nimekiri - n" opens the
+   full-screen list, "Kaart" goes back to the map. Label follows #sidebar's class. Function scope only. */
+(function(){
+  var wrap = document.getElementById('mapWrap'); if(!wrap || document.getElementById('sbPill')) return;
+  var pill = document.createElement('button');
+  pill.id = 'sbPill'; pill.type = 'button'; pill.className = 'hidden-in-export';
+  wrap.appendChild(pill);
+  var ICO_MAP = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14"/></svg>';
+  var ICO_LIST = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>';
+  function count(){ var l = document.getElementById('list'); return l ? l.querySelectorAll('.row').length : 0; }
+  function paint(){
+    var open = !!(window.__sbIsOpen && window.__sbIsOpen());
+    try { document.body.classList.toggle('sidebar-open', open); } catch(e){}
+    pill.innerHTML = open ? (ICO_MAP + 'Kaart') : (ICO_LIST + 'Nimekiri &middot; ' + count());
+    pill.setAttribute('aria-label', open ? 'N\u00e4ita kaarti' : 'N\u00e4ita nimekirja');
+  }
+  pill.addEventListener('click', function(){
+    if (window.__sbIsOpen && window.__sbIsOpen()) window.__sbClose(); else window.__sbOpen();
+  });
+  var sb = document.getElementById('sidebar');
+  if (sb && window.MutationObserver) new MutationObserver(paint).observe(sb, { attributes: true, attributeFilter: ['class'] });
+  var listEl = document.getElementById('list');
+  if (listEl && window.MutationObserver) new MutationObserver(paint).observe(listEl, { childList: true });
+  paint();
 })();
 
 // === Listen for parent APP_INSETS ===

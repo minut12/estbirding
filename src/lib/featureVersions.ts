@@ -180,6 +180,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-27', ref: 'P168c', kind: 'patch', text: 'Samas kohas olevad liigid ei kao enam kaardilt' },
       { date: '2026-10-27', ref: 'P168d', kind: 'patch', text: 'K\u00f5ik liigid on Euroopa kaardil j\u00e4lle n\u00e4htaval' },
       { date: '2026-10-28', ref: 'P176', kind: 'patch', text: 'Fotode ja helide rida ei l\u00e4he enam kaardi servast v\u00e4lja' },
+      { date: '2026-10-29', ref: 'P177a', kind: 'patch', text: 'Liigikaart avaneb j\u00e4lle t\u00e4pselt m\u00e4rgi kohal' },
     ],
   },
   {
@@ -203,6 +204,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-26', ref: 'P162', kind: 'patch', text: 'N\u00f5el liigub uusima Elurikkuse vaatluse juurde, kaardi tekst on samast vaatlusest' },
       { date: '2026-10-26', ref: 'P164', kind: 'patch', text: 'Sama p\u00e4eva vaatlustest n\u00e4idatakse kellaaja j\u00e4rgi uusimat' },
       { date: '2026-10-26', ref: 'P165', kind: 'patch', text: 'M\u00e4rge \u201eFotoga vaatlus\u201c ainult kaardil oleva vaatluse foto korral' },
+      { date: '2026-10-29', ref: 'P177b', kind: 'patch', text: 'Mobiilis nimekirja ja kaardi nupp nagu Linnuliigid kaardil' },
     ],
   },
   {

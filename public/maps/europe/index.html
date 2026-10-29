@@ -1972,7 +1972,7 @@ function rowHTML(name){
           ${rarityText ? `<span class="rarity-badge" title="Haruldus">${rarityText}</span>` : ""}
         </div>
         ${hasMarker ? `<div style="margin-top:6px;"><button class="btn secondary" data-open ${openDisabled}>Open</button></div>` : ""}
-        <div class="meta">${fmtMeta(p)}${typeof window.__euExtMeta === "function" ? window.__euExtMeta(name) : ""}</div>
+        <div class="meta">${fmtMeta(p)}</div>
       </div>
     </div>`;
 }
@@ -2104,7 +2104,6 @@ function render(){
   wireRows();
   // update markers for visible list quickly
   SPECIES.forEach(updateMarker);
-  if (typeof window.__euExtRedraw === "function") window.__euExtRedraw();
 }
 
 function wireRows(){
@@ -3213,7 +3212,8 @@ if (!DEV_DEBUG) {
         '</div>' +
         '<div class="sb-row-text">' +
           '<div class="name name-label' + (p.visible === false ? ' muted' : '') + '">' + esc(displayName) + '</div>' +
-          '<div class="sb-meta">' + euRowMeta(p, regs, hasLoc, !!euMigKind(name)) + '</div>' +
+          '<div class="sb-meta">' + euRowMeta(p, regs, hasLoc, !!euMigKind(name)) +
+            (typeof window.__euExtMeta === "function" ? window.__euExtMeta(name) : "") + '</div>' +
         '</div>' +
         '<div class="sb-acts">' +
           '<button type="button" class="sb-ib sb-locate" data-open' + (hasLoc ? '' : ' disabled') + ' title="Kaardil" aria-label="Kaardil">' + ICO_PIN + '</button>' +
@@ -3687,15 +3687,18 @@ if (!DEV_DEBUG) {
     SPECIES
       .filter(function(n){ return passesRareOnlyFilter(n); })
       .filter(function(n){ return norm(n).includes(q); })
-      .filter(function(n){ return !recentOnly || activeRegions(points[n]).length > 0; })
-      .filter(function(n){ return euCountryFilter === "" || hasOccIn(n, euCountryFilter); })
+      .filter(function(n){ return !recentOnly || activeRegions(points[n]).length > 0 || euExtHas(n, ""); })
+      .filter(function(n){ return euCountryFilter === "" || hasOccIn(n, euCountryFilter) || euExtHas(n, euCountryFilter); })
       .filter(function(n){ return !hideSeen || !isHiddenSpecies(n); })
       .forEach(function(n){ html += rowHTML(n); });
     listEl.innerHTML = html;
     wireRows();
     SPECIES.forEach(updateMarker);
     paintChrome();
+    if (typeof window.__euExtRedraw === "function") window.__euExtRedraw();
   };
+  // P178e5: species with LOFK/Tarsiger rows in the day window stay in the list (euExt IIFE is defined later).
+  function euExtHas(n, cc){ return typeof window.__euExtHas === "function" && window.__euExtHas(n, cc); }
   // Country chip gates markers in both modes (Riigiti and Uusim riik). The original updateMarker
   // builds markers only from its loop over p.regions, so for the duration of the call it is handed
   // a copy holding just the chip's region. The swap is safe because: the original is fully
@@ -4278,7 +4281,7 @@ if (!DEV_DEBUG) {
         window.__euExt.ready = true;
         console.log("[eu-ext] rows", built.rows, "species", built.species);
         document.dispatchEvent(new CustomEvent("eu-ext-updated"));
-        // P178e4: render() rebuilds the list (no-loc pills) and ends with __euExtRedraw (pins).
+        // P178e5: render() (new UI) rebuilds the list (no-loc pills) and ends with __euExtRedraw (pins).
         if (typeof render === "function") render(); else redraw();
       })
       .catch(function(e){ console.warn("[eu-ext]", (e && e.message) || e); })
@@ -4411,14 +4414,31 @@ if (!DEV_DEBUG) {
       '<i><span class="cc-tag is-' + esc(String((r && r.source) || "")) + '">' + srcLabel(r && r.source) + '</span></i></div>' +
       (note ? '<div class="cc-sub">' + esc(note) + '</div>' : '');
   }
+  // P178e5: main's own coords, else the best merged row's (exact before municipality, then newest); null when none.
+  function mainCoords(main, bucket){
+    if (!main) return null;
+    if (hasLl(main)) return { lat: Number(main.lat), lng: Number(main.lng), precision: main.coord_precision };
+    var key = String(main.source || "") + ":" + String(main.source_id || "");
+    var subs = (bucket && bucket.byMain && Array.isArray(bucket.byMain[key])) ? bucket.byMain[key] : [];
+    var best = null;
+    subs.forEach(function(r){
+      if (!r || !hasLl(r)) return;
+      if (!best) { best = r; return; }
+      var rEx = r.coord_precision === "exact";
+      var bEx = best.coord_precision === "exact";
+      if ((rEx && !bEx) || (rEx === bEx && obsTo(r) > obsTo(best))) best = r;
+    });
+    return best ? { lat: Number(best.lat), lng: Number(best.lng), precision: best.coord_precision } : null;
+  }
   function extCardHtml(name, main, bucket, days){
     var rows = cardRows(main, bucket);
+    var co = mainCoords(main, bucket);
     var sources = [];
     rows.forEach(function(r){
       var l = srcLabel(r && r.source);
       if (sources.indexOf(l) === -1) sources.push(l);
     });
-    var isExact = main.coord_precision === "exact";
+    var isExact = !!co && co.precision === "exact";
     var rar = rarityOf(name);
     var av = avatarOf(name);
     var avStyle = av ? "background-image:url('" + esc(av) + "');" : "";
@@ -4436,9 +4456,7 @@ if (!DEV_DEBUG) {
       stat(String(days), STR.daysAgo) +
       stat(String(sources.length), STR.extSrcN) +
       stat(isExact ? STR.gpsExact : STR.extApproxLoc, STR.gpsLoc) + '</div>';
-    var lat = Number(main.lat);
-    var lng = Number(main.lng);
-    var coordTxt = lat.toFixed(4) + ", " + lng.toFixed(4);
+    var coordTxt = co ? co.lat.toFixed(4) + ", " + co.lng.toFixed(4) : "";
     var url = String(main.source_url || "");
     var acts = (/^https?:\/\//i.test(url) ? '<a class="bm-sc-btn" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(STR.extOpen) + '</a>' : '') +
       (isExact ? '<button type="button" class="bm-sc-ico bm-sc-copy" data-coords="' + esc(coordTxt) + '" title="' + esc(STR.copy) + '" aria-label="' + esc(STR.copy) + '">' + ICO_COPY + '</button>' : '');
@@ -4458,21 +4476,27 @@ if (!DEV_DEBUG) {
         '<div class="bm-sc-ft"><span>' + esc((STR.extData || "") + " " + sources.join(", ")) + '</span></div>' +
       '</div></div>';
   }
-  function markerIcon(name, main){
+  function markerIcon(name, main, precision){
     var av = avatarOf(name);
-    var approx = main.coord_precision !== "exact";
+    var approx = precision !== "exact";
     var html = '<div class="bm-ext-mk' + (approx ? ' is-approx' : '') + '">' +
       '<div class="bm-ext-av"' + (av ? ' style="background-image:url(\'' + esc(av) + '\')"' : '') + '></div>' +
       (main.nth_record ? '<div class="bm-ext-nth">' + esc(String(main.nth_record)) + '.</div>' : '') +
       '</div>';
     return L.divIcon({ className: "", html: html, iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -15] });
   }
+  // P178e5: shared 7/30-day window: days since obs_date_to when inside it, else -1.
+  function windowMaxDays(){ return recentOnly ? 6 : 29; }
+  function daysInWindow(r, today, maxDays){
+    var days = today - dayNum(r && r.obs_date_to);
+    return (!isFinite(days) || days < 0 || days > maxDays) ? -1 : days;
+  }
   // One pin per own row with coordinates, filtered like the eBird pins (7/30 days, rare-only, hidden, country chip).
   function draw(){
     var names = {};
     (Array.isArray(SPECIES) ? SPECIES : []).forEach(function(n){ names[slug(n)] = n; });
     var today = dayNum(tallinnToday());
-    var maxDays = recentOnly ? 6 : 29;
+    var maxDays = windowMaxDays();
     var chip = typeof window.__euCountryFilter === "function" ? String(window.__euCountryFilter() || "") : "";
     var popupOpts = window.__euPopupOpts || { maxWidth: 340 };
     Object.keys(idx).forEach(function(k){
@@ -4483,15 +4507,17 @@ if (!DEV_DEBUG) {
       Object.keys(idx[k]).forEach(function(cc){
         var bucket = idx[k][cc];
         bucket.mains.forEach(function(r){
-          if (r.merged_into != null || !hasLl(r)) return;
+          if (r.merged_into != null) return;
+          var co = mainCoords(r, bucket);
+          if (!co) return;
           if (chip && chip !== r.country_code) return;
-          var days = today - dayNum(r.obs_date_to);
-          if (!isFinite(days) || days < 0 || days > maxDays) return;
-          var ll = [Number(r.lat), Number(r.lng)];
-          if (r.coord_precision === "municipality") {
+          var days = daysInWindow(r, today, maxDays);
+          if (days < 0) return;
+          var ll = [co.lat, co.lng];
+          if (co.precision === "municipality") {
             L.circle(ll, { radius: APPROX_RADIUS_M, color: EXT_AMBER, weight: 1.5, dashArray: "5 4", fillColor: EXT_AMBER, fillOpacity: 0.08, interactive: false }).addTo(layer);
           }
-          var m = L.marker(ll, { icon: markerIcon(name, r), zIndexOffset: 200 });
+          var m = L.marker(ll, { icon: markerIcon(name, r, co.precision), zIndexOffset: 200 });
           m.bindPopup(function(){ return extCardHtml(name, r, bucket, days); }, popupOpts);
           m.addTo(layer);
         });
@@ -4517,16 +4543,15 @@ if (!DEV_DEBUG) {
       var byCc = idx[slug(name)];
       if (!byCc) return "";
       var today = dayNum(tallinnToday());
-      var maxDays = recentOnly ? 6 : 29;
+      var maxDays = windowMaxDays();
       var chip = typeof window.__euCountryFilter === "function" ? String(window.__euCountryFilter() || "") : "";
       var n = 0;
       var sources = [];
       Object.keys(byCc).forEach(function(cc){
         (byCc[cc].mains || []).forEach(function(r){
-          if (!r || r.merged_into != null || hasLl(r)) return;
+          if (!r || r.merged_into != null || mainCoords(r, byCc[cc])) return;
           if (chip && chip !== r.country_code) return;
-          var days = today - dayNum(r.obs_date_to);
-          if (!isFinite(days) || days < 0 || days > maxDays) return;
+          if (daysInWindow(r, today, maxDays) < 0) return;
           n++;
           var l = srcLabel(r.source);
           if (sources.indexOf(l) === -1) sources.push(l);
@@ -4535,6 +4560,22 @@ if (!DEV_DEBUG) {
       if (n === 0) return "";
       return ' <span class="ext-noloc">' + sources.join(" &middot; ") + ' &middot; ' + esc(STR.extNoloc) + (n > 1 ? ' (' + n + ')' : '') + '</span>';
     } catch(e){ return ""; }
+  };
+  // P178e5: true when the species has an own LOFK/Tarsiger row in the day window (cc "" = any country); never throws.
+  window.__euExtHas = function(name, cc){
+    try {
+      var byCc = idx[slug(name)];
+      if (!byCc) return false;
+      var today = dayNum(tallinnToday());
+      var maxDays = windowMaxDays();
+      return Object.keys(byCc).some(function(k){
+        return (byCc[k].mains || []).some(function(r){
+          if (!r || r.merged_into != null) return false;
+          if (cc !== "" && String(r.country_code == null ? "" : r.country_code) !== cc) return false;
+          return daysInWindow(r, today, maxDays) >= 0;
+        });
+      });
+    } catch(e){ return false; }
   };
 
   window.__euExt = {

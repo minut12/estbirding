@@ -101,6 +101,30 @@ Deno.test("parseTarsigerJson: non-region countries dropped", () => {
   }
 });
 
+function ru(lat: number | null, lng: number | null, id: number): Record<string, unknown> {
+  return {
+    id,
+    date_from: "2026-10-20",
+    date_to: null,
+    is_important: false,
+    species: [{ name_sci: "Oenanthe deserti" }],
+    notes: "",
+    external_image_url: null,
+    internal_image: null,
+    country_code: "RU",
+    latitude: lat === null ? null : String(lat),
+    longitude: lng === null ? null : String(lng),
+  };
+}
+
+Deno.test("parseTarsigerJson: RU kept only inside the NW Russia box", () => {
+  const out = parseTarsigerJson({
+    results: [ru(59.9, 30.3, 1), ru(55.7, 37.6, 2), ru(null, null, 3)],
+  });
+  assertEquals(out.length, 1);
+  assertEquals(out[0].lat, 59.9);
+});
+
 Deno.test("lofkDistrictHint: real fixture places", () => {
   const places = lofkPlaces();
   const withRSav = places.find((p) => p.includes(" r. sav."));

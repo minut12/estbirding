@@ -28,9 +28,8 @@ const LOFK_SOURCE_URL = "https://birdlife.lt/";
 const TARSIGER_SOURCE_URL = "https://www.tarsiger.com/havainnot";
 
 const TARSIGER_ALLOWED = new Set(["FI", "SE", "NO", "DK", "EE", "LV", "LT", "PL", "BY"]);
-// NW Russia bbox, copied from gbif-bulk-refresh/lib.ts RU_BBOX_WKT
-// "POLYGON((19 55,40 55,40 70,19 70,19 55))".
-const RU_BBOX = { lonMin: 19, lonMax: 40, latMin: 55, latMax: 70 } as const;
+// NW Russia (P104: LEN, SPE, PSK, NGR, KR). shortcut: bbox not oblast shapes, upgrade if Tarsiger RU rows with coords become common
+const RU_BBOX = { lonMin: 27, lonMax: 38, latMin: 56, latMax: 67 } as const;
 
 // ---------- helpers ----------
 

@@ -155,3 +155,39 @@ Deno.test("country code compared case-insensitively", () => {
   ]);
   assertEquals(out.get("lofk:1"), "tarsiger:1");
 });
+
+function withPoint(
+  base: MergeItem,
+  lat: number,
+  lng: number,
+  precision: "exact" | "municipality",
+): MergeItem {
+  return { ...base, lat, lng, precision };
+}
+
+Deno.test("k) LOFK district centroids Silute and Vilnius do not merge", () => {
+  const out = assignMerges([
+    withPoint(noCoords("lofk:A", "lofk", "LT", "2026-10-16"), 55.35, 21.48, "municipality"),
+    withPoint(noCoords("lofk:B", "lofk", "LT", "2026-10-16"), 54.69, 25.28, "municipality"),
+  ]);
+  assertEquals(out.get("lofk:A"), null);
+  assertEquals(out.get("lofk:B"), null);
+});
+
+Deno.test("l) LOFK district centroid ~29 km from exact Tarsiger merges (40 km cap)", () => {
+  const out = assignMerges([
+    withPoint(noCoords("lofk:C", "lofk", "LT", "2026-10-16"), 55.35, 21.48, "municipality"),
+    withPoint(noCoords("tarsiger:D", "tarsiger", "LT", "2026-10-16"), 55.55, 21.2, "exact"),
+  ]);
+  assertEquals(out.get("lofk:C"), "tarsiger:D");
+  assertEquals(out.get("tarsiger:D"), null);
+});
+
+Deno.test("m) coordless LOFK row folds into a LOFK district centroid", () => {
+  const out = assignMerges([
+    withPoint(noCoords("lofk:E", "lofk", "LT", "2026-10-16"), 55.35, 21.48, "municipality"),
+    noCoords("lofk:F", "lofk", "LT", "2026-10-16"),
+  ]);
+  assertEquals(out.get("lofk:E"), null);
+  assertEquals(out.get("lofk:F"), "lofk:E");
+});

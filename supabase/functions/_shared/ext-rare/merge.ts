@@ -1,6 +1,7 @@
 // _shared/ext-rare / merge.ts
 // Pure duplicate-folding for external rarity records (P178d1). No imports and
 // no Deno APIs, so the same module also runs under Vite.
+// Distance cap: 10 km when both rows are exact; district centroids use 40 km.
 
 export type MergeSource = "ebird" | "tarsiger" | "lofk";
 
@@ -19,6 +20,7 @@ export type MergeItem = {
 const EARTH_RADIUS_KM = 6371;
 const MAX_GAP_DAYS = 1;
 const MAX_DISTANCE_KM = 10;
+const MAX_DISTANCE_APPROX_KM = 40;
 const MS_PER_DAY = 86_400_000;
 
 type Prepared = {
@@ -75,17 +77,20 @@ function dateGap(a: Prepared, b: Prepared): number {
   return 0;
 }
 
-function exactDistance(a: MergeItem, b: MergeItem): number | null {
-  if (a.precision !== "exact" || b.precision !== "exact") return null;
+function pointDistance(a: MergeItem, b: MergeItem): number | null {
   if (a.lat === null || a.lng === null || b.lat === null || b.lng === null) return null;
   return haversineKm(a.lat, a.lng, b.lat, b.lng);
+}
+
+function maxDistanceKm(a: MergeItem, b: MergeItem): number {
+  return a.precision === "exact" && b.precision === "exact" ? MAX_DISTANCE_KM : MAX_DISTANCE_APPROX_KM;
 }
 
 function toCandidate(x: Prepared, main: Prepared): Candidate | null {
   const gap = dateGap(x, main);
   if (gap > MAX_GAP_DAYS) return null;
-  const distance = exactDistance(x.item, main.item);
-  if (distance !== null && distance > MAX_DISTANCE_KM) return null;
+  const distance = pointDistance(x.item, main.item);
+  if (distance !== null && distance > maxDistanceKm(x.item, main.item)) return null;
   return { main, gap, distance };
 }
 

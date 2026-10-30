@@ -11617,6 +11617,12 @@ function __bmSpeciesInfoOpen(btn, code, nameArg){
     }
     document.body.appendChild(m);
     var sec = m.querySelector('.bm-sim-sec');
+    // P179: Haruldus, Naabermaades and the week chart need only the name, so they load in parallel with
+    // species_info instead of after it; __bmSimFill keeps their filled slots when the body arrives.
+    sec.insertAdjacentHTML('afterbegin', '<div class="bm-sim-rarslot"></div><div class="bm-sim-nb"></div><div class="bm-sim-hist"></div>');
+    __bmRarityModal(sec, name); // P121
+    __bmNeighbourModal(sec, name); // P137
+    __bmHistModal(sec, name); // P136
     __bmSpeciesInfoFetch(code).then(function(row){
       if (!m.isConnected) return;
       if (row) {
@@ -11626,19 +11632,32 @@ function __bmSpeciesInfoOpen(btn, code, nameArg){
         var parts = [row.sci_name, row.com_name_en].filter(function(x){ return !!x; });
         if (sub && parts.length) sub.textContent = parts.join(' \u00b7 ');
       }
-      sec.innerHTML = __bmSpeciesInfoBodyHtml(row, code);
-      __bmRarityModal(sec, name); // P121
+      __bmSimFill(sec, __bmSpeciesInfoBodyHtml(row, code)); // P179
       __bmHkModal(sec, row ? row.sci_name : '', name); // P170a, P174: Estonian name first
       if (row) __bmPucModal(sec, row.sci_name); // P127
       __bmMyObsModal(sec, name, row ? row.sci_name : ''); // P128/P131
-      __bmNeighbourModal(sec, name); // P137
-      __bmHistModal(sec, name); // P136
     }).catch(function(){
       if (!m.isConnected) return;
-      sec.innerHTML = '<div class="bm-sim-msg">Liigiinfot ei &otilde;nnestunud laadida.</div>'
-        + '<a class="bm-sim-ext" href="https://ebird.org/species/' + code + '" target="_blank" rel="noopener">&#8599; Ava liigi t&auml;ielik kirjeldus eBirdis</a>';
+      __bmSimFill(sec, '<div class="bm-sim-msg">Liigiinfot ei &otilde;nnestunud laadida.</div>'
+        + '<a class="bm-sim-ext" href="https://ebird.org/species/' + code + '" target="_blank" rel="noopener">&#8599; Ava liigi t&auml;ielik kirjeldus eBirdis</a>'); // P179
     });
   } catch (e) {}
+}
+// P179: replace the modal body with html but keep the early slots (Haruldus, Naabermaades, week chart)
+// that may already be filled: each goes where html has its empty placeholder, else on top in order.
+function __bmSimFill(sec, html){
+  var tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  var top = [];
+  ['.bm-sim-rarslot', '.bm-sim-nb', '.bm-sim-hist'].forEach(function(q){
+    var live = sec.querySelector(q);
+    if (!live) return;
+    var ph = tmp.querySelector(q);
+    if (ph) ph.parentNode.replaceChild(live, ph); else top.push(live);
+  });
+  for (var i = top.length - 1; i >= 0; i--) tmp.insertBefore(top[i], tmp.firstChild);
+  sec.innerHTML = '';
+  while (tmp.firstChild) sec.appendChild(tmp.firstChild);
 }
 // P121: Estonian record numbers for super/mega rarities, from the get_species_rarity_records
 // RPC (elurikkus_observations; rows within 5 km and 7 days are one record), and xeno-canto

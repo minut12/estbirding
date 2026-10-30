@@ -142,6 +142,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-28', ref: 'P172a', kind: 'patch', text: 'K\u00f5ik liigid: sama ladinakeelse nimega liik on \u00fcks kord' },
       { date: '2026-10-28', ref: 'P172b', kind: 'patch', text: 'Liigiinfo: naabermaade vaatlustes ka Euroopa kaardi andmed' },
       { date: '2026-10-28', ref: 'P174', kind: 'patch', text: 'Liigiinfo: HK andmed eestikeelse nime j\u00e4rgi, kiibil HK k\u00e4sitlusala' },
+      { date: '2026-10-30', ref: 'P179', kind: 'patch', text: 'Liigiinfo: haruldus, naabermaade vaatlused ja n\u00e4dalagraafik laaditakse kohe' },
     ],
   },
   {

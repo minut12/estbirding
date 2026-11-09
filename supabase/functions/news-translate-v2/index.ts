@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-09 - P180 leftover-language guard (copied source sentences -> error + retry, not done)
 // redeploy-marker: 2026-10-26 - P161b Gemini per-model cap = 40% of the call timeout (translation 32 s, glossary 18 s)
 // redeploy-marker: 2026-10-20 - P155b glossary pass also after a slow translation (45 s, while it ends by 140 s)
 // redeploy-marker: 2026-10-20 - P155 NEWS_THINKING (between_tools|low|medium) + dryRun thinkingOverride; output_tokens in the run summary
@@ -49,6 +50,7 @@ import {
   buildGlossaryUserMsg,
 } from "../_shared/news-glossary.ts";
 import { withRetryPrefix } from "../_shared/retry-prefix.ts";
+import { leftoverError, leftoverSentences } from "./leftover.ts";
 import { anthropicMessages, llmConfigured } from "../_shared/llm.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -846,11 +848,19 @@ Deno.serve(async (req) => {
         const final = outcome.kind === "accepted"
           ? fixItemBirdNames(outcome.item, latinToEt)
           : corrected;
-        patch = buildDonePatch(
-          final,
-          accepted ? "sonnet+glossary" : "sonnet",
-          outcome.kind === "skipped" ? null : outcome.glossary,
-        );
+        // P180: whole source sentences left in the body -> error patch
+        // (re-queued by get-news-untranslated-v2 up to [retry 3]), never done.
+        const leftover = leftoverSentences(item.body, final.body);
+        if (leftover.length) {
+          parsed._error = leftoverError(leftover);
+          patch = buildErrorPatch(parsed);
+        } else {
+          patch = buildDonePatch(
+            final,
+            accepted ? "sonnet+glossary" : "sonnet",
+            outcome.kind === "skipped" ? null : outcome.glossary,
+          );
+        }
         if (outcome.kind === "failed" || outcome.kind === "rejected") {
           errors.push({ id: item.id, stage: "glossary", error: outcome.reason });
         }

@@ -2,7 +2,8 @@ name: Deploy Supabase Edge Functions
 
 # Deploys every function under supabase/functions/ and applies the verify_jwt
 # settings from supabase/config.toml. --use-api bundles server-side, so no
-# Docker is needed on the runner.
+# Docker is needed on the runner. --yes: newer CLIs ask for confirmation and
+# fail without a terminal (run #120, 2026-11-09).
 on:
   push:
     branches: [main]
@@ -27,4 +28,5 @@ jobs:
         run: |
           supabase functions deploy \
             --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} \
-            --use-api
+            --use-api \
+            --yes

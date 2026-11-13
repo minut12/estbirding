@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-13 - P182c cron_log finish: calls defaults to 0 (column is NOT NULL)
 // redeploy-marker: 2026-11-12 - P181e feed-health (freshness check + ops push, cron_runs log for Netlify jobs)
 // supabase/functions/feed-health/index.ts
 //
@@ -118,7 +119,8 @@ async function cronLog(sb: SupabaseClient, body: Record<string, unknown>): Promi
     const state = body.state && typeof body.state === "object" ? body.state : {};
     const patch = {
       finished_at: new Date().toISOString(),
-      calls: typeof body.calls === "number" ? body.calls : null,
+      // P182c: calls is NOT NULL (default 0); a null here made every finish call fail with 500.
+      calls: typeof body.calls === "number" ? body.calls : 0,
       ok: body.ok === true,
       state,
       error: typeof body.error === "string" ? body.error.slice(0, 1000) : null,

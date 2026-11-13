@@ -636,6 +636,64 @@ html:not(.sb-classic) .bm-sc-ft .is-ok{color:#2d7a4b;font-weight:700}
 <script src="/maps/shared/et-strings.js"></script>
 <script src="/maps/shared/randeajad.js"></script>
 <script>
+/* P181f: client error beacon -> public.log_client_error RPC (same filters + 5-per-load throttle as src/lib/clientErrors.ts). */
+(function(){
+  var SURFACE = 'europe', MAX = 5, sent = 0, queue = [], tries = 0, timer = null;
+  var EXT = /(chrome|moz|safari|safari-web)-extension:\/\//i;
+  var conf = { url: '', key: '' };
+  function cfg(){ return conf; }
+  function build(){ try { return String((window.parent && window.parent.__ESTBIRDING_RUNTIME_BUILD__) || ''); } catch(e){ return ''; } }
+  function flush(){
+    var c = cfg();
+    if (!c.url || !c.key) {
+      if (queue.length && tries++ < 10) { clearTimeout(timer); timer = setTimeout(flush, 3000); }
+      return;
+    }
+    while (queue.length) {
+      var body = queue.shift();
+      try {
+        fetch(c.url + '/rest/v1/rpc/log_client_error', {
+          method: 'POST',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json', 'apikey': c.key, 'Authorization': 'Bearer ' + c.key },
+          body: JSON.stringify(body)
+        }).catch(function(){});
+      } catch(e){}
+    }
+  }
+  function report(err){
+    try {
+      if (sent >= MAX) return;
+      var msg = '', stack = null;
+      if (err instanceof Error) { msg = err.name + ': ' + err.message; stack = err.stack ? String(err.stack) : null; }
+      else if (err && typeof err === 'object') {
+        if (typeof err.message === 'string') msg = err.message; else { try { msg = JSON.stringify(err); } catch(e){ msg = String(err); } }
+        stack = typeof err.stack === 'string' ? err.stack : null;
+      } else msg = String(err);
+      msg = String(msg || '').trim();
+      if (!msg && !stack) return;
+      if (/ResizeObserver loop/i.test(msg) || /^Script error\.?$/i.test(msg)) return;
+      if (EXT.test(msg) || (stack && EXT.test(stack))) return;
+      sent++;
+      queue.push({
+        p_surface: SURFACE,
+        p_message: msg.slice(0, 500),
+        p_stack: stack ? stack.slice(0, 4000) : null,
+        p_url: String(location.href).slice(0, 500),
+        p_build: build(),
+        p_user_agent: String(navigator.userAgent || '').slice(0, 500)
+      });
+      flush();
+    } catch(e){}
+  }
+  window.__euErrSetConfig = function(url, key){
+    conf.url = String(url || '').trim().replace(/\/+$/, '');
+    conf.key = String(key || '').trim();
+    if (conf.url && conf.key && queue.length) flush();
+  };
+  window.addEventListener('error', function(ev){ report(ev ? (ev.error || ev.message) : ''); });
+  window.addEventListener('unhandledrejection', function(ev){ report(ev ? ev.reason : ''); });
+})();
 /* ========= Embedded detection ========= */
 (function(){
   try {
@@ -4703,6 +4761,7 @@ window.addEventListener("message", function(ev){
     if (t === "SUPABASE_CONFIG") {
       if (typeof window.__euGpsSetConfig === "function") window.__euGpsSetConfig(ev.data.supabaseUrl, ev.data.supabaseAnonKey);
       if (typeof window.__euExtSetConfig === "function") window.__euExtSetConfig(ev.data.supabaseUrl, ev.data.supabaseAnonKey);
+      if (typeof window.__euErrSetConfig === "function") window.__euErrSetConfig(ev.data.supabaseUrl, ev.data.supabaseAnonKey);
       return;
     }
     if (t === "MAP_REFRESH_VISIBLE" || t === "MAP_REFRESH_SELECTED") {

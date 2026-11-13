@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from "react";
 import ConfigErrorScreen from "./ConfigErrorScreen";
+import { reportClientError } from "@/lib/clientErrors";
 
 interface Props {
   children: ReactNode;
@@ -18,6 +19,7 @@ export default class RootErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error) {
     console.error("[RootErrorBoundary]", error);
+    reportClientError(error);
   }
 
   render() {

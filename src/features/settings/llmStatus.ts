@@ -16,10 +16,28 @@ export interface LlmProviderStatus {
   errors7d: number;
 }
 
+// P181d: which model last answered for each caller (llm_calls.source).
+export interface LlmSourceStatus {
+  source: string;
+  provider: LlmProviderId;
+  model: string;
+  lastOkAt: string;
+}
+
+// P181d: a model the chain currently skips (circuit breaker), and until when.
+export interface LlmSkippedModel {
+  provider: LlmProviderId;
+  model: string;
+  reason: string | null;
+  skipUntil: string;
+}
+
 export interface LlmStatus {
   generatedAt: string;
   fallbacks24h: number;
   anthropicCreditOutSince: string | null;
+  sources: LlmSourceStatus[];
+  skipped: LlmSkippedModel[];
   providers: { anthropic: LlmProviderStatus; gemini: LlmProviderStatus; mistral: LlmProviderStatus };
 }
 
@@ -94,6 +112,29 @@ function parseProvider(provider: LlmProviderId, r: Record<string, unknown>): Llm
   };
 }
 
+function parseSources(value: unknown): LlmSourceStatus[] {
+  const out: LlmSourceStatus[] = [];
+  for (const row of Array.isArray(value) ? value : []) {
+    const rec = asRecord(row);
+    const source = rec ? str(rec.source) : null;
+    const lastOkAt = rec ? str(rec.last_ok_at) : null;
+    if (!rec || !source || !lastOkAt || !isProviderId(rec.provider)) continue;
+    out.push({ source, provider: rec.provider, model: str(rec.model) ?? '', lastOkAt });
+  }
+  return out;
+}
+
+function parseSkipped(value: unknown): LlmSkippedModel[] {
+  const out: LlmSkippedModel[] = [];
+  for (const row of Array.isArray(value) ? value : []) {
+    const rec = asRecord(row);
+    const skipUntil = rec ? str(rec.skip_until) : null;
+    if (!rec || !skipUntil || !isProviderId(rec.provider)) continue;
+    out.push({ provider: rec.provider, model: str(rec.model) ?? '', reason: str(rec.reason), skipUntil });
+  }
+  return out;
+}
+
 export function parseLlmStatus(data: unknown): LlmStatus {
   const r = asRecord(data) ?? {};
   const rows = Array.isArray(r.providers) ? r.providers : [];
@@ -107,6 +148,8 @@ export function parseLlmStatus(data: unknown): LlmStatus {
     generatedAt: str(r.generated_at) ?? '',
     fallbacks24h: num(r.fallbacks_24h),
     anthropicCreditOutSince: str(r.anthropic_credit_out_since),
+    sources: parseSources(r.sources),
+    skipped: parseSkipped(r.skipped),
     providers: {
       anthropic: found.anthropic ?? emptyProviderStatus('anthropic'),
       gemini: found.gemini ?? emptyProviderStatus('gemini'),

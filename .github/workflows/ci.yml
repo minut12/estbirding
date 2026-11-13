@@ -1,0 +1,56 @@
+# P181l: CI gate. Runs on every push to main and on pull requests, so a
+# "checks pass" claim is a fact on the commit, not a sentence in a chat.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Type check
+        run: npx tsc --noEmit -p tsconfig.app.json
+
+      - name: Tests
+        run: npx vitest run
+
+      - name: Build
+        run: npx vite build
+
+      # Project rule: added lines in source files stay ASCII (edit tools decode
+      # \uXXXX escapes). Compares against the previous commit on push, or the
+      # base branch on a pull request.
+      - name: ASCII check on added lines
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="${{ github.event.before }}"
+            if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE="HEAD~1"; fi
+          fi
+          n=$(git diff -U0 "$BASE"...HEAD -- src public supabase netlify \
+                ':(exclude)*.md' ':(exclude)*.json' \
+              | grep '^+' | grep -v '^+++' | grep -cP '[^\x00-\x7F]' || true)
+          echo "non-ASCII added lines: $n"
+          if [ "$n" != "0" ]; then
+            git diff -U0 "$BASE"...HEAD -- src public supabase netlify \
+                ':(exclude)*.md' ':(exclude)*.json' \
+              | grep '^+' | grep -v '^+++' | grep -nP '[^\x00-\x7F]' | head -20
+            exit 1
+          fi

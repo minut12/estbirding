@@ -71,6 +71,49 @@ export async function postEf(fn, headers, body, { timeoutMs = 25000, maxText = 5
   } finally { clearTimeout(t); }
 }
 
+// P181e: scheduled runs log themselves into public.cron_runs through the feed-health Edge Function
+// (Netlify holds no service key; the webhook secret is the one the Europe job already uses).
+// Never throws and never changes a job's result: a failed log call is only a console line.
+const CRON_LOG_STATE_KEYS = ['stage', 'status', 'fetched', 'rows', 'partial', 'skipped', 'reason', 'error', 'detail', 'took_ms'];
+
+async function cronLog(payload, timeoutMs) {
+  try {
+    const r = await postEf(
+      'feed-health',
+      { 'x-webhook-secret': env('VAATLUSTE_WEBHOOK_SECRET') },
+      { action: 'cron_log', ...payload },
+      { timeoutMs, maxText: 200 },
+    );
+    if (!r.ok) console.log(JSON.stringify({ fn: 'cron-log', phase: payload.phase, job: payload.job, status: r.status, body: r.text }));
+  } catch (e) {
+    console.log(JSON.stringify({ fn: 'cron-log', phase: payload.phase, job: payload.job, error: String((e && e.message) || e) }));
+  }
+}
+
+// Wraps one scheduled job: start row, run, finish row (ok / error). The start call runs alongside
+// the job so it costs no wall clock; the finish call is capped so the 30 s limit still holds.
+export async function withCronLog(job, run) {
+  const runId = crypto.randomUUID();
+  const startLog = cronLog({ job, run_id: runId, phase: 'start' }, 5000);
+  let result;
+  try {
+    result = await run();
+  } catch (e) {
+    await startLog;
+    await cronLog({ job, run_id: runId, phase: 'finish', ok: false, error: String((e && e.message) || e) }, 2500);
+    throw e;
+  }
+  const state = {};
+  for (const k of CRON_LOG_STATE_KEYS) {
+    if (result && result[k] !== undefined) state[k] = result[k];
+  }
+  const ok = !!(result && result.ok === true);
+  const error = ok ? null : String((result && (result.error || result.stage)) || 'failed') + (result && result.status ? ' HTTP ' + result.status : '');
+  await startLog;
+  await cronLog({ job, run_id: runId, phase: 'finish', ok, error, state }, 2500);
+  return result;
+}
+
 // Job 1: EE recent → ebird-bulk-refresh  (port of n8n "My workflow 2")
 export async function runEeRefresh() {
   const started = Date.now();

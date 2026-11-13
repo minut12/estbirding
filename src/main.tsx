@@ -7,6 +7,7 @@ import { fullReset, doHardReload } from './lib/cache-reset';
 import { log } from './lib/eventLog';
 import { getSupabaseAnonKey, getSupabaseUrl } from './config/supabaseConfig';
 import { reconcilePushSubscription } from './lib/pushReconcile';
+import { installClientErrorHandlers } from './lib/clientErrors';
 const BUILTIN_TRANSLATE_ENDPOINT = 'https://rfjhrosxbaihyrnbmmbl.supabase.co/functions/v1/translate-et';
 declare const __BUILD_TIME__: string;
 const RUNTIME_BUILD_MARKER = `${__BUILD_TIME__}|app-runtime-c92cfa2`;
@@ -18,6 +19,7 @@ declare global {
 }
 
 window.__ESTBIRDING_RUNTIME_BUILD__ = RUNTIME_BUILD_MARKER;
+installClientErrorHandlers(RUNTIME_BUILD_MARKER);
 
 if (new URLSearchParams(window.location.search).get('reset') === '1') {
   if (confirm('Täielik lähtestus – kõik andmed kustutatakse. Jätkata?')) {

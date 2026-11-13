@@ -7,8 +7,8 @@
 //
 // It never overwrites a non-empty subscribed_species: it writes only when the
 // row is missing, or when the stored list is empty and we have something better.
-import { supabase } from '@/integrations/supabase/client';
 import { log } from '@/lib/eventLog';
+import { getPushSub, upsertPushSub } from '@/lib/pushSubscriptionApi';
 import { normalizeSpeciesName } from '@/lib/textNormalize';
 import {
   VAPID_PUBLIC_KEY,
@@ -130,37 +130,26 @@ export async function reconcilePushSubscription(): Promise<ReconcileResult> {
 
   const species = await buildSpeciesUnion();
 
-  const { data: row, error: selectErr } = await supabase
-    .from('push_subscriptions')
-    .select('endpoint,subscribed_species')
-    .eq('endpoint', endpoint)
-    .maybeSingle();
-  if (selectErr) return skipped(`select: ${selectErr.message}`);
+  const { row, error: selectErr } = await getPushSub(endpoint);
+  if (selectErr) return skipped(`select: ${selectErr}`);
 
   if (!row) {
-    const { error: upsertErr } = await supabase.from('push_subscriptions').upsert(
-      {
-        endpoint,
-        key_p256dh: p256dh,
-        key_auth: auth,
-        subscribed_species: species,
-        device_label: deviceLabel(),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'endpoint' },
-    );
-    if (upsertErr) return skipped(`upsert: ${upsertErr.message}`);
+    const upsertErr = await upsertPushSub({
+      endpoint,
+      p256dh,
+      auth,
+      species,
+      deviceLabel: deviceLabel(),
+    });
+    if (upsertErr) return skipped(`upsert: ${upsertErr}`);
     log('♻️ push-reconcile: row upserted');
     return finish('upserted');
   }
 
   const stored = Array.isArray(row.subscribed_species) ? row.subscribed_species : [];
   if (stored.length === 0 && species.length > 0) {
-    const { error: patchErr } = await supabase
-      .from('push_subscriptions')
-      .update({ subscribed_species: species })
-      .eq('endpoint', endpoint);
-    if (patchErr) return skipped(`patch: ${patchErr.message}`);
+    const patchErr = await upsertPushSub({ endpoint, p256dh, auth, species });
+    if (patchErr) return skipped(`patch: ${patchErr}`);
     log('♻️ push-reconcile: species patched');
     return finish('patched');
   }

@@ -427,6 +427,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-09-16', ref: 'P24', kind: 'patch', text: 'L\u00fchikirjeldused ilma Sonnetita loendi l\u00f5pu liikidele' },
       { date: '2026-09-28', ref: 'P85c', kind: 'patch', text: 'Hinnangu t\u00fchistamine uue kl\u00f5psuga, m\u00e4rkus salvestub' },
       { date: '2026-09-30', ref: 'P85g', kind: 'minor', text: 'Kasutaja m\u00e4rkus j\u00f5uab Sonnetini' },
+      { date: '2026-11-13', ref: 'P181k', kind: 'minor', text: 'Ennustuste t\u00e4psus liigiti' },
     ],
   },
   {
@@ -571,6 +572,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-09', ref: 'P108', kind: 'minor', text: 'Mistral kolmanda mudelina' },
       { date: '2026-10-25', ref: 'P161', kind: 'patch', text: 'Gemini varumudel on kiirem ja t\u00f6\u00f6kindlam' },
       { date: '2026-10-26', ref: 'P161b', kind: 'patch', text: 'Uudiste t\u00f5lge j\u00e4tkub ka siis, kui Gemini p\u00f5himudel on aeglane' },
+      { date: '2026-11-13', ref: 'P181d', kind: 'minor', text: 'N\u00e4ha, milline mudel viimati vastas ja mis on ajutiselt vahele j\u00e4etud' },
     ],
   },
   {
@@ -598,6 +600,8 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-09-17', ref: 'P35', kind: 'minor', text: 'Teavitused parandavad end ise, testteavitus' },
       { date: '2026-09-30', ref: 'P91b', kind: 'patch', text: '\u00dcle 30 uue liigi korraga ei saada teavitusi' },
       { date: '2026-10-08', ref: 'P104b', kind: 'minor', text: 'Teavitus k\u00f5igile tellijatele uue liigi kohta' },
+      { date: '2026-11-13', ref: 'P181b', kind: 'patch', text: 'Teavitustellimused salvestatakse turvalise p\u00e4ringu kaudu' },
+      { date: '2026-11-13', ref: 'P181e', kind: 'minor', text: 'Haldurile teavitus andmevoogude t\u00f5rgetest' },
     ],
   },
 ];

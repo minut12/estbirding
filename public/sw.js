@@ -157,38 +157,17 @@ async function syncSubscriptionToSupabase(subJson, oldEndpoint) {
       'apikey': SB_KEY,
       'Authorization': 'Bearer ' + SB_KEY,
     };
-    var table = SB_URL + '/rest/v1/push_subscriptions';
-    var species = [];
-
-    if (oldEndpoint) {
-      var oldFilter = '?endpoint=eq.' + encodeURIComponent(oldEndpoint);
-      try {
-        var prev = await fetch(table + oldFilter + '&select=subscribed_species,device_label', { headers: headers });
-        var rows = prev.ok ? await prev.json() : [];
-        if (Array.isArray(rows) && rows.length && Array.isArray(rows[0].subscribed_species)) {
-          species = rows[0].subscribed_species;
-        }
-      } catch (e) {}
-      try {
-        await fetch(table + oldFilter, { method: 'DELETE', headers: headers });
-      } catch (e) {}
-    }
-
-    await fetch(table + '?on_conflict=endpoint', {
+    // P181: push_sub_rotate carries the species list across and drops the old
+    // row in one call; the table itself is no longer open to anon.
+    await fetch(SB_URL + '/rest/v1/rpc/push_sub_rotate', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SB_KEY,
-        'Authorization': 'Bearer ' + SB_KEY,
-        'Prefer': 'resolution=merge-duplicates,return=minimal',
-      },
+      headers: headers,
       body: JSON.stringify({
-        endpoint: subJson.endpoint,
-        key_p256dh: subJson.keys ? subJson.keys.p256dh : null,
-        key_auth: subJson.keys ? subJson.keys.auth : null,
-        subscribed_species: species,
-        device_label: swDeviceLabel(),
-        updated_at: new Date().toISOString(),
+        p_old_endpoint: oldEndpoint || null,
+        p_endpoint: subJson.endpoint,
+        p_p256dh: subJson.keys ? subJson.keys.p256dh : null,
+        p_auth: subJson.keys ? subJson.keys.auth : null,
+        p_device_label: swDeviceLabel(),
       }),
     });
   } catch (e) {

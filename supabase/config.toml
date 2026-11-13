@@ -231,3 +231,9 @@ verify_jwt = false
 
 [functions.species-info-save]
 verify_jwt = false
+
+[functions.feed-health]
+verify_jwt = false
+
+[functions.estbirds-mcp]
+verify_jwt = false

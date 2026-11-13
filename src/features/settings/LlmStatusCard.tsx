@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   fetchLlmStatus, providerState,
-  type LlmProviderState, type LlmProviderStatus, type LlmStatus,
+  type LlmProviderState, type LlmProviderStatus, type LlmSkippedModel, type LlmSourceStatus, type LlmStatus,
 } from './llmStatus';
 
 // Same string as SETTINGS_GROUP_CLASS in SettingsTab (kept local on purpose).
@@ -64,7 +64,7 @@ function StatePill({ state }: { state: LlmProviderState }) {
   );
 }
 
-function StatRow({ label, value }: { label: string; value: ReactNode }) {
+function StatRow({ label, value }: { label: ReactNode; value: ReactNode }) {
   return (
     <>
       <div className="text-muted-foreground">{label}</div>
@@ -110,6 +110,52 @@ function ProviderBlock({ name, sub, provider: p, creditOutSince }: ProviderBlock
   );
 }
 
+// P181d: why the chain skips a model (llm_route_state.skip_reason).
+const SKIP_REASON: Record<string, string> = {
+  credit: 'krediit otsas',
+  auth: 'v\u00f5ti ei kehti',
+  rate_limit: 'p\u00e4ringute piirang',
+  overload: '\u00fclekoormus',
+  timeout: 'ajal\u00f5pp',
+};
+
+function SkippedBlock({ skipped }: { skipped: LlmSkippedModel[] }) {
+  return (
+    <div className="px-3.5 py-3 flex flex-col gap-2">
+      <div>
+        <div className="font-semibold">{'Ajutiselt vahele j\u00e4etud'}</div>
+        <div className="text-xs text-muted-foreground">{'6 tundi p\u00e4rast viga; proovitakse vaid siis, kui teised ei vasta'}</div>
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 text-[13px]">
+        {skipped.map((m) => (
+          <StatRow
+            key={`${m.provider}:${m.model}`}
+            label={(m.model || m.provider) + (m.reason && SKIP_REASON[m.reason] ? DOT + SKIP_REASON[m.reason] : '')}
+            value={`kuni ${formatDateTime(m.skipUntil)}`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SourcesBlock({ sources }: { sources: LlmSourceStatus[] }) {
+  return (
+    <div className="px-3.5 py-3 flex flex-col gap-2">
+      <div className="font-semibold">Viimati vastanud mudel</div>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 text-[13px]">
+        {sources.map((s) => (
+          <StatRow
+            key={s.source}
+            label={<span className="break-words">{s.source}</span>}
+            value={<>{s.model || s.provider}<span className="block text-xs font-normal text-muted-foreground">{formatDateTime(s.lastOkAt)}</span></>}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CreditBanner({ since, fallbacks }: { since: string; fallbacks: number }) {
   return (
     <div role="alert" className="flex gap-2.5 items-start px-3.5 py-3 bg-[#FBE9E7] text-[#B42318] border-b border-[#F1C9C5] text-[13.5px]">
@@ -132,6 +178,8 @@ function ReadyBody({ status }: { status: LlmStatus }) {
       <ProviderBlock name="Claude" provider={status.providers.anthropic} creditOutSince={since} />
       <ProviderBlock name="Gemini" sub="tasuta tase" provider={status.providers.gemini} creditOutSince={since} />
       <ProviderBlock name="Mistral" sub="tasuta tase" provider={status.providers.mistral} creditOutSince={since} />
+      {status.skipped.length > 0 && <SkippedBlock skipped={status.skipped} />}
+      {status.sources.length > 0 && <SourcesBlock sources={status.sources} />}
       <div className="px-3.5 py-2.5 flex items-center justify-between gap-2 text-[12.5px] text-muted-foreground">
         <span>Saldot API kaudu ei n&auml;e.</span>
         <a href={BILLING_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-primary hover:underline">

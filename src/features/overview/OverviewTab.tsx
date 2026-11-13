@@ -26,6 +26,7 @@ import WindyChart from './WindyChart';
 import RareObservationsFeed from './RareObservationsFeed';
 import { groupEntriesBySpecies } from './entryGroups';
 import { HkBackground } from './HkBackground';
+import { PredictionTrackRecord } from './PredictionTrackRecord';
 
 function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
   const out = new Map<string, string>();
@@ -1716,6 +1717,7 @@ export default function OverviewTab() {
                   </div>
                 </>
               )}
+                <PredictionTrackRecord />
               </div>
             ) : section === 'arhiiv' ? (
               <div className="overflow-x-hidden w-full max-w-full pt-4">

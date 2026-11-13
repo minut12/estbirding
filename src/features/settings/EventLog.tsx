@@ -96,11 +96,12 @@ export default function EventLog() {
       action: async () => {
         try {
           const { supabase } = await import('@/config/supabaseClient');
-          const { data, error } = await supabase.from('push_subscriptions').select('endpoint,subscribed_species,device_label,updated_at');
+          const { data, error } = await supabase.rpc('admin_list_push_subscriptions');
           if (error) return log('❌ DB: ' + error.message);
           log('🗄️ Subscriptions: ' + (data?.length || 0));
-          (data || []).forEach((row: any, i: number) => {
-            log('  #' + (i + 1) + ' ' + (row.device_label || '?') + ' | species: ' + (row.subscribed_species?.length || 0) + ' | ' + (row.endpoint?.slice(0, 50) || '') + '...');
+          const rows = data ?? [];
+          rows.forEach((row, i) => {
+            log('  #' + (i + 1) + ' ' + (row.device_label || '?') + ' | species: ' + (row.subscribed_species_count || 0) + ' | ' + (row.endpoint || '') + '...');
           });
         } catch (e: any) { log('❌ ' + (e?.message || e)); }
       },

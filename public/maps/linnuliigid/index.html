@@ -1108,6 +1108,61 @@ function clearOccurrence(key){
 </script>
 
 <script>
+/* P181f: client error beacon -> public.log_client_error RPC (same filters + 5-per-load throttle as src/lib/clientErrors.ts). */
+(function(){
+  var SURFACE = 'linnuliigid', MAX = 5, sent = 0, queue = [], tries = 0, timer = null;
+  var EXT = /(chrome|moz|safari|safari-web)-extension:\/\//i;
+  function cfg(){
+    try { var c = resolveSupabaseConfig(); return { url: String((c && c.supabaseUrl) || ''), key: String((c && c.anonKey) || '') }; }
+    catch(e){ return { url: '', key: '' }; }
+  }
+  function build(){ try { return String((window.parent && window.parent.__ESTBIRDING_RUNTIME_BUILD__) || ''); } catch(e){ return ''; } }
+  function flush(){
+    var c = cfg();
+    if (!c.url || !c.key) {
+      if (queue.length && tries++ < 10) { clearTimeout(timer); timer = setTimeout(flush, 3000); }
+      return;
+    }
+    while (queue.length) {
+      var body = queue.shift();
+      try {
+        fetch(c.url + '/rest/v1/rpc/log_client_error', {
+          method: 'POST',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json', 'apikey': c.key, 'Authorization': 'Bearer ' + c.key },
+          body: JSON.stringify(body)
+        }).catch(function(){});
+      } catch(e){}
+    }
+  }
+  function report(err){
+    try {
+      if (sent >= MAX) return;
+      var msg = '', stack = null;
+      if (err instanceof Error) { msg = err.name + ': ' + err.message; stack = err.stack ? String(err.stack) : null; }
+      else if (err && typeof err === 'object') {
+        if (typeof err.message === 'string') msg = err.message; else { try { msg = JSON.stringify(err); } catch(e){ msg = String(err); } }
+        stack = typeof err.stack === 'string' ? err.stack : null;
+      } else msg = String(err);
+      msg = String(msg || '').trim();
+      if (!msg && !stack) return;
+      if (/ResizeObserver loop/i.test(msg) || /^Script error\.?$/i.test(msg)) return;
+      if (EXT.test(msg) || (stack && EXT.test(stack))) return;
+      sent++;
+      queue.push({
+        p_surface: SURFACE,
+        p_message: msg.slice(0, 500),
+        p_stack: stack ? stack.slice(0, 4000) : null,
+        p_url: String(location.href).slice(0, 500),
+        p_build: build(),
+        p_user_agent: String(navigator.userAgent || '').slice(0, 500)
+      });
+      flush();
+    } catch(e){}
+  }
+  window.addEventListener('error', function(ev){ report(ev ? (ev.error || ev.message) : ''); });
+  window.addEventListener('unhandledrejection', function(ev){ report(ev ? ev.reason : ''); });
+})();
 /* P37 sidebar UI flag: 'classic' restores the pre-P37 sidebar. Same-origin localStorage, live via storage event. */
 (function(){
   var KEY = 'estbirding.sidebarUi';
@@ -12434,33 +12489,23 @@ function _syncNotifyToSupabase(subscription, speciesList) {
                     /Android/.test(navigator.userAgent) ? 'Android' : 'Desktop',
       updated_at: new Date().toISOString()
     };
-    fetch(cfg.supabaseUrl + '/rest/v1/push_subscriptions?endpoint=eq.' + encodeURIComponent(payload.endpoint), {
-      method: 'PATCH',
+    // P181: one endpoint-keyed upsert RPC replaces PATCH-then-POST on the table.
+    fetch(cfg.supabaseUrl + '/rest/v1/rpc/push_sub_upsert', {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'apikey': cfg.anonKey,
-        'Authorization': 'Bearer ' + cfg.anonKey,
-        'Prefer': 'return=headers-only'
+        'Authorization': 'Bearer ' + cfg.anonKey
       },
       body: JSON.stringify({
-        subscribed_species: payload.subscribed_species,
-        device_label: payload.device_label,
-        updated_at: payload.updated_at
+        p_endpoint: payload.endpoint,
+        p_p256dh: payload.key_p256dh,
+        p_auth: payload.key_auth,
+        p_species: payload.subscribed_species,
+        p_device_label: payload.device_label
       })
     }).then(function(res) {
-      var range = res.headers.get('content-range') || '';
-      if (range === '*/0' || res.status === 404) {
-        return fetch(cfg.supabaseUrl + '/rest/v1/push_subscriptions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': cfg.anonKey,
-            'Authorization': 'Bearer ' + cfg.anonKey,
-            'Prefer': 'return=minimal'
-          },
-          body: JSON.stringify(payload)
-        });
-      }
+      if (!res.ok) throw new Error('push_sub_upsert HTTP ' + res.status);
     }).then(function() {
       _log('☁️ subscription synced to DB');
     }).catch(function(e) {
@@ -12484,9 +12529,10 @@ if ('serviceWorker' in navigator && navigator.serviceWorker && !window.__pushRot
       if (!cfg.supabaseUrl || !cfg.anonKey) return;
 
       var killOld = msg.oldEndpoint
-        ? fetch(cfg.supabaseUrl + '/rest/v1/push_subscriptions?endpoint=eq.' + encodeURIComponent(msg.oldEndpoint), {
-            method: 'DELETE',
-            headers: { apikey: cfg.anonKey, Authorization: 'Bearer ' + cfg.anonKey },
+        ? fetch(cfg.supabaseUrl + '/rest/v1/rpc/push_sub_delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: cfg.anonKey, Authorization: 'Bearer ' + cfg.anonKey },
+            body: JSON.stringify({ p_endpoint: msg.oldEndpoint })
           }).catch(function(){})
         : Promise.resolve();
 
@@ -12724,12 +12770,10 @@ window.toggleNotification = async function(speciesName) {
         try {
           var cfg = resolveSupabaseConfig();
           if (cfg.supabaseUrl && cfg.anonKey) {
-            var checkUrl = cfg.supabaseUrl +
-              '/rest/v1/push_subscriptions?endpoint=eq.' +
-              encodeURIComponent(sub.endpoint) +
-              '&select=endpoint';
-            var r = await fetch(checkUrl, {
-              headers: { apikey: cfg.anonKey, Authorization: 'Bearer ' + cfg.anonKey }
+            var r = await fetch(cfg.supabaseUrl + '/rest/v1/rpc/push_sub_get', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', apikey: cfg.anonKey, Authorization: 'Bearer ' + cfg.anonKey },
+              body: JSON.stringify({ p_endpoint: sub.endpoint })
             });
             var rows = r.ok ? await r.json().catch(function(){ return []; }) : [];
             if (!Array.isArray(rows) || rows.length === 0) {

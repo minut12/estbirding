@@ -1238,6 +1238,7 @@ export type Database = {
       push_subscriptions: {
         Row: {
           created_at: string
+          ops_alerts: boolean
           device_label: string | null
           endpoint: string
           id: string
@@ -1248,6 +1249,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          ops_alerts?: boolean
           device_label?: string | null
           endpoint: string
           id?: string
@@ -1258,6 +1260,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          ops_alerts?: boolean
           device_label?: string | null
           endpoint?: string
           id?: string
@@ -1671,6 +1674,107 @@ export type Database = {
           credit: Json | null
           public_url: string
           species_key: string
+        }[]
+      }
+      admin_list_push_subscriptions: {
+        Args: never
+        Returns: {
+          device_label: string
+          endpoint: string
+          subscribed_species_count: number
+          updated_at: string
+        }[]
+      }
+      push_sub_delete: { Args: { p_endpoint: string }; Returns: undefined }
+      push_sub_get: {
+        Args: { p_endpoint: string }
+        Returns: {
+          device_label: string
+          endpoint: string
+          subscribed_species: string[]
+          updated_at: string
+        }[]
+      }
+      push_sub_rotate: {
+        Args: {
+          p_auth: string
+          p_device_label?: string
+          p_endpoint: string
+          p_old_endpoint: string
+          p_p256dh: string
+        }
+        Returns: undefined
+      }
+      push_sub_upsert: {
+        Args: {
+          p_auth: string
+          p_device_label?: string | null
+          p_endpoint: string
+          p_p256dh: string
+          p_species?: string[] | null
+        }
+        Returns: undefined
+      }
+      admin_get_ops_alerts: { Args: { p_endpoint: string }; Returns: boolean }
+      admin_set_ops_alerts: {
+        Args: { p_endpoint: string; p_on: boolean }
+        Returns: boolean
+      }
+      feed_health: {
+        Args: never
+        Returns: {
+          feed: string
+          label: string
+          last_ok_at: string | null
+          age: unknown
+          target: string
+          status: string
+          detail: string
+        }[]
+      }
+      admin_client_errors: {
+        Args: { p_days?: number }
+        Returns: {
+          id: number
+          created_at: string
+          surface: string
+          message: string | null
+          stack: string | null
+          url: string | null
+          build: string | null
+          user_agent: string | null
+          count: number
+          fingerprint: string | null
+        }[]
+      }
+      log_client_error: {
+        Args: {
+          p_surface: string
+          p_message: string
+          p_stack: string | null
+          p_url: string
+          p_build: string
+          p_user_agent: string
+        }
+        Returns: undefined
+      }
+      get_prediction_track_record: {
+        Args: { p_species?: string | null; p_min_n?: number }
+        Returns: {
+          ebird_code: string
+          species_et: string
+          n: number
+          hits: number
+          n_independent: number
+          hits_independent: number
+          mean_predicted_pct: number
+          observed_pct: number
+          brier: number
+          brier_independent: number
+          small_sample: boolean
+          first_window_start: string
+          last_window_end: string
+          buckets: Json
         }[]
       }
       get_subscriptions_for_species: {

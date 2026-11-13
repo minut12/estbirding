@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-12 - P181d circuit breaker: skip a model 6 h after credit/auth/429/503/time-cap, Gemini ordered by 48 h success rate (llm_route_state, _shared/llmRoute.ts)
 // redeploy-marker: 2026-10-26 - P161b per-call Gemini model cap (anthropicMessages opts.geminiModelTimeoutMs) for callers with a short own timeout
 // redeploy-marker: 2026-10-25 - P161 Gemini thinkingLevel (non-lite: GEMINI_THINKING, default low) + per-model time cap, a capped model steps to the next
 // redeploy-marker: 2026-10-11 - P120i freeMessages optional Gemini model list (per-caller override)
@@ -39,6 +40,14 @@
 // throws; a missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY disables it.
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  isSkipped,
+  modelsOf,
+  orderCandidates,
+  parseRouteState,
+  type RouteCandidate,
+  type RouteStateRow,
+} from "./llmRoute.ts";
 
 export type LlmProvider = "anthropic" | "gemini" | "mistral";
 
@@ -132,6 +141,40 @@ function logCall(row: LlmCallRow): void {
   } catch {
     // logging must never affect the caller
   }
+}
+
+// P181d: breaker state (public.llm_route_state(), derived from llm_calls), read at
+// most once per ROUTE_STATE_TTL_MS per isolate. Any failure to read it (no
+// client, timeout, RPC error) yields null = route exactly as before (fail open).
+const ROUTE_STATE_TTL_MS = 60_000;
+const ROUTE_STATE_TIMEOUT_MS = 1500;
+
+let routeStateAt = 0;
+let routeStatePromise: Promise<RouteStateRow[] | null> | null = null;
+
+async function fetchRouteState(): Promise<RouteStateRow[] | null> {
+  try {
+    const client = getLogClient();
+    if (!client) return null;
+    const r = await client.rpc("llm_route_state").abortSignal(AbortSignal.timeout(ROUTE_STATE_TIMEOUT_MS));
+    if (r.error) {
+      console.log("[llm] llm_route_state error: " + r.error.message.slice(0, 120));
+      return null;
+    }
+    return parseRouteState(r.data);
+  } catch (e) {
+    console.log("[llm] llm_route_state failed: " + String(e).slice(0, 120));
+    return null;
+  }
+}
+
+function loadRouteState(): Promise<RouteStateRow[] | null> {
+  const now = Date.now();
+  if (!routeStatePromise || now - routeStateAt > ROUTE_STATE_TTL_MS) {
+    routeStateAt = now;
+    routeStatePromise = fetchRouteState();
+  }
+  return routeStatePromise;
 }
 
 function functionNameFrom(s: string): string | null {
@@ -602,7 +645,8 @@ const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
 // Free tier (verified 2026-10-09): Large/Small/Medium are refused (403) or capped at 20k
 // tokens/min, below our ~37k-token report calls; ministral-14b-2512 fits (937.5k/min).
 // The live chain is set by the MISTRAL_MODEL secret.
-const DEFAULT_MISTRAL_MODELS = "mistral-large-2512,ministral-14b-2512";
+// P181d: mistral-large-2512 answers 403/auth on the free tier (0/3 on 2026-11-12); dropped.
+const DEFAULT_MISTRAL_MODELS = "ministral-14b-2512";
 // P108b: prompts that demand JSON get Mistral's JSON mode (response_format json_object),
 // which guarantees parseable JSON (ministral-14b otherwise left raw newlines in strings).
 const JSON_DEMAND_RE = /\b(return|reply|respond|output|tagasta)\b[^.\n]{0,40}\bjson\b|\bjson only\b|\bonly (valid )?json\b|\bainult json\b/i;
@@ -722,11 +766,12 @@ async function callMistral(
   req: AnthropicMessagesRequest,
   fallback: boolean,
   signal?: AbortSignal,
+  models?: string[],
 ): Promise<Response> {
   const apiKey = (Deno.env.get("MISTRAL_API_KEY") || "").trim();
   if (!apiKey) throw new Error("missing_env:MISTRAL_API_KEY");
   let last: Response | null = null;
-  for (const model of mistralModels()) {
+  for (const model of (models && models.length ? models : mistralModels())) {
     for (let attempt = 1; attempt <= MISTRAL_ATTEMPTS; attempt++) {
       if (signal?.aborted) break;
       const res = await callMistralOnce(req, apiKey, model, fallback, signal);
@@ -754,7 +799,69 @@ async function callMistral(
  */
 export function freeMessages(req: AnthropicMessagesRequest, signal?: AbortSignal, geminiModelList?: string[]): Promise<Response> {
   if (!backupConfigured()) throw new Error("missing_env:GEMINI_API_KEY|MISTRAL_API_KEY");
-  return callBackups(req, false, signal, geminiModelList);
+  return callBackupsRouted(req, false, signal, geminiModelList);
+}
+
+type BackupPick = { gemini: string[]; mistral: string[] };
+
+function backupCandidates(geminiModelList?: string[]): RouteCandidate[] {
+  const out: RouteCandidate[] = [];
+  if (geminiConfigured()) {
+    for (const model of (geminiModelList && geminiModelList.length ? geminiModelList : geminiModels())) {
+      out.push({ provider: "gemini", model });
+    }
+  }
+  if (mistralConfigured()) {
+    for (const model of mistralModels()) out.push({ provider: "mistral", model });
+  }
+  return out;
+}
+
+// P181d: the backup chain with the breaker applied. Healthy models first (Gemini
+// by recent success rate unless the caller gave its own list, then Mistral);
+// models in their 6 h skip window are tried only when all of those failed, so
+// the breaker saves the waiting but never removes a model that could answer.
+// No state (read failed) or nothing to reorder = callBackups exactly as before.
+async function callBackupsRouted(
+  req: AnthropicMessagesRequest,
+  fallback: boolean,
+  signal?: AbortSignal,
+  geminiModelList?: string[],
+  geminiModelTimeoutMs?: number,
+): Promise<Response> {
+  const state = await loadRouteState();
+  if (!state || state.length === 0) return callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs);
+  const plan = orderCandidates(backupCandidates(geminiModelList), state, Date.now(), {
+    keepGeminiOrder: !!(geminiModelList && geminiModelList.length),
+  });
+  if (plan.allSkipped || plan.primary.length === 0) {
+    return callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs);
+  }
+  const first: BackupPick = { gemini: modelsOf(plan.primary, "gemini"), mistral: modelsOf(plan.primary, "mistral") };
+  const rest: BackupPick = { gemini: modelsOf(plan.lastResort, "gemini"), mistral: modelsOf(plan.lastResort, "mistral") };
+  console.log(
+    "[llm] route gemini=" + (first.gemini.join(",") || "-") + " mistral=" + (first.mistral.join(",") || "-") +
+      " skipped=" + (plan.lastResort.map((c) => c.model).join(",") || "-"),
+  );
+  if (rest.gemini.length + rest.mistral.length === 0) {
+    return callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs, first);
+  }
+  let last: Response | null = null;
+  let lastError: unknown = null;
+  try {
+    const res = await callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs, first);
+    if (res.ok) return res;
+    last = res;
+  } catch (e) {
+    if (isAbortError(e, signal)) throw e;
+    lastError = e;
+  }
+  if (signal?.aborted) {
+    if (last) return last;
+    throw lastError;
+  }
+  console.log("[llm] route last_resort reason=healthy_models_failed");
+  return callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs, rest);
 }
 
 async function callBackups(
@@ -763,23 +870,27 @@ async function callBackups(
   signal?: AbortSignal,
   geminiModelList?: string[],
   geminiModelTimeoutMs?: number,
+  pick?: BackupPick,
 ): Promise<Response> {
+  // P181d: `pick` narrows / reorders the models of this pass; without it, as before.
+  const useGemini = geminiConfigured() && (!pick || pick.gemini.length > 0);
+  const useMistral = mistralConfigured() && (!pick || pick.mistral.length > 0);
   let last: Response | null = null;
   let lastError: unknown = null;
-  if (geminiConfigured()) {
+  if (useGemini) {
     try {
-      const res = await callGemini(req, fallback, signal, geminiModelList, geminiModelTimeoutMs);
+      const res = await callGemini(req, fallback, signal, pick ? pick.gemini : geminiModelList, geminiModelTimeoutMs);
       if (res.ok) return res;
       last = res;
     } catch (e) {
-      if (isAbortError(e, signal) || !mistralConfigured()) throw e;
+      if (isAbortError(e, signal) || !useMistral) throw e;
       lastError = e;
     }
   }
-  if (mistralConfigured() && !signal?.aborted) {
-    console.log("[llm] provider=mistral reason=" + (geminiConfigured() ? "gemini_failed" : "no_gemini_key") +
+  if (useMistral && !signal?.aborted) {
+    console.log("[llm] provider=mistral reason=" + (useGemini ? "gemini_failed" : geminiConfigured() ? "gemini_skipped" : "no_gemini_key") +
       (last ? " gemini_status=" + last.status : lastError ? " gemini_error=" + String(lastError).slice(0, 80) : ""));
-    return callMistral(req, fallback, signal);
+    return callMistral(req, fallback, signal, pick ? pick.mistral : undefined);
   }
   if (last) return last;
   if (lastError) throw lastError;
@@ -812,9 +923,38 @@ export async function anthropicMessages(
   if (!apiKey) {
     if (forced !== "anthropic" && backupConfigured()) {
       console.log("[llm] provider=backup reason=missing_env:ANTHROPIC_API_KEY");
-      return callBackups(req, true, signal, undefined, gcap);
+      return callBackupsRouted(req, true, signal, undefined, gcap);
     }
     throw new Error("missing_env:ANTHROPIC_API_KEY");
+  }
+
+  // P181d: Claude in its skip window (credit / auth / 429 / 5xx in the last 6 h)
+  // and at least one backup model outside its own window: the backups go first.
+  // If they all fail, Claude is still tried below (it may be back), and when it
+  // fails too the caller sees the backups' failure, as before.
+  let tried: { res: Response | null; error: unknown } | null = null;
+  if (forced !== "anthropic" && backupConfigured()) {
+    const state = await loadRouteState();
+    const now = Date.now();
+    if (
+      state && isSkipped({ provider: "anthropic", model: req.model }, state, now) &&
+      backupCandidates().some((c) => !isSkipped(c, state, now))
+    ) {
+      console.log("[llm] provider=backup reason=anthropic_skip_window");
+      try {
+        const r = await callBackupsRouted(req, true, signal, undefined, gcap);
+        if (r.ok) return r;
+        tried = { res: r, error: null };
+      } catch (e) {
+        if (isAbortError(e, signal)) throw e;
+        tried = { res: null, error: e };
+      }
+      if (signal?.aborted) {
+        if (tried.res) return tried.res;
+        throw tried.error;
+      }
+      console.log("[llm] provider=anthropic reason=backups_failed_last_resort");
+    }
   }
 
   const t0 = Date.now();
@@ -833,15 +973,21 @@ export async function anthropicMessages(
   } catch (e) {
     const aborted = (e instanceof DOMException && e.name === "AbortError") || signal?.aborted;
     logCall({ ...anthropicRow(req.model, Date.now() - t0), error_class: aborted ? "timeout" : "network" });
-    if (aborted || forced === "anthropic" || !backupConfigured()) throw e;
+    if (tried && tried.res && !aborted) return tried.res;
+    if (aborted || forced === "anthropic" || !backupConfigured() || tried) throw e;
     console.log("[llm] provider=backup reason=anthropic_network:" + String(e).slice(0, 120));
-    return callBackups(req, true, signal, undefined, gcap);
+    return callBackupsRouted(req, true, signal, undefined, gcap);
   }
   const latency = Date.now() - t0;
 
   if (res.ok) {
     logAnthropicOk(res, req.model, latency);
     return res;
+  }
+  if (tried) {
+    // The backups already ran and failed; do not walk them a second time.
+    logAnthropicFailUnread(res, req.model, latency);
+    return tried.res ?? res;
   }
   if (forced === "anthropic" || !backupConfigured()) {
     logAnthropicFailUnread(res, req.model, latency);
@@ -855,5 +1001,5 @@ export async function anthropicMessages(
     return new Response(body, { status: res.status, headers: res.headers });
   }
   console.log("[llm] provider=backup reason=anthropic_http_" + res.status + " " + body.slice(0, 160).replace(/\s+/g, " "));
-  return callBackups(req, true, signal, undefined, gcap);
+  return callBackupsRouted(req, true, signal, undefined, gcap);
 }

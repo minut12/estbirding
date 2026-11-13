@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { deletePushSub, upsertPushSub } from '@/lib/pushSubscriptionApi';
 
 // Exported for src/lib/pushReconcile.ts (P35) — the app-shell reconcile must use
 // the same key and the same default species list as this hook.
@@ -158,19 +158,14 @@ export function useNotificationSubscription(): SubscriptionAPI {
 
       const deviceLabel = (navigator.userAgent || '').slice(0, 100);
 
-      const { error: upsertErr } = await supabase
-        .from('push_subscriptions')
-        .upsert(
-          {
-            endpoint,
-            key_p256dh: p256dh,
-            key_auth: auth,
-            subscribed_species: speciesList,
-            device_label: deviceLabel,
-          },
-          { onConflict: 'endpoint' },
-        );
-      if (upsertErr) throw upsertErr;
+      const upsertErr = await upsertPushSub({
+        endpoint,
+        p256dh,
+        auth,
+        species: speciesList,
+        deviceLabel,
+      });
+      if (upsertErr) throw new Error(upsertErr);
 
       if (mountedRef.current) {
         setState({ status: 'subscribed', endpoint });
@@ -197,11 +192,8 @@ export function useNotificationSubscription(): SubscriptionAPI {
         } catch (err) {
           console.warn('[push] unsubscribe() threw', err);
         }
-        const { error: delErr } = await supabase
-          .from('push_subscriptions')
-          .delete()
-          .eq('endpoint', endpoint);
-        if (delErr) throw delErr;
+        const delErr = await deletePushSub(endpoint);
+        if (delErr) throw new Error(delErr);
       }
       if (mountedRef.current) {
         setState({ status: 'unsubscribed' });

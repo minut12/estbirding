@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell, BellOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { supabase } from '@/integrations/supabase/client';
 import { getFunctionsBaseUrl, getSupabaseAuthHeaders } from '@/config/supabaseConfig';
 import { log } from '@/lib/eventLog';
 import { reconcilePushSubscription } from '@/lib/pushReconcile';
+import { getPushSub } from '@/lib/pushSubscriptionApi';
+import { supabase } from '@/config/supabaseClient';
+import { useAuth } from '@/features/auth/AuthContext';
 import { useNotificationSubscription } from './useNotificationSubscription';
 
 // P35: 'needs-reenable' is permission granted but no live subscription — the
@@ -17,6 +19,17 @@ const STATUS_TEXT: Record<Exclude<DbStatus, 'unknown'>, string> = {
   missing: 'Tellimus andmebaasis: puudub',
   'needs-reenable': 'Teavitused vajavad uuesti sisselülitamist',
 };
+
+// P181e: owner-only opt-in for feed-health alert pushes on this device (admin RPCs).
+type OpsAlertsRpcResult = Promise<{ data: unknown; error: { message: string } | null }>;
+interface OpsAlertsRpcClient {
+  rpc(fn: 'admin_get_ops_alerts', args: { p_endpoint: string }): OpsAlertsRpcResult;
+  rpc(fn: 'admin_set_ops_alerts', args: { p_endpoint: string; p_on: boolean }): OpsAlertsRpcResult;
+}
+
+function opsAlertsClient(): OpsAlertsRpcClient {
+  return supabase as unknown as OpsAlertsRpcClient;
+}
 
 interface TestPushResponse {
   ok?: boolean;
@@ -93,6 +106,11 @@ export default function NotificationSettingsCard({ variant = 'card' }: Notificat
   const [testResult, setTestResult] = useState<string | null>(null);
   const [swStatus, setSwStatus] = useState<SwStatus>('pending');
   const mountedRef = useRef(true);
+  const { isAdmin } = useAuth();
+  const [opsAlerts, setOpsAlerts] = useState(false);
+  const [opsBusy, setOpsBusy] = useState(false);
+  const [opsError, setOpsError] = useState<string | null>(null);
+  const showOpsToggle = isAdmin && variant === 'status' && dbStatus === 'present' && endpoint !== null;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -139,13 +157,9 @@ export default function NotificationSettingsCard({ variant = 'card' }: Notificat
         return;
       }
       setEndpoint(sub.endpoint);
-      const { data, error: selectErr } = await supabase
-        .from('push_subscriptions')
-        .select('endpoint')
-        .eq('endpoint', sub.endpoint)
-        .maybeSingle();
+      const { row, error: selectErr } = await getPushSub(sub.endpoint);
       if (!mountedRef.current) return;
-      setDbStatus(!selectErr && data ? 'present' : 'missing');
+      setDbStatus(!selectErr && row ? 'present' : 'missing');
     } catch {
       if (mountedRef.current) setDbStatus('missing');
     }
@@ -157,6 +171,29 @@ export default function NotificationSettingsCard({ variant = 'card' }: Notificat
     if (state.status === 'unknown' || state.status === 'unsupported') return;
     void refreshStatus();
   }, [state.status, refreshStatus]);
+
+  // P181e: read the device's ops-alert flag once the row is known to exist.
+  useEffect(() => {
+    if (!showOpsToggle || !endpoint) return;
+    let active = true;
+    void opsAlertsClient().rpc('admin_get_ops_alerts', { p_endpoint: endpoint }).then(({ data, error: rpcErr }) => {
+      if (active && !rpcErr) setOpsAlerts(data === true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [showOpsToggle, endpoint]);
+
+  const toggleOpsAlerts = useCallback(async (on: boolean) => {
+    if (!endpoint || opsBusy) return;
+    setOpsBusy(true);
+    setOpsError(null);
+    const { data, error: rpcErr } = await opsAlertsClient().rpc('admin_set_ops_alerts', { p_endpoint: endpoint, p_on: on });
+    if (!mountedRef.current) return;
+    if (rpcErr) setOpsError(rpcErr.message);
+    else setOpsAlerts(data === true);
+    setOpsBusy(false);
+  }, [endpoint, opsBusy]);
 
   const sendTestPush = useCallback(async () => {
     if (!endpoint || sending) return;
@@ -204,6 +241,20 @@ export default function NotificationSettingsCard({ variant = 'card' }: Notificat
         <StatusRow label="Brauseri luba" value={permissionStatus()} />
         <StatusRow label="Service worker" value={swStatusValue(swStatus)} />
         <StatusRow label="Tellimus andmebaasis" value={dbStatusValue(dbStatus)} />
+        {showOpsToggle && (
+          <div className="min-h-[44px] px-3.5 py-2 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <span className="text-sm text-foreground">Teavita mind andmevoogude t&otilde;rgetest</span>
+              {opsError && <p className="text-[13px] text-destructive break-words">Viga: {opsError}</p>}
+            </div>
+            <Switch
+              checked={opsAlerts}
+              onCheckedChange={(c) => { void toggleOpsAlerts(c); }}
+              disabled={opsBusy}
+              aria-label="Teavita mind andmevoogude t&otilde;rgetest"
+            />
+          </div>
+        )}
         <div className="px-3.5 py-3 space-y-2">
           <Button
             variant="outline"

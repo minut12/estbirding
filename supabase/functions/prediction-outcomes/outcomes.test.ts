@@ -131,6 +131,73 @@ Deno.test("projectPhenologyEnd returns null when the window is absent", () => {
   assertEquals(projectPhenologyEnd("[2000-04-20,2000-06-21)", Number.NaN), null);
 });
 
+// P182a: year rollover. 'fall_winter' raports run Aug-Feb, so Jan/Feb raports
+// read the autumn window of the season that began the previous year.
+const AUTUMN_RANGE = "[2000-08-01,2000-10-16)";
+
+function autumnWindowFor(generatedAt: string) {
+  const d = dateOnly(generatedAt);
+  const end = projectPhenologyEnd(
+    AUTUMN_RANGE,
+    Number(d.slice(0, 4)),
+    seasonWindowKind(null, "fall_winter"),
+    Number(d.slice(5, 7)),
+  );
+  return {
+    end,
+    window: deriveWindow({
+      band: "in_season",
+      generatedAt,
+      phenologyEnd: end,
+    }),
+  };
+}
+
+Deno.test("rollover: an ordinary Sep 2026 raport keeps its own year and is scored", () => {
+  const r = autumnWindowFor("2026-09-08 16:10:00+00");
+  assertEquals(r.end, "2026-10-15");
+  assertEquals(r.window?.notScoredReason, null);
+  assertEquals(r.window?.windowEnd, "2026-10-15");
+});
+
+Deno.test("rollover: a Dec 2026 raport is season over", () => {
+  const r = autumnWindowFor("2026-12-20 16:10:00+00");
+  assertEquals(r.end, "2026-10-15");
+  assertEquals(r.window?.notScoredReason, "out_of_phenology");
+});
+
+Deno.test("rollover: a Jan 2027 raport projects autumn onto 2026, season over", () => {
+  const r = autumnWindowFor("2027-01-05 16:10:00+00");
+  assertEquals(r.end, "2026-10-15");
+  assertEquals(r.window?.notScoredReason, "out_of_phenology");
+});
+
+Deno.test("rollover: a Feb 2027 raport projects autumn onto 2026, season over", () => {
+  const r = autumnWindowFor("2027-02-28 16:10:00+00");
+  assertEquals(r.end, "2026-10-15");
+  assertEquals(r.window?.notScoredReason, "out_of_phenology");
+});
+
+Deno.test("rollover: a year-crossing autumn window ends 31 Dec of the previous year in Jan", () => {
+  assertEquals(
+    projectPhenologyEnd("[2000-10-15,2001-01-01)", 2027, "autumn", 1),
+    "2026-12-31",
+  );
+});
+
+Deno.test("rollover: spring windows and Mar+ raports are not shifted", () => {
+  assertEquals(
+    projectPhenologyEnd("[2000-04-20,2000-06-21)", 2027, "spring", 2),
+    "2027-06-20",
+  );
+  assertEquals(
+    projectPhenologyEnd(AUTUMN_RANGE, 2027, "autumn", 3),
+    "2027-10-15",
+  );
+  // Without season/month the projection is unchanged.
+  assertEquals(projectPhenologyEnd(AUTUMN_RANGE, 2027), "2027-10-15");
+});
+
 // ---------------------------------------------------------------------------
 // Season selection
 // ---------------------------------------------------------------------------

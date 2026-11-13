@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-13 - P182a Tallinn year + season gate + get_elurikkus_spring_arrivals RPC (no row scan)
 // supabase/functions/get-elurikkus-arrivals-2026/index.ts
 //
 // Public endpoint returning species that arrived in Estonia in 2026.
@@ -20,15 +21,23 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
-const YEAR = 2026;
-const YEAR_START = `${YEAR}-01-01`;
-const PREV_DEC_START = `${YEAR - 1}-12-01`;
-const PREV_DEC_END = `${YEAR - 1}-12-31`;
-const EARLY_JAN_END = `${YEAR}-01-15`;
+// P182a: year and date come from the Europe/Tallinn clock, per request.
+// en-CA formats as YYYY-MM-DD.
+function tallinnToday(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Tallinn",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
 
-interface ObsRow {
+// One element of public.get_elurikkus_spring_arrivals(p_year).
+interface ArrivalAggRow {
   species_name: string;
-  observed_at: string;
+  obs_count: number;
+  has_winter_obs: boolean;
+  first_obs_date: string | null;
   locality: string | null;
   county: string | null;
   observer: string | null;
@@ -82,57 +91,74 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  // Paginate to bypass Supabase 1000-row default limit.
-  const PAGE_SIZE = 1000;
-  const rows: ObsRow[] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("elurikkus_observations")
-      .select("species_name, observed_at, locality, county, observer")
-      .gte("observed_at", PREV_DEC_START)
-      .order("observed_at", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
+  const today = tallinnToday();
+  const YEAR = Number(today.slice(0, 4));
+  const YEAR_START = `${YEAR}-01-01`;
+  const PREV_DEC_START = `${YEAR - 1}-12-01`;
+  const EARLY_JAN_END = `${YEAR}-01-15`;
+  // Season gate: spring arrivals are only reported 1 Jan - 1 Jul (Tallinn).
+  const SEASON_END = `${YEAR}-07-01`;
+  const seasonActive = today <= SEASON_END;
 
-    if (error) {
-      return new Response(
-        JSON.stringify({ error: error.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-    if (!data || data.length === 0) break;
-    rows.push(...(data as ObsRow[]));
-    if (data.length < PAGE_SIZE) break;
-    if (rows.length >= 100000) break; // safety cap
+  if (!seasonActive) {
+    return new Response(
+      JSON.stringify({
+        arrivals: [],
+        meta: {
+          year: YEAR,
+          baseline: YEAR_START,
+          winter_window: `${PREV_DEC_START} to ${EARLY_JAN_END}`,
+          season_active: false,
+          season_end: SEASON_END,
+          today,
+          total_obs_scanned: 0,
+          species_evaluated: 0,
+          arrivals_returned: 0,
+          manual_overrides_applied: 0,
+        },
+      }),
+      {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=600",
+        },
+      },
+    );
   }
+
+  // One SQL aggregate (first obs + winter flag per species) instead of a
+  // paged row scan; the scan's 100k cap used to cut the year off in April.
+  const { data: aggData, error: aggError } = await supabase.rpc(
+    "get_elurikkus_spring_arrivals",
+    { p_year: YEAR },
+  );
+  if (aggError) {
+    return new Response(
+      JSON.stringify({ error: aggError.message }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+  const aggRows: ArrivalAggRow[] = Array.isArray(aggData)
+    ? aggData as ArrivalAggRow[]
+    : [];
 
   type SpeciesState = {
     has_winter_obs: boolean;
-    first_2026: ObsRow | null;
+    first_obs: ArrivalAggRow | null;
   };
   const bySpecies = new Map<string, SpeciesState>();
+  let totalObsScanned = 0;
 
-  for (const r of rows) {
+  for (const r of aggRows) {
     const sp = r.species_name;
     if (!sp) continue;
-    const d = String(r.observed_at).slice(0, 10);
-    if (!d) continue;
-
-    let s = bySpecies.get(sp);
-    if (!s) {
-      s = { has_winter_obs: false, first_2026: null };
-      bySpecies.set(sp, s);
-    }
-
-    if (
-      (d >= PREV_DEC_START && d <= PREV_DEC_END) ||
-      (d >= YEAR_START && d <= EARLY_JAN_END)
-    ) {
-      s.has_winter_obs = true;
-    }
-
-    if (d >= YEAR_START && !s.first_2026) {
-      s.first_2026 = r;
-    }
+    totalObsScanned += Number(r.obs_count) || 0;
+    bySpecies.set(sp, {
+      has_winter_obs: r.has_winter_obs === true,
+      first_obs: r.first_obs_date ? r : null,
+    });
   }
 
   // Fetch species_meta_v1.json from storage for manual overrides
@@ -168,7 +194,7 @@ serve(async (req) => {
   }> = [];
 
   for (const [species_et, state] of bySpecies) {
-    if (!state.first_2026) continue;
+    if (!state.first_obs || !state.first_obs.first_obs_date) continue;
 
     const meta = speciesMeta[species_et];
     // Explicit species_meta override always wins. If absent, fall back to
@@ -192,10 +218,10 @@ serve(async (req) => {
 
     arrivals.push({
       species_et,
-      first_obs_date: state.first_2026.observed_at,
-      locality: state.first_2026.locality,
-      county: state.first_2026.county,
-      observer: state.first_2026.observer,
+      first_obs_date: state.first_obs.first_obs_date,
+      locality: state.first_obs.locality,
+      county: state.first_obs.county,
+      observer: state.first_obs.observer,
       filter_source: manualOverride !== undefined ? "manual" : "heuristic",
       is_migrant_override: typeof manualOverride === "boolean" ? manualOverride : null,
     });
@@ -212,7 +238,10 @@ serve(async (req) => {
         year: YEAR,
         baseline: YEAR_START,
         winter_window: `${PREV_DEC_START} to ${EARLY_JAN_END}`,
-        total_obs_scanned: rows.length,
+        season_active: true,
+        season_end: SEASON_END,
+        today,
+        total_obs_scanned: totalObsScanned,
         species_evaluated: bySpecies.size,
         arrivals_returned: arrivals.length,
         manual_overrides_applied: arrivals.filter((a) => a.filter_source === "manual").length,

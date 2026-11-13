@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-13 - P182a Jan/Feb raports project the autumn window onto the previous year
 // prediction-outcomes
 // P7b: scores closed Tõenäosus predictions against real Estonian arrivals and
 // writes public.prediction_outcomes, the calibration set.
@@ -463,6 +464,7 @@ Deno.serve(async (req) => {
     for (const raport of raports) {
       const generatedDate = dateOnly(raport.generated_at);
       const raportYear = Number(generatedDate.slice(0, 4));
+      const raportMonth = Number(generatedDate.slice(5, 7));
 
       /**
        * One item from either array. `entries` and `corridor_watchlist` differ
@@ -502,7 +504,12 @@ Deno.serve(async (req) => {
           : seasonKind === "autumn"
           ? phenRow.autumn_window
           : phenRow.spring_window;
-        const phenologyEnd = projectPhenologyEnd(rangeText, raportYear);
+        const phenologyEnd = projectPhenologyEnd(
+          rangeText,
+          raportYear,
+          seasonKind,
+          raportMonth,
+        );
 
         const window = deriveWindow({
           band,

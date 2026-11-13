@@ -215,10 +215,19 @@ export function parseDaterange(text: unknown): ParsedDaterange | null {
  *
  * Feb 29 in a non-leap target year rolls forward to Mar 1 via Date.UTC, which
  * is a one-day imprecision on a window measured in weeks. Not corrected.
+ *
+ * P182a: the raport season 'fall_winter' runs Aug-Feb, so a January or
+ * February raport still maps to the AUTUMN window. That autumn began in the
+ * previous calendar year, so it is projected onto `raportYear - 1`; otherwise
+ * a Jan 2027 raport would get next October's window and be scored, while a
+ * Dec 2026 raport is "season over". Pass `seasonKind` and `raportMonth`
+ * (1-12) to enable this; without them the projection is unchanged.
  */
 export function projectPhenologyEnd(
   rangeText: unknown,
   raportYear: number,
+  seasonKind: SeasonKind | null = null,
+  raportMonth: number | null = null,
 ): string | null {
   const parsed = parseDaterange(rangeText);
   if (!parsed) return null;
@@ -230,8 +239,12 @@ export function projectPhenologyEnd(
 
   const month = Number(parsed.upperISO.slice(5, 7));
   const day = Number(parsed.upperISO.slice(8, 10));
+  const baseYear = seasonKind === "autumn" && raportMonth !== null &&
+      raportMonth >= 1 && raportMonth <= 2
+    ? raportYear - 1
+    : raportYear;
   const projected = new Date(
-    Date.UTC(raportYear + yearOffset, month - 1, day),
+    Date.UTC(baseYear + yearOffset, month - 1, day),
   ).toISOString().slice(0, 10);
 
   return parsed.upperInclusive ? projected : addDays(projected, -1);

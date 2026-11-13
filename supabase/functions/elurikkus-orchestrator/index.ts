@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-13 - P182a no kevadranne narrative when the arrivals list is empty (out of season)
 // redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
 // redeploy-marker: 2026-09-24 - P75 default model claude-sonnet-4-6 -> claude-sonnet-5 (env override unchanged)
@@ -658,6 +659,12 @@ async function runCodeNode(triggerSource: string): Promise<CodeCtx> {
     2,
   );
 
+  // P182a: outside the spring season the arrivals endpoint returns [];
+  // then Sonnet must not write a spring-migration narrative.
+  const noArrivalsNote = kevadranneArrivals.length === 0
+    ? "\nNo spring arrivals for this period (out of season). Return kevadranne_narrative_et as null; do NOT write a spring migration narrative."
+    : "";
+
   const userMessage = `Periood: ${periodStart} kuni ${periodEnd}.
 
 EESTI VAATLUSED (rare/super/mega liigid, viimased 14 päeva, ${rarityEntries.length} kirjet):
@@ -666,7 +673,7 @@ RIKASTA IGA ÜKS NEIST. ÄRA filtreeri, ära välja jäta. Säilitada algne jär
 ${JSON.stringify(rarityEntries, null, 2)}
 
 KEVADRÄNNE SAABUJAD (kasuta narratiivi kontekstis, kevadranne_arrivals tagasta tühjana []):
-${arrivalsHintBlock}
+${arrivalsHintBlock}${noArrivalsNote}
 
 Koosta JSON-vastus täpselt vastavalt süsteemi juhistele. Output peab sisaldama TÄPSELT ${rarityEntries.length} entryt estonia.entries massiivis.`;
 
@@ -1026,7 +1033,10 @@ function parseAnthropicResponse(
     period_start: report.period_start,
     period_end: report.period_end,
     intro_et: report.intro_et || null,
-    kevadranne_narrative_et: report.kevadranne_narrative_et || null,
+    // P182a: no arrivals -> no narrative, whatever Sonnet returned.
+    kevadranne_narrative_et: deterministicArrivals.length > 0
+      ? (report.kevadranne_narrative_et || null)
+      : null,
     kevadranne_arrivals: deterministicArrivals,
     estonia_entries: report.estonia?.entries || [],
     generation_meta: generationMeta,

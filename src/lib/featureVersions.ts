@@ -143,6 +143,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-28', ref: 'P172b', kind: 'patch', text: 'Liigiinfo: naabermaade vaatlustes ka Euroopa kaardi andmed' },
       { date: '2026-10-28', ref: 'P174', kind: 'patch', text: 'Liigiinfo: HK andmed eestikeelse nime j\u00e4rgi, kiibil HK k\u00e4sitlusala' },
       { date: '2026-10-30', ref: 'P179', kind: 'patch', text: 'Liigiinfo: haruldus, naabermaade vaatlused ja n\u00e4dalagraafik laaditakse kohe' },
+      { date: '2026-11-13', ref: 'P182b', kind: 'patch', text: '\u00dchtsed v\u00e4rvid, tekst v\u00e4hemalt 12 px' },
     ],
   },
   {
@@ -183,6 +184,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-28', ref: 'P176', kind: 'patch', text: 'Fotode ja helide rida ei l\u00e4he enam kaardi servast v\u00e4lja' },
       { date: '2026-10-29', ref: 'P177a', kind: 'patch', text: 'Liigikaart avaneb j\u00e4lle t\u00e4pselt m\u00e4rgi kohal' },
       { date: '2026-10-29', ref: 'P178e', kind: 'minor', text: 'Kaardil on ka LOFK (Leedu) ja Tarsigeri haruldused, sama lind ainult korra' },
+      { date: '2026-11-13', ref: 'P182b', kind: 'patch', text: '\u00dchtsed v\u00e4rvid, tekst v\u00e4hemalt 12 px, klaviatuuriga liikudes on fookus n\u00e4htav' },
     ],
   },
   {
@@ -207,6 +209,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-26', ref: 'P164', kind: 'patch', text: 'Sama p\u00e4eva vaatlustest n\u00e4idatakse kellaaja j\u00e4rgi uusimat' },
       { date: '2026-10-26', ref: 'P165', kind: 'patch', text: 'M\u00e4rge \u201eFotoga vaatlus\u201c ainult kaardil oleva vaatluse foto korral' },
       { date: '2026-10-29', ref: 'P177b', kind: 'patch', text: 'Mobiilis nimekirja ja kaardi nupp nagu Linnuliigid kaardil' },
+      { date: '2026-11-13', ref: 'P182b', kind: 'patch', text: '\u00dchtsed v\u00e4rvid, tekst v\u00e4hemalt 12 px' },
     ],
   },
   {
@@ -409,6 +412,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-05-05', ref: 'c9bb95b', kind: 'major', text: 'Saabujad: aasta esimesed vaatlused' },
       { date: '2026-05-07', ref: 'eaa6651', kind: 'patch', text: 'Liigiandmete ja kuup\u00e4evafiltri parandused' },
       { date: '2026-09-28', ref: 'P85a', kind: 'minor', text: 'N\u00e4ha 1. jaanuarist 1. juulini' },
+      { date: '2026-11-13', ref: 'P182a', kind: 'patch', text: 'Saabujad ka p\u00e4rast 15. aprilli, aasta Tallinna aja j\u00e4rgi' },
     ],
   },
   {
@@ -428,6 +432,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-09-28', ref: 'P85c', kind: 'patch', text: 'Hinnangu t\u00fchistamine uue kl\u00f5psuga, m\u00e4rkus salvestub' },
       { date: '2026-09-30', ref: 'P85g', kind: 'minor', text: 'Kasutaja m\u00e4rkus j\u00f5uab Sonnetini' },
       { date: '2026-11-13', ref: 'P181k', kind: 'minor', text: 'Ennustuste t\u00e4psus liigiti' },
+      { date: '2026-11-13', ref: 'P182a', kind: 'patch', text: 'Jaanuari ja veebruari ennustusi hinnatakse \u00f5ige hooaja j\u00e4rgi' },
     ],
   },
   {

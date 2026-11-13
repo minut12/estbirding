@@ -1,0 +1,98 @@
+/* public/maps/shared/map-tokens.css - P181 shared map tokens (values = current literals, no visual change) */
+:root{
+  --eb-white:#ffffff; /* surface (--sb-bg) */
+  --eb-moss-900:#222a26; /* ink (--sb-ink) */
+  --eb-moss-850:#2a3530; /* card heading ink */
+  --eb-moss-800:#3a4540; /* strong body ink */
+  --eb-moss-700:#4a5852; /* ink-2 (--sb-ink2) */
+  --eb-moss-650:#5f7168; /* species-info muted */
+  --eb-moss-620:#6b7770; /* species-info caption */
+  --eb-moss-600:#6c7f74; /* muted (--sb-muted) */
+  --eb-moss-450:#8a9a91; /* photo credit */
+  --eb-moss-400:#9aa9a0; /* faint / disabled */
+  --eb-moss-200:#dde4df; /* line (--sb-line) */
+  --eb-moss-150:#e3e8e4; /* soft line */
+  --eb-moss-130:#e7eeea; /* soft line 2 */
+  --eb-moss-100:#eef2ef; /* line-2 (--sb-line2) */
+  --eb-moss-75:#f1f4f2; /* hover fill */
+  --eb-moss-60:#f4f6f5; /* note fill */
+  --eb-moss-50:#f2f8f4; /* surface-2 (--sb-bg2) */
+  --eb-green-700:#2d7a4b; /* primary (--sb-primary) */
+  --eb-green-900:#1f5a36; /* primary pressed */
+  --eb-green-200:#cfe3d5; /* primary line */
+  --eb-green-180:#d3e8da; /* primary line 2 */
+  --eb-green-100:#e4f1e8; /* primary-soft (--sb-primary-soft) */
+  --eb-green-75:#eaf5ef; /* primary tint */
+  --eb-green-50:#eef6f0; /* primary wash */
+  --eb-green-500:#27ae60; /* legacy marker green */
+  --eb-teal-500:#00aa77; /* legacy button (--btn #0a7) */
+  --eb-green-25:#f0fdf4; /* snapshot banner fill */
+  --eb-green-300:#bbf7d0; /* snapshot banner line */
+  --eb-amber-700:#b45309; /* warn (--sb-warn) */
+  --eb-amber-800:#92400e; /* warn ink */
+  --eb-amber-850:#8a4b06; /* warn ink 2 */
+  --eb-amber-860:#8a4a0f; /* ext-source ink (Euroopa) */
+  --eb-amber-900:#7a4f00; /* pending pill ink */
+  --eb-amber-950:#5b4423; /* Kevadranne ink */
+  --eb-amber-300:#f2c78a; /* pending pill line */
+  --eb-amber-250:#f0d9b8; /* Kevadranne line */
+  --eb-amber-200:#fde68a; /* highlight line */
+  --eb-amber-100:#fef3c7; /* highlight fill */
+  --eb-amber-75:#fbeedd; /* warn-soft (--sb-warn-soft) */
+  --eb-amber-60:#fff1d1; /* pending pill fill */
+  --eb-amber-50:#fff4e0; /* warn wash */
+  --eb-amber-40:#fff8e6; /* warn wash 2 */
+  --eb-orange-50:#fff7ed; /* note fill (orange) */
+  --eb-orange-800:#9a3412; /* note ink (orange) */
+  --eb-red-700:#b91c1c; /* crit (--sb-crit) */
+  --eb-red-600:#dc2626; /* error */
+  --eb-red-500:#e74c3c; /* legacy red */
+  --eb-red-200:#fecaca; /* error line */
+  --eb-red-100:#fee2e2; /* error fill */
+  --eb-slate-900:#0f172a; /* legacy ink */
+  --eb-gray-900:#111827; /* legacy ink 2 */
+  --eb-slate-700:#334155; /* legacy body */
+  --eb-slate-600:#475569; /* legacy body 2 */
+  --eb-slate-500:#64748b; /* legacy muted */
+  --eb-slate-400:#94a3b8; /* legacy faint */
+  --eb-slate-300:#cbd5e1; /* legacy line */
+  --eb-slate-200:#e2e8f0; /* legacy line 2 */
+  --eb-slate-150:#eef2f7; /* legacy fill */
+  --eb-slate-120:#eef2f5; /* legacy fill 2 */
+  --eb-slate-50:#f8fafc; /* legacy surface */
+  --eb-gray-500:#6b7280; /* legacy muted (--muted) */
+  --eb-gray-300:#d1d5db; /* legacy line 3 */
+  --eb-gray-200:#e5e7eb; /* legacy line (--line) */
+  --eb-gray-100:#f3f4f6; /* legacy fill 3 */
+  --eb-black:#111111; /* rarity badge bg */
+  --eb-grey-222:#222222; /* legacy text */
+  --eb-grey-666:#666666; /* legacy muted */
+  --eb-grey-888:#888888; /* legacy muted 2 */
+  --eb-grey-999:#999999; /* legacy faint */
+  --eb-grey-ddd:#dddddd; /* legacy line */
+  --eb-grey-eee:#eeeeee; /* legacy fill */
+  --eb-cyan-700:#0e7490; /* eBird source (--sc / --sb-ebird) */
+  --eb-cyan-800:#155e75; /* eBird ink (--sc-ink) */
+  --eb-cyan-50:#e0f2f5; /* eBird soft (--sc-soft) */
+  --eb-cyan-100:#d5e7ec; /* eBird line */
+  --eb-cyan-25:#eef6f8; /* eBird wash */
+  --eb-sky-500:#2299cc; /* legacy accent */
+  --eb-blue-700:#1d5fa8; /* Elurikkus source (Rariliin) */
+  --eb-blue-800:#174a83; /* Elurikkus ink (Rariliin) */
+  --eb-blue-50:#e3edf9; /* Elurikkus soft (Rariliin) */
+  --eb-navy-800:#1e3a8a; /* GPS layer (Euroopa) */
+  --eb-violet-600:#7c3aed; /* prediction */
+  --eb-violet-700:#6d28d9; /* prediction ink */
+  --eb-violet-650:#6d4fd8; /* prediction pill */
+  --eb-indigo-600:#4f46e5; /* GBIF source */
+  --eb-indigo-25:#eeeeff; /* legacy pill fill (#eef) */
+  --eb-indigo-50:#eef2ff; /* legacy chip fill */
+  --eb-z-panel:1000; /* floating map panels, Leaflet controls */
+  --eb-z-sticky:1200; /* sidebar controls that must stay above the map */
+  --eb-z-popup:1500; /* desktop popovers anchored to the map */
+  --eb-z-sheet:4000; /* mobile off-canvas sidebar and full-screen sheets */
+  --eb-z-overlay:9000; /* modal backdrops and dialogs */
+  --eb-z-toast:9500; /* transient toasts (top of everything) */
+  --eb-focus-ring:2px solid var(--eb-green-700);
+  --eb-focus-offset:2px;
+}

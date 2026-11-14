@@ -13,11 +13,14 @@ function emptyReport(): ResetReport {
   return { clearedCaches: [], clearedStorage: false, clearedSession: false, clearedIdb: [], unregisteredSw: 0, errors: [] };
 }
 
-async function clearCacheStorage(report: ResetReport) {
+// P183f: offline caches that survive deploys; the update banner keeps them.
+const OFFLINE_CACHE_PREFIXES = ['estbirding-lib-', 'estbirding-tiles-', 'estbirding-avatars-', 'estbirding-data-'];
+
+async function clearCacheStorage(report: ResetReport, keep?: (name: string) => boolean) {
   if (!('caches' in window)) return;
   try {
     const keys = await caches.keys();
-    await Promise.all(keys.map(async (k) => {
+    await Promise.all(keys.filter((k) => !(keep && keep(k))).map(async (k) => {
       await caches.delete(k);
       report.clearedCaches.push(k);
     }));
@@ -70,10 +73,10 @@ async function clearIndexedDB(report: ResetReport) {
   }
 }
 
-/** Soft reset: caches + SW + reload */
-export async function clearAppCaches(): Promise<ResetReport> {
+/** Soft reset: caches + SW + reload. keepOffline keeps the deploy-surviving offline caches. */
+export async function clearAppCaches(opts?: { keepOffline?: boolean }): Promise<ResetReport> {
   const report = emptyReport();
-  await clearCacheStorage(report);
+  await clearCacheStorage(report, opts?.keepOffline ? (k) => OFFLINE_CACHE_PREFIXES.some((p) => k.startsWith(p)) : undefined);
   await unregisterServiceWorkers(report);
   return report;
 }

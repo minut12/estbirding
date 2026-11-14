@@ -21,7 +21,7 @@ export default function VersionBanner() {
   const handleUpdate = async () => {
     setUpdating(true);
     try {
-      await clearAppCaches();
+      await clearAppCaches({ keepOffline: true });
       toast.success('Vahemälu tühjendatud. Laen uuesti…');
       await new Promise((r) => setTimeout(r, 600));
       window.location.href = window.location.pathname + '?v=' + Date.now();

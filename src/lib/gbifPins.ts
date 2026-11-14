@@ -19,6 +19,28 @@ function isPinEnabledScope(mapScope: string): boolean {
   return PIN_ENABLED_SCOPES.has(mapScope);
 }
 
+// P183d: last good pin list per map, so pins survive offline. Same pattern as speciesVisibility.
+// shortcut: keyed per map, not per user; a second account on the same device could see these offline.
+const PIN_CACHE_PREFIX = 'estbirding.gbifPins.v1.';
+
+function readPinCache(mapScope: string): GbifPin[] {
+  try {
+    const raw = localStorage.getItem(PIN_CACHE_PREFIX + mapScope);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? (arr as GbifPin[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePinCache(mapScope: string, pins: GbifPin[]): void {
+  try {
+    localStorage.setItem(PIN_CACHE_PREFIX + mapScope, JSON.stringify(pins));
+  } catch {
+    /* quota: the cache is optional */
+  }
+}
+
 export async function loadGbifPins(mapScope: string): Promise<GbifPin[]> {
   if (!isPinEnabledScope(mapScope)) return [];
   try {
@@ -26,8 +48,8 @@ export async function loadGbifPins(mapScope: string): Promise<GbifPin[]> {
       .from('gbif_pins')
       .select('gbif_id, species, lat, lon, event_date, details')
       .eq('map_scope', mapScope);
-    if (error) { console.warn('[gbifPins] load failed', error); return []; }
-    return (data || []).map((r: any) => ({
+    if (error) { console.warn('[gbifPins] load failed, using cached', error); return readPinCache(mapScope); }
+    const pins: GbifPin[] = (data || []).map((r: any) => ({
       gbifId: String(r.gbif_id),
       species: String(r.species),
       lat: Number(r.lat),
@@ -35,9 +57,11 @@ export async function loadGbifPins(mapScope: string): Promise<GbifPin[]> {
       date: r.event_date ?? null,
       details: r.details ?? null,
     }));
+    writePinCache(mapScope, pins);
+    return pins;
   } catch (e) {
-    console.warn('[gbifPins] load threw', e);
-    return [];
+    console.warn('[gbifPins] load threw, using cached', e);
+    return readPinCache(mapScope);
   }
 }
 

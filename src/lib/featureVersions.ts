@@ -618,6 +618,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-14', ref: 'P183', kind: 'major', text: 'Rakendus ja kaardid avanevad ka v\u00f5rguta, aeglase \u00fchendusega kiiremini' },
       { date: '2026-11-14', ref: 'P183c', kind: 'minor', text: 'Viimased Elurikkuse vaatlused on kaardil n\u00e4ha ka v\u00f5rguta' },
       { date: '2026-11-14', ref: 'P183b', kind: 'patch', text: 'Kaardivalik on n\u00e4ha ka v\u00f5rguta' },
+      { date: '2026-11-14', ref: 'P183d', kind: 'patch', text: 'N\u00f5elaga kinnitatud vaatlused on kaardil n\u00e4ha ka v\u00f5rguta' },
     ],
   },
 ];

@@ -17,6 +17,7 @@ const LIB_CACHE = 'estbirding-lib-v1';
 const TILE_CACHE = 'estbirding-tiles-v1';
 const AVATAR_CACHE = 'estbirding-avatars-v1';
 const DATA_CACHE = 'estbirding-data-v1';
+const DATA_MAX = 300;
 // Leaflet is the only third-party script the maps load; without it every map is blank offline.
 const LIB_URLS = ['https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'];
 const KEEP_CACHES = [CACHE_NAME, LIB_CACHE, TILE_CACHE, AVATAR_CACHE, DATA_CACHE];
@@ -89,7 +90,7 @@ function networkFirst(event, key, cacheName) {
     if (!res || !res.ok || res.redirected) return res;
     return res.blob().then((body) => {
       const init = { status: res.status, statusText: res.statusText, headers: res.headers };
-      saved = caches.open(cacheName || CACHE_NAME).then((c) => c.put(key, new Response(body, init))).catch(() => {});
+      saved = caches.open(cacheName || CACHE_NAME).then((c) => c.put(key, new Response(body, init)).then(() => (cacheName === DATA_CACHE ? trimCache(c, DATA_MAX) : null))).catch(() => {});
       return new Response(body, init);
     });
   });
@@ -162,6 +163,12 @@ self.addEventListener('fetch', (event) => {
   // P183c: Elurikkus per-observation pins live only in the map's memory; keep the last answer for offline.
   if (SB_HOST && url.host === SB_HOST && url.pathname === '/functions/v1/get-elurikkus-recent-obs') {
     event.respondWith(networkFirst(event, url.origin + url.pathname + url.search, DATA_CACHE));
+    return;
+  }
+  // P183g: last answer of every database GET (tables, views), so Uudised, Uritused, Ulevaade and map panels work offline.
+  // shortcut: keyed by URL only; a .single() and a list read of the same URL would share an entry (none today).
+  if (SB_HOST && url.host === SB_HOST && url.pathname.indexOf('/rest/v1/') === 0) {
+    event.respondWith(networkFirst(event, url.href, DATA_CACHE));
     return;
   }
   if (SB_HOST && url.host === SB_HOST && url.pathname.indexOf('/storage/v1/object/public/bird-avatars/') === 0) {

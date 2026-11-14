@@ -186,6 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     writeRoleCache(null);
+    try { await caches.delete('estbirding-data-v1'); } catch { /* cache API missing */ }
     await supabase.auth.signOut();
     setSession(null);
     setUser(null);

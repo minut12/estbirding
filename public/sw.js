@@ -16,7 +16,8 @@ const SB_KEY = (SW_PARAMS && SW_PARAMS.get('sk')) || '';
 const LIB_CACHE = 'estbirding-lib-v1';
 const TILE_CACHE = 'estbirding-tiles-v1';
 const AVATAR_CACHE = 'estbirding-avatars-v1';
-const KEEP_CACHES = [CACHE_NAME, LIB_CACHE, TILE_CACHE, AVATAR_CACHE];
+const DATA_CACHE = 'estbirding-data-v1';
+const KEEP_CACHES = [CACHE_NAME, LIB_CACHE, TILE_CACHE, AVATAR_CACHE, DATA_CACHE];
 const TILE_MAX = 500;
 const AVATAR_MAX = 1500;
 const NET_TIMEOUT_MS = 3000;
@@ -78,13 +79,13 @@ self.addEventListener('activate', (event) => {
 // NET_TIMEOUT_MS (slow link) or failed (offline). The body is buffered so the
 // timeout covers the whole transfer, not just the headers. A late network
 // answer still refreshes the cache.
-function networkFirst(event, key) {
+function networkFirst(event, key, cacheName) {
   let saved = Promise.resolve();
   const network = fetch(event.request).then((res) => {
     if (!res || !res.ok || res.redirected) return res;
     return res.blob().then((body) => {
       const init = { status: res.status, statusText: res.statusText, headers: res.headers };
-      saved = caches.open(CACHE_NAME).then((c) => c.put(key, new Response(body, init))).catch(() => {});
+      saved = caches.open(cacheName || CACHE_NAME).then((c) => c.put(key, new Response(body, init))).catch(() => {});
       return new Response(body, init);
     });
   });
@@ -154,6 +155,11 @@ self.addEventListener('fetch', (event) => {
 
   if (url.hostname === 'unpkg.com') { event.respondWith(cacheFirst(event, LIB_CACHE, 0)); return; }
   if (/(^|\.)tile\.openstreetmap\.org$/.test(url.hostname)) { event.respondWith(cacheFirst(event, TILE_CACHE, TILE_MAX)); return; }
+  // P183c: Elurikkus per-observation pins live only in the map's memory; keep the last answer for offline.
+  if (SB_HOST && url.host === SB_HOST && url.pathname === '/functions/v1/get-elurikkus-recent-obs') {
+    event.respondWith(networkFirst(event, url.origin + url.pathname + url.search, DATA_CACHE));
+    return;
+  }
   if (SB_HOST && url.host === SB_HOST && url.pathname.indexOf('/storage/v1/object/public/bird-avatars/') === 0) {
     event.respondWith(cacheFirst(event, AVATAR_CACHE, AVATAR_MAX));
     return;

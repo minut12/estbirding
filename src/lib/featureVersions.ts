@@ -38,7 +38,8 @@ export type FeatureId =
   | 'seaded-uudiste-allikad'
   | 'seaded-diagnostika'
   | 'navigeerimine'
-  | 'teavitused';
+  | 'teavitused'
+  | 'offline';
 export type ChangeKind = 'major' | 'minor' | 'patch';
 
 export type FeatureChange = {
@@ -607,6 +608,14 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-08', ref: 'P104b', kind: 'minor', text: 'Teavitus k\u00f5igile tellijatele uue liigi kohta' },
       { date: '2026-11-13', ref: 'P181b', kind: 'patch', text: 'Teavitustellimused salvestatakse turvalise p\u00e4ringu kaudu' },
       { date: '2026-11-13', ref: 'P181e', kind: 'minor', text: 'Haldurile teavitus andmevoogude t\u00f5rgetest' },
+    ],
+  },
+  {
+    id: 'offline',
+    area: 'rakendus',
+    name: 'V\u00f5rguta kasutus',
+    changes: [
+      { date: '2026-11-14', ref: 'P183c', kind: 'major', text: 'Viimased Elurikkuse vaatlused on kaardil n\u00e4ha ka v\u00f5rguta' },
     ],
   },
 ];

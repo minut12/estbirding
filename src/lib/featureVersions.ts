@@ -623,6 +623,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-14', ref: 'P183f', kind: 'patch', text: 'V\u00e4rskenda-nupp ei kustuta enam v\u00f5rguta kasutamiseks salvestatud andmeid' },
       { date: '2026-11-14', ref: 'P183g', kind: 'minor', text: 'Uudised, \u00dcritused ja \u00dclevaade n\u00e4itavad v\u00f5rguta viimati laaditud andmeid' },
       { date: '2026-11-14', ref: 'P183h', kind: 'minor', text: 'V\u00f5rguta suurendades n\u00e4itab kaart halli ala asemel udusemat aluskaarti' },
+      { date: '2026-11-14', ref: 'P183i', kind: 'patch', text: 'Naabermaade rarid on n\u00e4ha ka v\u00f5rguta' },
     ],
   },
 ];

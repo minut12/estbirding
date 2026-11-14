@@ -67,7 +67,8 @@ export default function RareObservationsFeed() {
       }
       if (f.timeWindowDays !== 'all') {
         const cutoff = new Date(Date.now() - f.timeWindowDays * 24 * 60 * 60 * 1000);
-        q = q.gte('obs_date', cutoff.toISOString());
+        // P183i: day precision keeps the request URL stable within a day, so the offline cache can answer it.
+        q = q.gte('obs_date', cutoff.toISOString().slice(0, 10));
       }
 
       const { data, count, error: qErr } = await q;

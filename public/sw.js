@@ -134,6 +134,36 @@ function trimCache(cache, max) {
   );
 }
 
+// P183h: offline, a tile never viewed at this zoom is cut from a cached lower-zoom tile (up to 4 levels) and
+// scaled up, so zooming in shows a blurry map instead of grey. OSM forbids bulk prefetch, so this is the fallback.
+async function upscaledTile(tileUrl) {
+  if (typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') return null;
+  const m = /^\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(new URL(tileUrl).pathname);
+  if (!m) return null;
+  const z = Number(m[1]), x = Number(m[2]), y = Number(m[3]);
+  const cache = await caches.open(TILE_CACHE);
+  const keys = await cache.keys();
+  for (let d = 1; d <= 4 && z - d >= 0; d++) {
+    const px = x >> d, py = y >> d;
+    const path = '/' + (z - d) + '/' + px + '/' + py + '.png';
+    const hit = keys.find((k) => new URL(k.url).pathname === path); // any a/b/c subdomain
+    const res = hit ? await cache.match(hit) : null;
+    if (!res) continue;
+    const bmp = await createImageBitmap(await res.blob());
+    const size = 256 >> d;
+    const canvas = new OffscreenCanvas(256, 256);
+    canvas.getContext('2d').drawImage(bmp, (x - (px << d)) * size, (y - (py << d)) * size, size, size, 0, 0, 256, 256);
+    return new Response(await canvas.convertToBlob({ type: 'image/png' }), { headers: { 'Content-Type': 'image/png' } });
+  }
+  return null;
+}
+
+function tileWithFallback(event) {
+  return cacheFirst(event, TILE_CACHE, TILE_MAX)
+    .then((res) => (res && res.ok ? res : upscaledTile(event.request.url).then((up) => up || res)))
+    .catch(() => upscaledTile(event.request.url).then((up) => up || Response.error()));
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
@@ -159,7 +189,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.hostname === 'unpkg.com') { event.respondWith(cacheFirst(event, LIB_CACHE, 0)); return; }
-  if (/(^|\.)tile\.openstreetmap\.org$/.test(url.hostname)) { event.respondWith(cacheFirst(event, TILE_CACHE, TILE_MAX)); return; }
+  if (/(^|\.)tile\.openstreetmap\.org$/.test(url.hostname)) { event.respondWith(tileWithFallback(event)); return; }
   // P183c: Elurikkus per-observation pins live only in the map's memory; keep the last answer for offline.
   if (SB_HOST && url.host === SB_HOST && url.pathname === '/functions/v1/get-elurikkus-recent-obs') {
     event.respondWith(networkFirst(event, url.origin + url.pathname + url.search, DATA_CACHE));

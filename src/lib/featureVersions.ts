@@ -619,6 +619,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-14', ref: 'P183c', kind: 'minor', text: 'Viimased Elurikkuse vaatlused on kaardil n\u00e4ha ka v\u00f5rguta' },
       { date: '2026-11-14', ref: 'P183b', kind: 'patch', text: 'Kaardivalik on n\u00e4ha ka v\u00f5rguta' },
       { date: '2026-11-14', ref: 'P183d', kind: 'patch', text: 'N\u00f5elaga kinnitatud vaatlused on kaardil n\u00e4ha ka v\u00f5rguta' },
+      { date: '2026-11-14', ref: 'P183e', kind: 'patch', text: 'Kaardid t\u00f6\u00f6tavad v\u00f5rguta ka kohe p\u00e4rast vahem\u00e4lu t\u00fchjendamist' },
     ],
   },
 ];

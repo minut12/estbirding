@@ -17,6 +17,8 @@ const LIB_CACHE = 'estbirding-lib-v1';
 const TILE_CACHE = 'estbirding-tiles-v1';
 const AVATAR_CACHE = 'estbirding-avatars-v1';
 const DATA_CACHE = 'estbirding-data-v1';
+// Leaflet is the only third-party script the maps load; without it every map is blank offline.
+const LIB_URLS = ['https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'];
 const KEEP_CACHES = [CACHE_NAME, LIB_CACHE, TILE_CACHE, AVATAR_CACHE, DATA_CACHE];
 const TILE_MAX = 500;
 const AVATAR_MAX = 1500;
@@ -55,6 +57,8 @@ self.addEventListener('install', (event) => {
     const cache = await caches.open(CACHE_NAME);
     // One by one so a single missing file cannot fail the whole install.
     await Promise.allSettled(PRECACHE_URLS.map((u) => cache.add(u)));
+    const lib = await caches.open(LIB_CACHE);
+    await Promise.allSettled(LIB_URLS.map((u) => lib.add(new Request(u, { mode: 'cors', credentials: 'omit' }))));
     // Hashed bundle names are only known from the shell; pull them out of it.
     try {
       const shell = await cache.match('/');

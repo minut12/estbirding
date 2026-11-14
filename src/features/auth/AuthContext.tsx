@@ -52,7 +52,7 @@ async function fetchUserRole(userId: string): Promise<AppRole | null> {
   const { data, error } = await supabase.rpc('get_user_role', { _user_id: userId });
   if (error) {
     console.warn('[auth] get_user_role error:', error.message);
-    return null;
+    throw new Error('get_user_role: ' + error.message);
   }
   return (data as AppRole) ?? null;
 }
@@ -61,9 +61,33 @@ async function fetchUserPermissions(userId: string): Promise<string[]> {
   const { data, error } = await supabase.rpc('get_user_permissions', { _user_id: userId });
   if (error) {
     console.warn('[auth] get_user_permissions error:', error.message);
-    return [];
+    throw new Error('get_user_permissions: ' + error.message);
   }
   return Array.isArray(data) ? data : [];
+}
+
+// P183b: last known role/permissions, so the map picker and menus survive offline.
+// UI hint only; data access is still enforced by RLS. Cleared on SIGNED_OUT.
+const ROLE_CACHE_KEY = 'estbirding.roleCache.v1';
+type RoleCache = { userId: string; role: AppRole | null; permissions: string[] };
+
+function readRoleCache(): RoleCache | null {
+  try {
+    const raw = localStorage.getItem(ROLE_CACHE_KEY);
+    const c = raw ? (JSON.parse(raw) as RoleCache) : null;
+    return c && typeof c.userId === 'string' && Array.isArray(c.permissions) ? c : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeRoleCache(c: RoleCache | null): void {
+  try {
+    if (c) localStorage.setItem(ROLE_CACHE_KEY, JSON.stringify(c));
+    else localStorage.removeItem(ROLE_CACHE_KEY);
+  } catch {
+    /* storage full or blocked: the cache is optional */
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -75,12 +99,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const disabledCheckedRef = useRef<string | null>(null);
 
   const loadRoleAndPermissions = useCallback(async (u: User) => {
-    const [r, p] = await Promise.all([
-      fetchUserRole(u.id),
-      fetchUserPermissions(u.id),
-    ]);
-    setRole(r);
-    setPermissions(p);
+    try {
+      const [r, p] = await Promise.all([fetchUserRole(u.id), fetchUserPermissions(u.id)]);
+      setRole(r);
+      setPermissions(p);
+      writeRoleCache({ userId: u.id, role: r, permissions: p });
+    } catch (err) {
+      // P183b: Supabase unreachable - keep the last known role for this user.
+      console.warn('[auth] role/permissions unavailable, using cached', err);
+      const c = readRoleCache();
+      if (c && c.userId === u.id) {
+        setRole(c.role);
+        setPermissions(c.permissions);
+      }
+    }
   }, []);
 
   const refreshRole = useCallback(async () => {
@@ -110,10 +142,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const handleUser = (u: User | null) => {
       if (!u) {
         disabledCheckedRef.current = null;
-        setRole(null);
-        setPermissions([]);
+        // P183b: offline with an expired token Supabase reports no user; keep the last role until the network is back.
+        const cached = !navigator.onLine ? readRoleCache() : null;
+        setRole(cached ? cached.role : null);
+        setPermissions(cached ? cached.permissions : []);
         if (mounted) setLoading(false);
         return;
+      }
+      const cached = readRoleCache();
+      if (cached && cached.userId === u.id) {
+        setRole(cached.role);
+        setPermissions(cached.permissions);
       }
       // Fire-and-forget: do NOT await inside onAuthStateChange
       ensureProfileAndRole(u)
@@ -126,7 +165,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     // Set up listener BEFORE getSession per Supabase best practice
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'SIGNED_OUT') writeRoleCache(null);
       setSession(nextSession ?? null);
       setUser(nextSession?.user ?? null);
       handleUser(nextSession?.user ?? null);
@@ -145,6 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadRoleAndPermissions]);
 
   const signOut = useCallback(async () => {
+    writeRoleCache(null);
     await supabase.auth.signOut();
     setSession(null);
     setUser(null);

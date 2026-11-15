@@ -18,11 +18,11 @@ import {
   upsertPredictionRating,
   type PredictionRating,
 } from '@/lib/predictionRatings';
-import { AlertTriangle, X, ExternalLink, Bird, MapPin, Eye, BarChart3, Clock, Wind } from 'lucide-react';
+import { AlertTriangle, X, ExternalLink, Bird, MapPin, Eye, BarChart3 } from 'lucide-react';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 import { isSpringWindow } from '@/lib/speciesVisibility';
-import CorridorBadge from './CorridorBadge';
-import WindyChart from './WindyChart';
+import { EvidenceListsSection } from './EvidenceListsSection';
+import { HOOAEG_TOP_N, TEXT as EVIDENCE_TEXT, firstOccurrences, parseEvidenceLists, type EvidenceSegment } from './evidenceLists';
 import RareObservationsFeed from './RareObservationsFeed';
 import { groupEntriesBySpecies } from './entryGroups';
 import { HkBackground } from './HkBackground';
@@ -136,31 +136,6 @@ function effectiveRarityTier(entry: VaatlusEntry): RarityTier {
 
 const TIER_RANK: Record<RarityTier, number> = { mega: 3, super: 2, rare: 1, none: 0 };
 
-// Probability % badge color bands (Phase 2 §8):
-//   green  ≥60   →  emerald
-//   amber  30–59 →  amber
-//   red    <30   →  red
-function getProbabilityBadgeClass(pct: number): string {
-  if (pct >= 60) return 'bg-emerald-500 text-white hover:bg-emerald-500/90 border-transparent';
-  if (pct >= 30) return 'bg-amber-500 text-white hover:bg-amber-500/90 border-transparent';
-  return 'bg-red-500 text-white hover:bg-red-500/90 border-transparent';
-}
-
-function getTimingBandClass(band?: string | null): string {
-  switch (band) {
-    case 'imminent':
-      return 'border-emerald-500/60 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300';
-    case 'this_week':
-      return 'border-amber-500/60 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300';
-    case 'passed':
-    case 'out_of_window':
-      return 'border-border bg-muted text-muted-foreground opacity-70';
-    case 'in_season':
-    default:
-      return 'border-border bg-muted text-muted-foreground';
-  }
-}
-
 type SourceObservation = {
   species_lat?: string;
   date?: string;
@@ -226,16 +201,6 @@ type ToenaosusEntry = VaatlusEntry & {
   ebird_code?: string;
 };
 
-type CorridorWatchlistItem = {
-  ebird_code: string;
-  species_et: string | null;
-  species_lat: string | null;
-  rarity_level: string;
-  avatar_url: string | null;
-  matched_corridors: string[];
-  matched_corridor_names_et: string[];
-};
-
 type ToenaosusRaport = {
   id: string;
   generated_at: string;
@@ -245,7 +210,8 @@ type ToenaosusRaport = {
   regions: string[];
   intro_et: string | null;
   entries: ToenaosusEntry[];
-  corridor_watchlist?: CorridorWatchlistItem[];
+  // P184d2: raw jsonb; parsed with parseEvidenceLists.
+  evidence_lists?: unknown;
   source_data: Record<string, unknown> | null;
   model: string | null;
   generation_meta: Record<string, unknown> | null;
@@ -702,60 +668,6 @@ function ArrivalsList({
   );
 }
 
-function CorridorWatchlist({ items }: { items?: CorridorWatchlistItem[] }) {
-  if (!Array.isArray(items) || items.length === 0) return null;
-  const corridorNames = Array.from(
-    new Set(items.flatMap((i) => i.matched_corridor_names_et || [])),
-  );
-  return (
-    <Card className="p-4 space-y-2 border-l-4 border-l-sky-500 bg-sky-50/40">
-      <div className="flex items-center gap-2">
-        <Wind className="w-4 h-4 text-sky-600 shrink-0" />
-        <p className="text-sm font-semibold">Aktiivne koridor — jälgi neid liike</p>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Tuuletingimused on soodsad{corridorNames.length ? ` (${corridorNames.join(', ')})` : ''}, kuid neid
-        haruldusi pole naabermaades veel vaadeldud — seetõttu puuduvad nad ennustuse nimekirjast. Tasub jälgida.
-      </p>
-      <div className="space-y-2 pt-1">
-        {items.map((it, idx) => (
-          <div key={`${it.ebird_code}-${idx}`} className="flex items-center gap-2">
-            {it.avatar_url ? (
-              <img
-                src={it.avatar_url}
-                alt={it.species_et ?? ''}
-                loading="lazy"
-                className="w-10 h-10 rounded-md object-cover shrink-0 bg-muted"
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-md shrink-0 bg-muted flex items-center justify-center text-muted-foreground">
-                <Bird className="w-5 h-5" />
-              </div>
-            )}
-            <div className="flex flex-wrap items-baseline gap-x-2 min-w-0 flex-1">
-              <span className="font-semibold text-sm">{it.species_et}</span>
-              <span className="italic text-muted-foreground text-xs">({it.species_lat})</span>
-            </div>
-            {it.rarity_level === 'rare' && (
-              <Badge className="gap-1 bg-amber-500 text-white hover:bg-amber-500/90 border-transparent">Rari</Badge>
-            )}
-            {it.rarity_level === 'super' && (
-              <Badge className="gap-1 bg-red-600 text-white hover:bg-red-600/90 border-transparent">
-                <AlertTriangle className="w-3 h-3" />Super rari
-              </Badge>
-            )}
-            {it.rarity_level === 'mega' && (
-              <Badge className="gap-1 bg-red-800 text-white hover:bg-red-800/90 border-transparent font-bold shadow-sm">
-                <AlertTriangle className="w-3 h-3" />Mega rari
-              </Badge>
-            )}
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
 function sortEntries(entries: VaatlusEntry[]): VaatlusEntry[] {
   return [...entries].sort((a, b) => {
     const tierDiff = TIER_RANK[effectiveRarityTier(b)] - TIER_RANK[effectiveRarityTier(a)];
@@ -1177,6 +1089,20 @@ export default function OverviewTab() {
   const [section, setSection] = useState<OverviewSection>('ee');
   // P6: the species the map asked us to jump to, held until the Tõenäosus report has loaded.
   const [pendingEbirdCode, setPendingEbirdCode] = useState<string | null>(null);
+  // P184d2: evidence lists + the UI state the P6 jump has to steer (phone segment, Hooaeg expand).
+  const evidenceLists = useMemo(
+    () => (toenaosusReport ? parseEvidenceLists(toenaosusReport.evidence_lists) : null),
+    [toenaosusReport],
+  );
+  const evidenceJumpTargets = useMemo(
+    () => (evidenceLists ? firstOccurrences(evidenceLists) : null),
+    [evidenceLists],
+  );
+  const [evidenceSegment, setEvidenceSegment] = useState<EvidenceSegment>('hoo');
+  const [hooaegExpanded, setHooaegExpanded] = useState(false);
+  // Set once the segment/expand for the pending jump has been applied, so the scroll
+  // runs in the following commit, after the target card is visible in the DOM.
+  const [jumpReady, setJumpReady] = useState(false);
 
   // P6, step 1 of 2: read what the map asked for. Mount-only -- this component is rendered behind
   // `active === 'ulevaade'` in Index, so it remounts on every switch back and the state is fresh.
@@ -1191,8 +1117,23 @@ export default function OverviewTab() {
   // P6, step 2 of 2: scroll once the report is in. Keyed on the report because the navigation
   // usually wins the race against the fetch -- on mount the card does not exist yet. The history
   // state is cleared only after a card was actually found, so a slow report still gets its jump.
+  // P184d2, step 2a: open the list that holds the first card for this code (phone segment,
+  // Hooaeg beyond the top 8), then mark the jump ready so step 2b scrolls after re-render.
   useEffect(() => {
-    if (!pendingEbirdCode || !toenaosusReport) return;
+    if (!pendingEbirdCode || !toenaosusReport || jumpReady) return;
+    const target = evidenceJumpTargets?.get(pendingEbirdCode);
+    if (target) {
+      setEvidenceSegment(target.segment);
+      if (target.segment === 'hoo' && target.index >= HOOAEG_TOP_N) setHooaegExpanded(true);
+    }
+    setJumpReady(true);
+  }, [toenaosusReport, pendingEbirdCode, evidenceJumpTargets, jumpReady]);
+
+  // P6, step 2b: scroll + ring. The ring timer is not cleared by the cleanup: clearing the
+  // pending code re-runs this effect, which would otherwise cancel the ring removal.
+  useEffect(() => {
+    if (!pendingEbirdCode || !toenaosusReport || !jumpReady) return;
+    setJumpReady(false);
     const el = document.getElementById(`toenaosus-${pendingEbirdCode}`);
     if (!el) {
       // Raport rotated since the map loaded and this species is gone: section switch only.
@@ -1201,7 +1142,7 @@ export default function OverviewTab() {
     }
     el.scrollIntoView({ block: 'center' });
     el.classList.add('ring-2', 'ring-violet-500');
-    const timer = window.setTimeout(() => {
+    window.setTimeout(() => {
       el.classList.remove('ring-2', 'ring-violet-500');
     }, HIGHLIGHT_MS);
     setPendingEbirdCode(null);
@@ -1209,8 +1150,7 @@ export default function OverviewTab() {
       { ...(window.history.state || {}), estbirding: undefined },
       '',
     );
-    return () => window.clearTimeout(timer);
-  }, [toenaosusReport, pendingEbirdCode]);
+  }, [toenaosusReport, pendingEbirdCode, jumpReady]);
 
   const fetchLatest = useCallback(async (): Promise<VaatlusteRaport | null> => {
     setError(null);
@@ -1294,19 +1234,8 @@ export default function OverviewTab() {
   useEffect(() => {
     if (!springWindow && section === 'arrivals') setSection('ee');
   }, [springWindow, section]);
-  const toenaosusEntries = useMemo(
-    () => (Array.isArray(toenaosusReport?.entries) ? toenaosusReport!.entries : []),
-    [toenaosusReport],
-  );
-  const sortedToenaosusEntries = useMemo(() => {
-    return [...toenaosusEntries].sort((a, b) => {
-      if (b.ee_probability_pct !== a.ee_probability_pct) {
-        return b.ee_probability_pct - a.ee_probability_pct;
-      }
-      return (TIER_RANK[b.rarity_level ?? 'none'] || 0) - (TIER_RANK[a.rarity_level ?? 'none'] || 0);
-    });
-  }, [toenaosusEntries]);
-  const toenaosusCount = sortedToenaosusEntries.length;
+  // P184d2: the Toenaosus tab badge and header stat count the Lahenemas list.
+  const toenaosusCount = evidenceLists?.lahenemas.length ?? 0;
   const speciesMetaMap = useMemo(() => loadSpeciesMeta(), [report]);
   const ebirdCodeLookup = useMemo(() => buildSciNameToEbirdCode(speciesMetaMap), [speciesMetaMap]);
   const avatarUrlLookup = useMemo(() => buildSciNameToAvatarUrl(speciesMetaMap), [speciesMetaMap]);
@@ -1394,13 +1323,38 @@ export default function OverviewTab() {
     setMyRatings((m) => ({ ...m, [ebirdCode]: cur }));
     flashRatingMessage(ebirdCode, 'Salvestamine ebaõnnestus');
   }, [myRatings, toenaosusRaportId, flashRatingMessage]);
+
+  // P184d2: species-level chips for the evidence-list cards (same props as the old cards).
+  const renderEvidenceRating = useCallback((ebirdCode: string) => {
+    if (!toenaosusRaportId || !ebirdCode) return null;
+    return (
+      <PredictionRateChips
+        ebirdCode={ebirdCode}
+        current={myRatings[ebirdCode]?.rating ?? null}
+        note={myRatings[ebirdCode]?.note ?? null}
+        pending={ratingPending === ebirdCode}
+        message={ratingMessage[ebirdCode] || null}
+        isAnon={!session}
+        onRate={(rating) => rateSpecies(ebirdCode, rating)}
+        onNote={(n) => saveRatingNote(ebirdCode, n)}
+      />
+    );
+  }, [toenaosusRaportId, myRatings, ratingPending, ratingMessage, session, rateSpecies, saveRatingNote]);
+  const showEvidenceOnMap = useCallback((speciesEt: string) => {
+    navigate('/', { state: { estbirding: { activeTab: 'kaart', mapId: 'rariliin', focusSpecies: speciesEt } } });
+  }, [navigate]);
+  const resolveEvidenceAvatar = useCallback(
+    (item: { avatar_url: string | null; species_lat: string }) =>
+      item.avatar_url || lookupAvatarUrl(item.species_lat, avatarUrlLookup),
+    [avatarUrlLookup],
+  );
   const activeEntries = section === 'eu' ? euEntries : eeEntries;
   const activeLookup = section === 'eu' ? euSubIdLookup : eeSubIdLookup;
   const activeMedia = section === 'eu' ? euMediaLookup : eeMediaLookup;
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto p-4 space-y-4">
+      <div className={cn('max-w-2xl mx-auto p-4 space-y-4', section === 'toenaosus' && 'md:max-w-5xl')}>
         <header className="flex items-start justify-between gap-3">
           <div className="space-y-1 min-w-0">
             <h1 className="text-2xl font-semibold">&Uuml;levaade<FeatureVersionBadge id="ulevaade" /></h1>
@@ -1444,7 +1398,7 @@ export default function OverviewTab() {
               {[
                 { v: eeRarities, k: 'haruldust Eestis' },
                 { v: euRarities, k: 'naabermaades' },
-                { v: toenaosusCount, k: 'tõenäolist saabujat' },
+                { v: toenaosusCount, k: EVIDENCE_TEXT.lah_stat },
               ].map((s) => (
                 <div key={s.k} className="rounded-lg border border-border bg-card px-3 py-2">
                   <div className="text-xl font-semibold tabular-nums leading-tight">{s.v}</div>
@@ -1511,211 +1465,19 @@ export default function OverviewTab() {
                 <p className="text-sm text-muted-foreground text-center py-8">
                   Tõenäosuse andmed pole veel saadaval.
                 </p>
-              ) : sortedToenaosusEntries.length === 0 ? (
-                <>
-                  {toenaosusReport.intro_et && (
-                    <p className="text-sm leading-relaxed">{toenaosusReport.intro_et}</p>
-                  )}
-                  <CorridorBadge weatherCorridors={(toenaosusReport as any)?.source_data?.weather_corridors} />
-                  <CorridorWatchlist items={toenaosusReport.corridor_watchlist} />
-                  <WindyChart />
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    Selles perioodis ei tuvastatud naabermaades vaatlusi haruldastest liikidest, kes võiksid lähiajal Eestisse jõuda.
-                  </p>
-                </>
+              ) : evidenceLists === null ? (
+                <p className="text-sm text-muted-foreground text-center py-8">{EVIDENCE_TEXT.empty_list}</p>
               ) : (
-                <>
-                  {toenaosusReport.intro_et && (
-                    <p className="text-sm leading-relaxed">{toenaosusReport.intro_et}</p>
-                  )}
-                  <CorridorBadge weatherCorridors={(toenaosusReport as any)?.source_data?.weather_corridors} />
-                  <CorridorWatchlist items={toenaosusReport.corridor_watchlist} />
-                  <WindyChart />
-                  <div className="space-y-3">
-                    {sortedToenaosusEntries.map((entry, idx) => {
-                      const tier = effectiveRarityTier(entry);
-                      const avatarUrl = entry.avatar_url || lookupAvatarUrl(entry.species_lat, avatarUrlLookup);
-                      const countNum = entry.count ?? 1;
-                      return (
-                        <Card
-                          key={`${entry.species_lat}-${entry.sub_id ?? entry.date}-${idx}`}
-                          // P6: the scroll target. Omitted entirely when ebird_code is absent, so
-                          // several code-less cards cannot collide on one id.
-                          {...(entry.ebird_code
-                            ? { id: `toenaosus-${entry.ebird_code}`, 'data-ebird': entry.ebird_code }
-                            : {})}
-                          className={cn(
-                            'p-4 space-y-2',
-                            tier === 'rare' && 'border-l-4 border-l-amber-500 bg-amber-50/40',
-                            tier === 'super' && 'border-l-4 border-l-destructive bg-destructive/5',
-                            tier === 'mega' && 'border-l-8 border-l-red-800 bg-red-900/5 ring-1 ring-red-800/40 shadow-md',
-                          )}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                              {tier === 'rare' && (
-                                <Badge className="gap-1 bg-amber-500 text-white hover:bg-amber-500/90 border-transparent">
-                                  Rari
-                                </Badge>
-                              )}
-                              {tier === 'super' && (
-                                <Badge className="gap-1 bg-red-600 text-white hover:bg-red-600/90 border-transparent">
-                                  <AlertTriangle className="w-3 h-3" />
-                                  Super rari
-                                </Badge>
-                              )}
-                              {tier === 'mega' && (
-                                <Badge className="gap-1 bg-red-800 text-white hover:bg-red-800/90 border-transparent font-bold shadow-sm">
-                                  <AlertTriangle className="w-3 h-3" />
-                                  Mega rari
-                                </Badge>
-                              )}
-                            </div>
-                            <Badge className={cn('px-2 py-1 text-base font-bold', getProbabilityBadgeClass(entry.ee_probability_pct))}>
-                              {entry.ee_probability_pct}%
-                            </Badge>
-                          </div>
-
-                          <div className="flex items-start gap-3">
-                            {avatarUrl ? (
-                              <img
-                                src={avatarUrl}
-                                alt={entry.species_et}
-                                loading="lazy"
-                                className="w-14 h-14 rounded-md object-cover shrink-0 bg-muted"
-                              />
-                            ) : (
-                              <div className="w-14 h-14 rounded-md shrink-0 bg-muted flex items-center justify-center text-muted-foreground">
-                                <Bird className="w-7 h-7" />
-                              </div>
-                            )}
-                            <div className="flex flex-wrap items-baseline gap-x-2 min-w-0 flex-1">
-                              <span className="font-semibold">{entry.species_et}</span>
-                              <span className="italic text-muted-foreground text-sm">({entry.species_lat})</span>
-                            </div>
-                          </div>
-
-                          {entry.rarity_reason && (
-                            <p className={cn('text-sm', tier === 'rare' ? 'text-amber-700' : 'text-destructive')}>
-                              {entry.rarity_reason}
-                            </p>
-                          )}
-
-                          <p className="text-xs text-muted-foreground">
-                            <span className="font-semibold">Lähim vaatlus:</span>{' '}
-                            {entry.country_code} · {entry.location} · {entry.date} ·{' '}
-                            {countNum} {countNum === 1 ? 'isend' : 'isendit'} ·{' '}
-                            {entry.distance_to_ee_km} km Eestist
-                          </p>
-
-                          {entry.arrival_window_et && (
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                              <span
-                                className={cn(
-                                  'rounded-md border px-2.5 py-0.5 text-xs font-medium',
-                                  getTimingBandClass(entry.timing_band),
-                                )}
-                              >
-                                {entry.arrival_window_et}
-                              </span>
-                              {typeof entry.freshest_obs_days === 'number' && (
-                                <span className="text-xs text-muted-foreground">
-                                  {entry.freshest_obs_days === 0
-                                    ? 'värskeim signaal täna'
-                                    : entry.freshest_obs_days === 1
-                                      ? 'värskeim signaal 1 päev tagasi'
-                                      : `värskeim signaal ${entry.freshest_obs_days} päeva tagasi`}
-                                </span>
-                              )}
-                            </div>
-                          )}
-
-                          {typeof entry.ee_obs_count === 'number' && entry.ee_obs_count > 0 && (
-                            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
-                              <MapPin className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-                              <span className="rounded-md border border-amber-500/60 bg-amber-50 px-2.5 py-0.5 font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                                Eestis juba {entry.ee_obs_count} {entry.ee_obs_count === 1 ? 'vaatlus' : 'vaatlust'}
-                              </span>
-                              {(entry.ee_last_date || entry.ee_last_location) && (
-                                <span className="text-muted-foreground">
-                                  viimane{entry.ee_last_date ? ` ${entry.ee_last_date}` : ''}{entry.ee_last_location ? ` · ${entry.ee_last_location}` : ''}
-                                </span>
-                              )}
-                            </div>
-                          )}
-
-                          {entry.neighbor_breakdown.length > 0 && (
-                            <p className="text-xs text-muted-foreground">
-                              <span className="font-semibold">Naabermaad:</span>{' '}
-                              {entry.neighbor_breakdown
-                                .map((b) => `${b.country_code} ×${b.obs_count}`)
-                                .join(' · ')}
-                            </p>
-                          )}
-
-                          {typeof entry.probability_factors?.adjacency_bonus === 'number' && (
-                            <p
-                              className="text-xs text-muted-foreground"
-                              title={
-                                typeof entry.probability_factors?.raw_score === 'number'
-                                  ? `Toorpunktiskoor: ${entry.probability_factors.raw_score.toFixed(2)} (enne piiramist 5–95)`
-                                  : undefined
-                              }
-                            >
-                              <span className="font-semibold">Naabermaa lähedusboonus:</span>{' '}
-                              {entry.probability_factors.adjacency_bonus} punkti{' '}
-                              <span className="opacity-70">(LV/FI: 10, LT: 8, SE: 7, PL: 5, RU: 4, BY: 3)</span>
-                            </p>
-                          )}
-
-                          {entry.likely_arrival_sites_et && entry.likely_arrival_sites_et.length > 0 && entry.likely_arrival_sites_et.some((s) => s.name) && (
-                            <div className="mt-2 space-y-1">
-                              <p className="text-xs font-semibold text-muted-foreground">Tõenäoline saabumiskoht Eestis</p>
-                              {entry.likely_arrival_sites_et
-                                .filter((s) => s.name)
-                                .map((site, idx) => (
-                                  <div key={idx}>
-                                    <p className="text-xs text-muted-foreground">
-                                      <a
-                                        href={`https://www.google.com/maps/search/${encodeURIComponent(site.name + ' Eesti')}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="font-semibold hover:underline"
-                                      >
-                                        {site.name}
-                                      </a>
-                                    </p>
-                                    <p className="text-xs text-muted-foreground opacity-70">{site.reasoning}</p>
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-
-                          {entry.why_likely_et && (
-                            <div>
-                              <p className="text-xs font-semibold text-muted-foreground">Miks tõenäoline?</p>
-                              <p className="text-sm italic text-muted-foreground">{entry.why_likely_et}</p>
-                            </div>
-                          )}
-
-                          {toenaosusRaportId && entry.ebird_code && (
-                            <PredictionRateChips
-                              ebirdCode={entry.ebird_code}
-                              current={myRatings[entry.ebird_code]?.rating ?? null}
-                              note={myRatings[entry.ebird_code]?.note ?? null}
-                              pending={ratingPending === entry.ebird_code}
-                              message={ratingMessage[entry.ebird_code] || null}
-                              isAnon={!session}
-                              onRate={(rating) => rateSpecies(entry.ebird_code, rating)}
-                              onNote={(n) => saveRatingNote(entry.ebird_code, n)}
-                            />
-                          )}
-                        </Card>
-                      );
-                    })}
-                  </div>
-                </>
+                <EvidenceListsSection
+                  lists={evidenceLists}
+                  segment={evidenceSegment}
+                  onSegmentChange={setEvidenceSegment}
+                  hooaegExpanded={hooaegExpanded}
+                  onHooaegExpandedChange={setHooaegExpanded}
+                  renderRating={renderEvidenceRating}
+                  onShowOnMap={showEvidenceOnMap}
+                  resolveAvatar={resolveEvidenceAvatar}
+                />
               )}
                 <PredictionTrackRecord />
               </div>

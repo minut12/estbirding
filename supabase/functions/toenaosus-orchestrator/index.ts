@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-15 - P184c1 evidence_lists via lists.ts (shadow, no UI change)
 // redeploy-marker: 2026-10-16 - P151 mode "sightings": Naabermaad list + push only (no Sonnet, no raport)
 // redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)
 // redeploy-marker: 2026-09-30 - P85i default model claude-sonnet-5 -> claude-sonnet-5-5 (env override unchanged)
@@ -146,6 +147,7 @@ import {
   WIND_UNAVAILABLE_ET,
   type WindSample,
 } from "./eta.ts";
+import { buildEvidenceLists, type EvidenceLists, tallinnDate } from "./lists.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_FN_BASE = SUPABASE_URL + "/functions/v1";
@@ -950,6 +952,8 @@ interface FetchComputeResult {
   rare_observations: RareObservation[];
   source_data: Record<string, unknown>;
   ebird_errors: Array<{ region: string; error: string }>;
+  /** P184c1: normalised species meta, reused by buildEvidenceLists. */
+  species_meta: SpeciesMeta[];
 }
 
 interface AnthropicResponse {
@@ -2874,6 +2878,7 @@ async function fetchCompute(
     sonnet_part_candidates: candidateChunks.map((c) => c.length),
     narrative_stubbed_codes,
     rare_observations,
+    species_meta: speciesList,
     source_data: {
       total_obs_fetched: allObs.length,
       species_with_obs: bySpecies.size,
@@ -3203,6 +3208,7 @@ interface ParseOutput {
   source_data: Record<string, unknown>;
   model: string;
   generation_meta: Record<string, unknown>;
+  evidence_lists: EvidenceLists | null;
 }
 
 // P5: eta_* fields ride on each predicted_sites[] entry -- not a new top-level
@@ -3253,6 +3259,7 @@ function parseMerge(
   claudeParts: AnthropicResponse[],
   upstream: FetchComputeResult,
   winds: EtaWinds,
+  evidenceLists: EvidenceLists | null,
 ): ParseOutput {
   // P16: one response per part. Each is guarded and parsed exactly as the
   // single response was; the part index goes into every message so a failure
@@ -3418,6 +3425,7 @@ function parseMerge(
         0,
       ) || null,
     },
+    evidence_lists: evidenceLists,
   };
 }
 
@@ -3442,6 +3450,29 @@ function insertRaport(payload: ParseOutput): Promise<InsertResponse> {
 // ---------------------------------------------------------------------------
 // The background run
 // ---------------------------------------------------------------------------
+
+// P184c1: evidence lists run beside Sonnet with their own ceiling; a timeout
+// stores an empty, flagged object instead of delaying the raport.
+const EVIDENCE_LISTS_TIMEOUT_MS = 25_000;
+
+function fallbackLists(errors: string[], elapsedMs: number): EvidenceLists {
+  return {
+    version: "v5-evidence",
+    as_of: tallinnDate(new Date()),
+    juba_eestis: [],
+    lahenemas: [],
+    hooaeg: [],
+    diag: { rarity_species: 0, errors, elapsed_ms: elapsedMs },
+  };
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
 
 interface RunOptions {
   dryRun: boolean;
@@ -3598,6 +3629,13 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
       return;
     }
 
+    // --- P184c1: evidence lists, started now, awaited before Parse + Merge --
+    const listsPromise = withTimeout(
+      buildEvidenceLists(sb, fc.species_meta, new Date()),
+      EVIDENCE_LISTS_TIMEOUT_MS,
+      fallbackLists(["timeout"], EVIDENCE_LISTS_TIMEOUT_MS),
+    );
+
     // --- stage 6: budget guard --------------------------------------------
     // Never start a Sonnet call we cannot finish.
     const elapsed = elapsedOf(orch);
@@ -3695,8 +3733,19 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
     await heartbeat(sb, orch, "sonnet_done");
 
     // --- stage 8: node "Parse + Merge" ------------------------------------
+    const evidenceLists = await listsPromise;
+    orch.state = {
+      ...orch.state,
+      evidence_lists: {
+        juba: evidenceLists.juba_eestis.length,
+        lahenemas: evidenceLists.lahenemas.length,
+        hooaeg: evidenceLists.hooaeg.length,
+        errors: evidenceLists.diag.errors,
+        elapsed_ms: evidenceLists.diag.elapsed_ms,
+      },
+    };
     const t6 = Date.now();
-    const payload = parseMerge(apiResps, fc, etaWinds);
+    const payload = parseMerge(apiResps, fc, etaWinds, evidenceLists);
     timings.parse_ms = Date.now() - t6;
     orch.state = {
       ...orch.state,

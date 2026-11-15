@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-15 - P184c1 evidence_lists pass-through
 // insert-toenaosus-raport
 // Receives the n8n Tõenäosus workflow payload and inserts a row into
 // public.toenaosus_raport using the service-role key. Auth via
@@ -80,6 +81,11 @@ serve(async (req) => {
     body.generation_meta && typeof body.generation_meta === 'object'
       ? (body.generation_meta as Record<string, unknown>)
       : {};
+  const evidence_lists =
+    body.evidence_lists && typeof body.evidence_lists === 'object' &&
+      !Array.isArray(body.evidence_lists)
+      ? (body.evidence_lists as Record<string, unknown>)
+      : null;
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -99,6 +105,7 @@ serve(async (req) => {
       source_data,
       model,
       generation_meta,
+      evidence_lists,
     })
     .select('id')
     .single();

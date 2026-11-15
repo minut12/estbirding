@@ -44,13 +44,14 @@ jobs:
             BASE="${{ github.event.before }}"
             if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE="HEAD~1"; fi
           fi
+          # Migrations are copied byte-for-byte from what was applied, so they may carry Estonian text.
           n=$(git diff -U0 "$BASE"...HEAD -- src public supabase netlify \
-                ':(exclude)*.md' ':(exclude)*.json' \
+                ':(exclude)*.md' ':(exclude)*.json' ':(exclude)supabase/migrations/*.sql' \
               | grep '^+' | grep -v '^+++' | grep -cP '[^\x00-\x7F]' || true)
           echo "non-ASCII added lines: $n"
           if [ "$n" != "0" ]; then
             git diff -U0 "$BASE"...HEAD -- src public supabase netlify \
-                ':(exclude)*.md' ':(exclude)*.json' \
+                ':(exclude)*.md' ':(exclude)*.json' ':(exclude)supabase/migrations/*.sql' \
               | grep '^+' | grep -v '^+++' | grep -nP '[^\x00-\x7F]' | head -20
             exit 1
           fi

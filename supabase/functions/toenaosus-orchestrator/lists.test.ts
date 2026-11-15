@@ -4,12 +4,15 @@
 
 import { assertEquals } from "jsr:@std/assert@^1.0.19";
 import {
+  cleanSites,
   dedupeEvents,
   findTrack,
   groupJubaEestis,
+  isSeasonal,
   nearEvent,
   type RareObsRow,
   type SightingEvent,
+  type SiteCellRow,
   sortHooaeg,
   tallinnDate,
 } from "./lists.ts";
@@ -146,4 +149,55 @@ Deno.test("sortHooaeg: years desc, then last10 desc, then name asc", () => {
     mk("D", 9, 0),
   ]);
   assertEquals(out.map((x) => x.species_et), ["D", "C", "A", "B"]);
+});
+
+// ---------------------------------------------------------------------------
+// P184d1: Hooaeg seasonality + site cleanup
+// Real years_by_month values from the 15 Nov 2026 raport.
+// ---------------------------------------------------------------------------
+
+const SEASON_CASES: [string, number[], boolean][] = [
+  ["Kaljukajakas", [4, 0, 1, 7, 13, 2, 1, 3, 3, 21, 18, 9], true],
+  ["Lumekakk", [4, 3, 4, 1, 0, 0, 0, 0, 0, 0, 3, 4], true],
+  ["Roosakajakas", [0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 2, 0], true],
+  ["Kassikakk", [9, 15, 21, 18, 13, 15, 8, 13, 10, 9, 8, 4], false],
+  ["Manni-kabilind", [11, 11, 19, 18, 21, 18, 18, 15, 21, 25, 17, 9], false],
+  ["Tundrakaur", [2, 1, 3, 12, 25, 3, 1, 3, 7, 18, 5, 5], false],
+];
+
+for (const [name, ybm, want] of SEASON_CASES) {
+  Deno.test(`isSeasonal: ${name} on 2026-11-15 -> ${want}`, () => {
+    assertEquals(isSeasonal(ybm, "2026-11-15", 14, 1.5), want);
+  });
+}
+
+Deno.test("isSeasonal: window spanning Oct-Nov counts October", () => {
+  const tundrakaur = [2, 1, 3, 12, 25, 3, 1, 3, 7, 18, 5, 5];
+  assertEquals(isSeasonal(tundrakaur, "2026-11-05", 14, 1.5), true);
+});
+
+Deno.test("isSeasonal: wrong length or all zeros -> false", () => {
+  assertEquals(isSeasonal([1, 2, 3], "2026-11-15", 14, 1.5), false);
+  assertEquals(isSeasonal(new Array(12).fill(0), "2026-11-15", 14, 1.5), false);
+});
+
+Deno.test("cleanSites: drops kaardilt / zero-season / unlabeled cells", () => {
+  const base: SiteCellRow = {
+    species_name: "Kaljukajakas",
+    lat: 57.9,
+    lon: 22.05,
+    n_season: 5,
+    label: "x",
+    county: "Saare maakond",
+  };
+  const rows: SiteCellRow[] = [
+    { ...base, label: "vt. kaardilt" },
+    { ...base, label: "Kihnu", n_season: 0 },
+    { ...base, label: null, county: null },
+    { ...base, label: "Sorve", n_season: 77 },
+  ];
+  const out = cleanSites(rows);
+  assertEquals(out.length, 1);
+  assertEquals(out[0].label, "Sorve");
+  assertEquals(out[0].n_days, 77);
 });

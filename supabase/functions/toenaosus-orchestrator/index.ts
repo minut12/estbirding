@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-15 - P184d1 Hooaeg seasonality filter + clean sites
 // redeploy-marker: 2026-11-15 - P184c1 evidence_lists via lists.ts (shadow, no UI change)
 // redeploy-marker: 2026-10-16 - P151 mode "sightings": Naabermaad list + push only (no Sonnet, no raport)
 // redeploy-marker: 2026-10-01 - P89 Claude -> Gemini fallback via _shared/llm.ts (reactive + LLM_FORCE_PROVIDER)

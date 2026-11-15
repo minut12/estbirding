@@ -155,6 +155,8 @@ const SE_MAX_KM = 400;
 const HOOAEG_HALFWIDTH = 14;
 const HOOAEG_MIN_YEARS = 2;
 const HOOAEG_SITES_PER_SPECIES = 3;
+const HOOAEG_SITES_FETCH = 9;
+const HOOAEG_MIN_SEASONALITY = 1.5;
 const HOOAEG_SITES_SINCE = "1990-01-01";
 const RPC_CHUNK = 400;
 const IN_CHUNK = 150;
@@ -460,6 +462,74 @@ export function seasonMonthsAround(asOf: string): number[] {
   return [wrap(m - 1), m, wrap(m + 1)];
 }
 
+/** Calendar months (1-12) touched by [asOf - halfwidth, asOf + halfwidth]. */
+function windowMonths(asOf: string, halfwidthDays: number): number[] {
+  const mid = Date.parse(`${asOf.slice(0, 10)}T00:00:00Z`);
+  const start = new Date(mid - halfwidthDays * DAY_MS);
+  const end = new Date(mid + halfwidthDays * DAY_MS);
+  const out: number[] = [];
+  const cur = new Date(
+    Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1),
+  );
+  const last = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1);
+  while (cur.getTime() <= last && out.length < 12) {
+    const m = cur.getUTCMonth() + 1;
+    if (!out.includes(m)) out.push(m);
+    cur.setUTCMonth(cur.getUTCMonth() + 1);
+  }
+  return out;
+}
+
+/**
+ * True when the busiest month in the window has at least minRatio times the
+ * yearly mean of years_by_month (i.e. the window is a real season peak).
+ */
+export function isSeasonal(
+  yearsByMonth: number[],
+  asOf: string,
+  halfwidthDays: number,
+  minRatio: number,
+): boolean {
+  if (yearsByMonth.length !== 12) return false;
+  const mean = yearsByMonth.reduce((a, b) => a + b, 0) / 12;
+  if (!(mean > 0)) return false;
+  const months = windowMonths(asOf, halfwidthDays);
+  if (months.length === 0) return false;
+  const peak = Math.max(...months.map((m) => yearsByMonth[m - 1] ?? 0));
+  return peak >= minRatio * mean;
+}
+
+function isBlank(v: string | null | undefined): boolean {
+  return v === null || v === undefined || v.trim() === "";
+}
+
+/**
+ * Site cells -> Hooaeg sites: drops cells without coordinates, outside
+ * Estonia, with no in-season days, "vt. kaardilt" labels, or with neither a
+ * label nor a county. No sort / slice.
+ */
+export function cleanSites(rows: SiteCellRow[]): HooaegItem["sites"] {
+  const out: HooaegItem["sites"] = [];
+  for (const c of rows) {
+    if (c.lat === null || c.lon === null) continue;
+    if (
+      c.lat < EE_BOX.latMin || c.lat > EE_BOX.latMax ||
+      c.lon < EE_BOX.lonMin || c.lon > EE_BOX.lonMax
+    ) continue;
+    if ((c.n_season ?? 0) < 1) continue;
+    if (c.label && /kaardilt/i.test(c.label)) continue;
+    if (isBlank(c.label) && isBlank(c.county)) continue;
+    out.push({
+      lat: c.lat,
+      lon: c.lon,
+      label: c.label ?? null,
+      county: c.county ?? null,
+      n_days: c.n_season ?? 0,
+    });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // I/O
 // ---------------------------------------------------------------------------
@@ -533,7 +603,7 @@ interface SeasonPriorRow {
   years_by_month: number[] | null;
 }
 
-interface SiteCellRow {
+export interface SiteCellRow {
   species_name: string;
   lat: number | null;
   lon: number | null;
@@ -707,6 +777,13 @@ async function buildHooaeg(
   }
   const kept = prior.filter((r) =>
     r.years_in_window_since_1990 >= HOOAEG_MIN_YEARS &&
+    Array.isArray(r.years_by_month) &&
+    isSeasonal(
+      r.years_by_month,
+      asOf,
+      HOOAEG_HALFWIDTH,
+      HOOAEG_MIN_SEASONALITY,
+    ) &&
     !exclude.has(r.species_et) && bySpecies.has(r.species_et)
   );
   if (kept.length === 0) return [];
@@ -721,24 +798,17 @@ async function buildHooaeg(
         p_species: part,
         p_months: months,
         p_since: HOOAEG_SITES_SINCE,
-        p_per_species: HOOAEG_SITES_PER_SPECIES,
+        p_per_species: HOOAEG_SITES_FETCH,
       },
     );
+    const bySp = new Map<string, SiteCellRow[]>();
     for (const c of rows) {
-      if (c.lat === null || c.lon === null) continue;
-      if (
-        c.lat < EE_BOX.latMin || c.lat > EE_BOX.latMax ||
-        c.lon < EE_BOX.lonMin || c.lon > EE_BOX.lonMax
-      ) continue;
-      const list = cells.get(c.species_name) ?? [];
-      list.push({
-        lat: c.lat,
-        lon: c.lon,
-        label: c.label ?? null,
-        county: c.county ?? null,
-        n_days: c.n_season ?? 0,
-      });
-      cells.set(c.species_name, list);
+      const list = bySp.get(c.species_name) ?? [];
+      list.push(c);
+      bySp.set(c.species_name, list);
+    }
+    for (const [sp, list] of bySp) {
+      cells.set(sp, [...(cells.get(sp) ?? []), ...cleanSites(list)]);
     }
   }
 

@@ -132,10 +132,30 @@ describe('trackLine / moveLine', () => {
 });
 
 describe('hooLast10Line', () => {
+  const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+  const last10 = (n: number): string => TEXT.hoo_last10.replace('{n}', String(n));
+  const lastYear = (y: number): string => TEXT.hoo_last_year.replace('{year}', String(y));
+
+  it('last10 = 7: both parts joined by a middot, capitalised', () => {
+    expect(hooLast10Line({ years_in_window_last10: 7, last_year_in_window: 2025 }))
+      .toBe(cap(`${last10(7)} ${MIDDOT} ${lastYear(2025)}`));
+  });
+
+  it('last10 = 1: both parts joined by a middot', () => {
+    expect(hooLast10Line({ years_in_window_last10: 1, last_year_in_window: 2019 }))
+      .toBe(cap(`${last10(1)} ${MIDDOT} ${lastYear(2019)}`));
+  });
+
+  it('last10 = 0: only the capitalised last-year part', () => {
+    const line = hooLast10Line({ years_in_window_last10: 0, last_year_in_window: 2009 });
+    expect(line).toBe(cap(lastYear(2009)));
+    expect(line).not.toContain(MIDDOT);
+    expect(line.charAt(0)).toBe('V');
+  });
+
   it('drops the last-year part when last_year_in_window is null', () => {
-    expect(hooLast10Line({ years_in_window_last10: 6, last_year_in_window: 2025 }))
-      .toBe(TEXT.hoo_last10.replace('{n}', '6').replace('{year}', '2025'));
-    expect(hooLast10Line({ years_in_window_last10: 0, last_year_in_window: null })).not.toContain(MIDDOT);
+    expect(hooLast10Line({ years_in_window_last10: 6, last_year_in_window: null })).toBe(cap(last10(6)));
+    expect(hooLast10Line({ years_in_window_last10: 0, last_year_in_window: null })).toBe('');
   });
 });
 

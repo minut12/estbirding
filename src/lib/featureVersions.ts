@@ -435,6 +435,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-13', ref: 'P181k', kind: 'minor', text: 'Ennustuste t\u00e4psus liigiti' },
       { date: '2026-11-13', ref: 'P182a', kind: 'patch', text: 'Jaanuari ja veebruari ennustusi hinnatakse \u00f5ige hooaja j\u00e4rgi' },
       { date: '2026-11-15', ref: 'P184d2', kind: 'major', text: 'Protsendi asemel kolm vaatlustel p\u00f5hinevat nimekirja: Juba Eestis, L\u00e4henemas, Hooaeg' },
+      { date: '2026-11-17', ref: 'P184d3', kind: 'patch', text: 'Hooaja kaardi tekstid selgemaks' },
     ],
   },
   {

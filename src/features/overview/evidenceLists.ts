@@ -304,13 +304,17 @@ export function hooSeenLine(item: Pick<HooaegItem, 'years_in_window_since_1990'>
   return fill(TEXT.hoo_seen, { n: item.years_in_window_since_1990 });
 }
 
-/** Only the part before the middot when last_year_in_window is null. */
+/**
+ * "<hoo_last10> MIDDOT <hoo_last_year>". The hoo_last10 part is
+ * dropped when last10 = 0, the hoo_last_year part when last_year_in_window is null.
+ * The first letter of the line is capitalised.
+ */
 export function hooLast10Line(item: Pick<HooaegItem, 'years_in_window_last10' | 'last_year_in_window'>): string {
-  if (item.last_year_in_window === null) {
-    const head = TEXT.hoo_last10.split(` ${MIDDOT} `)[0];
-    return fill(head, { n: item.years_in_window_last10 });
-  }
-  return fill(TEXT.hoo_last10, { n: item.years_in_window_last10, year: item.last_year_in_window });
+  const parts: string[] = [];
+  if (item.years_in_window_last10 > 0) parts.push(fill(TEXT.hoo_last10, { n: item.years_in_window_last10 }));
+  if (item.last_year_in_window !== null) parts.push(fill(TEXT.hoo_last_year, { year: item.last_year_in_window }));
+  const line = parts.join(` ${MIDDOT} `);
+  return line.charAt(0).toUpperCase() + line.slice(1);
 }
 
 export interface MonthBar {

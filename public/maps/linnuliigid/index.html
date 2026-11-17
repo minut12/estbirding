@@ -571,18 +571,6 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
   .notify-bell.active { opacity: 1; }
 
 /* P6b-iframe: Ennustus layer */
-.bm-pred-marker{position:relative;width:38px;height:38px}
-.bm-pred-ring{position:absolute;inset:0;border-radius:50%;border:2px dashed var(--eb-violet-600);background:#f5f3ff;box-shadow:0 2px 6px rgba(0,0,0,.18)}
-.bm-pred-av{position:absolute;inset:4px;border-radius:50%;background-size:cover;background-position:center;opacity:.55;filter:grayscale(1)}
-.bm-pred-q{position:absolute;left:-4px;top:-4px;width:15px;height:15px;border-radius:50%;background:var(--eb-violet-600);color:var(--eb-white);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center}
-.bm-pred-pct{position:absolute;right:-8px;bottom:-4px;padding:1px 4px;border-radius:8px;background:var(--eb-violet-600);color:var(--eb-white);font-size:10px;font-weight:700;line-height:1.3}
-/* P18: in-arc neighbour count, mirroring .bm-pred-pct across the marker -- same offsets, padding
-   and radius, so the two pills sit as a pair. No .wl lightening: a count is a count whether or not
-   the species is on the watch list. */
-.bm-pred-nb{position:absolute;left:-8px;bottom:-4px;padding:1px 4px;border-radius:8px;background:var(--eb-gray-900);color:var(--eb-white);font-size:10px;font-weight:700;line-height:1.3}
-.bm-pred-nb.hot{background:var(--eb-red-600)}
-.bm-pred-marker.wl{opacity:.6}
-.bm-pred-marker.wl .bm-pred-pct{background:#a78bfa}
 /* P41: Ennustus as a 40px icon button (mock v4). Prediction accent var(--eb-violet-650); on = filled; count badge = predicted sites. */
 .bm-pred-pill{position:relative;width:40px;height:40px;padding:0;border-radius:999px;border:0;background:rgba(255,255,255,.94);color:var(--eb-violet-650);cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.18);display:grid;place-items:center;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 .bm-pred-pill:hover{background:var(--eb-white)}
@@ -607,7 +595,6 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
 .bm-pred-pop .h{display:flex;align-items:center;gap:6px;padding-right:14px}
 .bm-pred-pop .h img{width:22px;height:22px;border-radius:50%;object-fit:cover;flex:0 0 22px}
 .bm-pred-pop .sp{font-weight:700;font-size:12px;flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bm-pred-pop .pct{flex:0 0 auto;color:var(--eb-violet-700);font-weight:700;font-size:12px}
 .bm-pred-pop .lat{color:var(--eb-slate-500);font-size:12px;font-style:italic;margin-left:28px}
 .bm-pred-pop .row{margin-top:3px;font-size:12px}
 .bm-pred-pop .row,.bm-pred-pop .basis,.bm-pred-pop .foot,.bm-pred-pop .site,.bm-pred-pop .seen,.bm-pred-pop .links,.bm-pred-pop .bm-pred-rate,.bm-pred-pop .bm-pred-rate-q,.bm-pred-pop .bm-pred-rate-msg{display:block;grid-template-columns:none;gap:0}
@@ -618,8 +605,6 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
 .bm-pred-pop .bm-pred-chips{display:flex;flex-wrap:wrap;gap:3px;margin-top:2px}
 .bm-pred-pop .bm-pred-chip{flex:0 0 auto;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:1px 6px;font:inherit;font-size:12px;line-height:1.4;color:var(--eb-violet-700);cursor:pointer}
 .bm-pred-pop .bm-pred-chip.on{background:var(--eb-violet-700);border-color:var(--eb-violet-700);color:var(--eb-white);font-weight:700}
-.bm-pred-pop .bm-pred-chip--route.on{background:var(--eb-amber-700);border-color:var(--eb-amber-700)}
-.bm-pred-pop .bm-pred-chip--route[disabled]{opacity:.45;cursor:default}
 .bm-pred-pop .bm-pred-rate-msg{font-size:12px;color:var(--eb-slate-400);margin-top:2px}
 .bm-pred-pop .k{color:var(--eb-slate-500)}
 .bm-pred-pop .site{font-size:12px;margin-top:3px}
@@ -630,24 +615,19 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
 .bm-pred-pop .links .sep{color:#c4b5fd;margin:0 5px}
 .bm-pred-pop .foot{margin-top:3px;font-size:12px;color:var(--eb-slate-400)}
 @media (max-width:480px){.bm-pred-pop .lat{display:none}}
-.bm-pred-track{stroke:var(--eb-violet-600);stroke-dasharray:6 6;stroke-width:2;opacity:.7}
-/* P9b: the router could not place this track on a lane (entry/exit leg over the class cap, or no
-   path). Drawn as the old straight source->site line, but greyed so it never reads as a route. */
-.bm-pred-track--unresolved{stroke:#4b5563;stroke-dasharray:6 6;stroke-width:2.5;opacity:.9}
-/* P17: the leg past the predicted site. Same colour and width as the routed track so it reads as
-   "continues", but fainter and finer-dotted so it never competes with the source->site line.
-   Must stay after .bm-pred-track: equal specificity, so source order decides the dasharray. */
-.bm-pred-track--onward{stroke-opacity:.65;stroke-dasharray:2 6}
-/* P17b: a track from a source other than the freshest. Thinner and lighter so the freshest source
-   still reads as the primary line. After .bm-pred-track--unresolved too: a non-freshest source can
-   also fail to route, and --alt must win the stroke-width on that combination. */
-.bm-pred-track--alt{stroke-width:1.5;stroke-opacity:.55}
-.bm-pred-note{font-size:12px;color:var(--eb-gray-500);margin-top:4px}
-/* Do NOT set white-space:normal here. Leaflet panes are position:absolute with no width, so an
-   abspos tooltip that is allowed to wrap shrink-to-fits against a 0-width containing block and
-   collapses to min-content — a one-word column, which is why max-width never bound. Leaflet's
-   own white-space:nowrap is the correct behaviour; shortLoc already bounds the label length. */
-.bm-pred-origin-tip{font-size:12px;line-height:1.3;font-weight:600}
+/* P184g: Lahenemas (real movement) + Hooaeg (season sites) layer */
+.bm-pred-pop .h .bm-mk-rar{position:static;flex:0 0 auto;display:inline-block;min-width:16px;height:16px;font-size:9px;line-height:13px}
+.bm-pred-pop .tag{margin-top:3px;font-size:12px;font-weight:700;color:#185FA5}
+.bm-pred-pop .hrow{display:flex;justify-content:space-between;gap:10px;font-size:12px;margin-top:2px}
+.bm-pred-pop .hrow .n{flex:0 0 auto;color:var(--eb-slate-500)}
+.bm-lah-dot{width:16px;height:16px;box-sizing:border-box;border-radius:50%;background:#378ADD;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:pointer}
+.bm-lah-arrow{pointer-events:none}
+.bm-lah-tip{font-size:12px;line-height:1.3;font-weight:600;color:#185FA5;padding:1px 5px}
+.bm-hoo-pin{width:26px;height:26px;box-sizing:border-box;border-radius:50%;background:#AFA9EC;border:2px solid #fff;color:#3C3489;font:700 12px/22px system-ui,sans-serif;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer}
+.bm-pred-legend{background:rgba(255,255,255,.94);border-radius:10px;padding:6px 9px;box-shadow:0 2px 8px rgba(0,0,0,.18);font-size:12px;line-height:1.5;color:var(--eb-slate-700,#334155)}
+.bm-pred-legend .r{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.bm-pred-legend .ln{display:inline-block;width:18px;height:3px;border-radius:2px;background:#185FA5}
+.bm-pred-legend .pin{display:inline-block;width:16px;height:16px;border-radius:50%;background:#AFA9EC;color:#3C3489;font:700 9px/16px system-ui,sans-serif;text-align:center}
 /* /P6b-iframe */
 
 </style>
@@ -14247,116 +14227,20 @@ document.addEventListener('DOMContentLoaded', function(){
 // ---- P6b-iframe 2026-09-05: Ennustus layer (predicted arrival sites from toenaosus_raport) ----
 (function(){ 'use strict';
   var LS_KEY = 'bm_pred_layer';
-  var CACHE_KEY = 'bm_pred_raport_v1';
+  var CACHE_KEY = 'bm_pred_raport_v2';
   var REFRESH_MS = 6 * 3600 * 1000;
   var FALLBACK_SUPABASE_URL = 'https://rfjhrosxbaihyrnbmmbl.supabase.co';
-  // upstream_obs bearing/distance are measured from Estonia's reference centre, not from each
-  // predicted site — deriving the endpoint per-site would scatter one observation to three places.
-  var TURI = { lat: 58.81, lon: 25.43 };
   var EARTH_R_KM = 6371;
 
-  // ---- P9b: corridor lanes + router (inlined from "Claude outputs/corridors.json", draft-17) ----
-  // Inlined rather than fetched: a track must draw on first paint with no extra request, and a
-  // failed fetch would silently degrade every routed track to the straight fallback.
-  var BM_CORRIDORS = {"version":"P9-draft-17","generated":"2026-09-16","notes":["Waypoint lanes for Ennustus track drawing. Consumed by the linnuliigid iframe; also the Deno backtest can read it.","Coordinates are approximate sea/land waypoints, not observation sites. Sites come from predicted_sites[]; lanes only shape the line between source and site.","A lane lists classes that may use it. A class's max_crossing_km bounds the straight legs source->lane-entry and lane-exit->site; if either leg exceeds it, the track falls back to 'unresolved' (drawn grey dashed, or hidden when source_in_arc === false).","Routing: lanes form one graph (nodes shared between lanes are junctions). Dijkstra from the lane node nearest the source to the lane node nearest the site, over edges of lanes the class may use. The two straight legs are checked against max_crossing_km.","raptor_soaring crossing cap 60 km admits Porkkala→Paljassaare (~54 km, the classic Gulf crossing) and Irbe, rejects Hanko→Põõsaspea (~70 km) and everything wider. Kristian to confirm; his eagle picture (option B) implies Turku birds bypass Estonia.","heron_stork added draft-5: DB has 6 flight classes (passerine_nocturnal 77, waterbird 34, seabird 26, wader 22, raptor_soaring 19, heron_stork 12). Herons/storks/spoonbill: overland + coastal wetlands, crossings up to ~100 km (Gulf of Finland at Hanko admitted). 190 rows, 0 null.","draft-6 (P9c): live raport 5486ea98 showed 3 of 4 tracks unresolved on the ENTRY leg (Zhitkovo 81 km from lebyazhye; Krakow 542 km from gdansk_bay; S-PL 265 km from warsaw) and the one routed seabird (parjae, Lebyazhye->Parispea) drawn as a V via poosaspea_sea because the Gulf of Finland had no sea nodes. Fix is nodes, not caps: SEA_GULF lane along the Gulf; PL_INLAND from Krakow/Silesia to Warsaw; RU_KAR from the Karelian Isthmus round St Petersburg to Lebyazhye. Router also treats entry==exit as a straight leg checked against the cap.","draft-6: seabird may use PL_INLAND+VISTULA so inland-sourced gulls (medgul1 from Zbiornik Dobczycki) reach the sea at Gdansk instead of failing the entry leg. Skuas/divers never have inland sources, so the land lanes are inert for them.","draft-7 (P9d): prod check on raport 45282edd showed three grey fallbacks, all entry-leg: whwcro from Kolari (Lapland, 295 km to oulu), pecsan from Ottenby (Oland, 230 km to gdansk_bay), lolbuz1 from Gomel (BY, 480 km to bialystok). Added FI_LAPLAND (rovaniemi/kolari -> oulu), SE_EAST (stockholm archipelago -> oland -> s_baltic/gotland_e sea) and BY_EAST (gomel -> minsk -> vilnius -> kaunas).","draft-8 (P9e): Kristian's red-line review of 7 prod tracks. (1) No Finnish west-coast lane: Kvarken birds detoured via Tampere-Lahti-Kotka and back to Hanko -> FI_WEST kvarken_land->pori->rauma->turku. (2) No central-Estonia lanes: Tartu/Viljandi sites were reached via Valga or the coast -> EE_CENTRAL_N paljassaare->rapla->paide->tartu, EE_CENTRAL_S parnu->viljandi->tartu, EE_PAIDE_LINK rakvere->paide. (3) Only one mid-Gulf crossing -> GULF_X_PAKRI porkkala->pakri_land (~63 km; not for raptors, cap 60) plus PAKRI_LINK. Tracks still stop at the predicted site; palhar1 arc unchanged (his rulings).","draft-9 (P9f): Kristian red-line review of raport cd732d80 (11.09). Lapi tsiitsitaja to the Gulf-of-Riga ruut 57.75N 23.25E was routed Hiiumaa->Saaremaa->Sorve->Kolka; his line runs down the mainland coast from Matsalu past Parnu and across Parnu Bay to Kolka. Add EE_WEST_COAST parnu->kihnu->riga_gulf_n->kolka. The router exits at the lane node nearest the site, so riga_gulf_n (mid-bay, ~12 km from the ruut) is what makes the Parnu Bay path win; Kolka-proper sites still route via Sorve (Irbe crossing kept for all classes by ruling; Kimitoon->Kalana crossing declined).","draft-10 (P9g): Manni-kabilind from Taivalkoski (65.53N 28.76E) was grey on raport cd732d80/ad86e688 - 160 km to oulu, passerine cap 150. Add FI_NE kuusamo->taivalkoski->oulu (land classes). No other change.","draft-11 (P9h): Kalana/Tahkuna sites on Hiiumaa had no land node - exit leg 78 km straight from muhu (Manni-kabilind Kalana). Add EE_HIIUMAA poosaspea->tahkuna_land->kalana_land (all non-seabird classes), dead-end at Kalana by ruling; Kimitoon->Kalana crossing stays declined.","draft-12 (P9i): route_wrong chips on 791515b7/ca5446bf. (1) GULF_X_W gains osmussaar_land [59.30,23.37] so Hanko reaches Osmussaar without a Poosaspea back-track. (2) GULF_X_HIIUMAA helsinki_w->tahkuna_land direct Gulf crossing, passerine_nocturnal only (Manni-kabilind Kalana no longer east via Porkkala). (3) SEA_W_SHORT bornholm_n->s_baltic for seabird+waterbird (Oresund birds skip the Gdansk Bay dip; Vistula gulls still reach gdansk_bay). Router trim (P22) is a separate change.","draft-13 (P9j): route_wrong chip on e8bdf2af (Veetallaja/renpha, single Helsinki source, Haabersti site). wader gains GULF_X_MID, so the Helsinki->Tallinn wader track no longer doglegs 33 km west via GULF_X_PAKRI + PAKRI_LINK (134 km lane -> 83 km). Lane objects, node set and all other classes unchanged (83 nodes, 34 lanes; wader 27 -> 28 lanes). Open, not addressed: wader has no north-Estonian coastal lane east of Tallinn, so an RU-LEN source still routes inland via Tartu (445 km).","draft-14 (P9k): classes.waterbird listed SEA_GULF but not SEA_W/SEA_N, so the six Gulf sea nodes were a closed component for waterbird — any waterbird source nearest one of them returned no_path and drew grey (open Gulf and Estonian north coast, ~59.3-60.4N 23.5-28.9E). Add GULF_LANDFALL_W (poosaspea-poosaspea_sea-naissaar_sea-paljassaare) and GULF_LANDFALL_E (rakvere-kunda_sea-narva_bay-narva_joesuu), waterbird only. Each re-uses one SEA_GULF edge, so only the four landfall edges are new (8.5 / 22.7 / 31.2 / 11.9 km). No new node. rakvere not kasmu, because kasmu is NE_TAIGA-only and waterbird may not use it. Other classes byte-identical. Ruling (R2/P30, 2026-09-17): max_crossing_km bounds the two straight legs only; hand-curated lane edges are sanctioned by construction — GULF_X_E for raptor_soaring (126 km) and GULF_X_HIIUMAA for passerine_nocturnal (169 km) are deliberate exceptions, not bugs.","draft-15 (P27): router only, lanes/nodes unchanged. Entry node = nearest, unless one of the next four nearest allowed nodes inside the cap is strictly cheaper on 2*entry_leg + lane_km (ties keep nearest; xn never a candidate). Fixes wrong-basin entries: Aland Sea passerine -> Tartu no longer rides 1087 km via Oland/Gotland/Kolka (enters at kalana_land, 444 km total); mid-Baltic seabird enters at ristna_sea not stockholm_arch; S-Baltic heron -> Kuressaare via Gotland/Irbe not Torun/Warsaw/Kaunas. Weight 2 chosen because unweighted cost collapsed Gulf tracks into straight legs. Accepted side effect: a raptor at Kimito now takes a 47 km straight leg to tahkuna_land (inside the 60 cap) instead of 44 km to hanko + 294 km of lane; straight legs <= cap are legal by the R2/P30 ruling, the declined item was a lane. No track flips ok<->unresolved in any class.","draft-16 (P28): waterbird.max_crossing_km 80 -> 150. Only cap change since draft-1; ruling 2026-09-17 on Holopainen et al. 2026 (Ornis Fennica 103:68-86, p.76): GPS-tracked wigeon cross the Bothnian Sea and Baltic Proper at their widest, and the waterbird lanes already carry the class over ottenby>gotland_e at 225 km. Admits Aland, Bothnian-coast and Gotland-sea sources that failed the entry leg. Class-wide (34 rows incl. geese, cranes, rails); per-species override rejected as three-layer. Swedish interior (Hornborgasjon 236 km, Takern 176 km to oland_n) still unresolved -- needs an SE_INLAND lane, not a cap. Grid: waterbird ok 4517 -> 8478, zero ok->unresolved, other classes byte-identical.","draft-17 (P34): SE_INLAND hornborgasjon-takern-braviken-landsort, three new nodes, joins SE_EAST at landsort. The Swedish interior had no lane node: Hornborgasjon 236 km, Takern 176 km, Kvismaren 152 km, Vanern 258 km to the nearest allowed node, entry_leg for every land/water class even at the P28 waterbird cap. Nodes not caps. Edges 73 / 108 / 75 km; Braviken keeps the line on the coast instead of a 183 km cut across Ostergotland. waterbird, wader, passerine_nocturnal, heron_stork (the SE_EAST users); not raptor_soaring (Swedish raptors leave via Falsterbo, no Swedish sea lane by design), not seabird. Grid: +390 waterbird, +310 wader, +390 passerine, +300 heron resolved, zero ok->unresolved, seabird and raptor byte-identical."],"classes":{"seabird":{"lanes":["SEA_W","SEA_N","SEA_GULF","PL_INLAND","VISTULA","SE_EAST","SE_EAST_X","SEA_W_SHORT"],"max_crossing_km":400,"style":"sea"},"waterbird":{"lanes":["COAST_W","GULF_X_W","GULF_X_MID","GULF_X_E","SOUTH_LAND","FI_INLAND","LV_COAST","RU_LEN","PARNU_LINK","FI_SW","PL_INLAND","RU_KAR","SEA_GULF","VISTULA","FI_LAPLAND","BY_EAST","SE_EAST","SE_EAST_X","FI_WEST","EE_CENTRAL_N","EE_CENTRAL_S","EE_PAIDE_LINK","PAKRI_LINK","GULF_X_PAKRI","EE_CENTRAL_W","EE_WEST_COAST","FI_NE","EE_HIIUMAA","SEA_W_SHORT","GULF_LANDFALL_W","GULF_LANDFALL_E","SE_INLAND"],"max_crossing_km":150,"style":"coast"},"wader":{"lanes":["COAST_W","INLAND_SE","GULF_X_W","GULF_X_MID","GULF_X_E","SOUTH_LAND","FI_INLAND","LV_COAST","RU_LEN","PARNU_LINK","FI_SW","PL_INLAND","RU_KAR","VISTULA","FI_LAPLAND","BY_EAST","SE_EAST","SE_EAST_X","FI_WEST","EE_CENTRAL_N","EE_CENTRAL_S","EE_PAIDE_LINK","PAKRI_LINK","GULF_X_PAKRI","EE_CENTRAL_W","EE_WEST_COAST","FI_NE","EE_HIIUMAA","SE_INLAND"],"max_crossing_km":120,"style":"coast"},"passerine_nocturnal":{"lanes":["COAST_W","INLAND_SE","NE_TAIGA","GULF_X_W","GULF_X_MID","GULF_X_E","SOUTH_LAND","FI_INLAND","LV_COAST","RU_LEN","PARNU_LINK","FI_SW","PL_INLAND","RU_KAR","VISTULA","FI_LAPLAND","BY_EAST","SE_EAST","SE_EAST_X","FI_WEST","EE_CENTRAL_N","EE_CENTRAL_S","EE_PAIDE_LINK","PAKRI_LINK","GULF_X_PAKRI","EE_CENTRAL_W","EE_WEST_COAST","FI_NE","EE_HIIUMAA","GULF_X_HIIUMAA","SE_INLAND"],"max_crossing_km":150,"style":"land"},"raptor_soaring":{"lanes":["GULF_X_MID","GULF_X_E","INLAND_SE","SOUTH_LAND","NE_TAIGA","FI_INLAND","LV_COAST","RU_LEN","PARNU_LINK","COAST_W","FI_SW","PL_INLAND","RU_KAR","FI_LAPLAND","BY_EAST","FI_WEST","EE_CENTRAL_N","EE_CENTRAL_S","EE_PAIDE_LINK","PAKRI_LINK","EE_CENTRAL_W","FI_NE","EE_HIIUMAA"],"max_crossing_km":60,"style":"land"},"heron_stork":{"lanes":["COAST_W","INLAND_SE","GULF_X_W","GULF_X_MID","GULF_X_E","SOUTH_LAND","FI_INLAND","LV_COAST","RU_LEN","PARNU_LINK","FI_SW","PL_INLAND","RU_KAR","VISTULA","FI_LAPLAND","BY_EAST","SE_EAST","SE_EAST_X","FI_WEST","EE_CENTRAL_N","EE_CENTRAL_S","EE_PAIDE_LINK","PAKRI_LINK","GULF_X_PAKRI","EE_CENTRAL_W","EE_WEST_COAST","FI_NE","EE_HIIUMAA","SE_INLAND"],"max_crossing_km":100,"style":"coast"}},"nodes":{"skagen":[57.75,10.6],"kattegat":[56.8,11.8],"oresund":[55.9,12.7],"bornholm_n":[55.5,14.8],"s_baltic":[55.8,17.5],"gotland_e":[57.3,19.5],"irbe":[57.75,22],"sorve_sea":[57.85,21.95],"ristna_sea":[58.93,21.85],"poosaspea_sea":[59.3,23.45],"kvarken":[63.5,20.9],"bothnia_s":[61.5,19.5],"aland":[60.2,19.8],"hanko_sea":[59.7,22.9],"hanko":[59.82,22.97],"poosaspea":[59.23,23.51],"haapsalu":[58.95,23.5],"matsalu":[58.75,23.7],"muhu":[58.6,23.25],"kuressaare":[58.25,22.5],"sorve":[57.91,22.06],"kolka":[57.75,22.6],"ventspils":[57.4,21.55],"porkkala":[59.93,24.4],"paljassaare":[59.47,24.7],"kotka":[60.45,26.9],"narva_joesuu":[59.47,28.04],"vasknarva":[59,27.73],"tartu":[58.38,26.72],"valga":[57.78,26.05],"valmiera":[57.54,25.4],"daugavpils":[55.87,26.5],"warsaw":[52.2,21],"bialystok":[53.13,23.15],"kaunas":[54.9,23.9],"riga":[56.95,24.1],"parnu":[58.38,24.5],"lahti":[60.98,25.66],"kasmu":[59.6,25.7],"rakvere":[59.35,26.35],"gdansk_bay":[54.7,19],"kvarken_land":[63.1,21.6],"tampere":[61.5,23.8],"jurmala":[56.95,23.6],"lebyazhye":[59.97,29.4],"kingisepp":[59.37,28.6],"oulu":[65,25.5],"turku":[60.45,22.27],"helsinki_w":[60.12,24.75],"seskar":[60.02,28.35],"narva_bay":[59.55,27.9],"kunda_sea":[59.62,26.5],"parispea_sea":[59.78,25.7],"naissaar_sea":[59.63,24.45],"krakow":[50.06,19.94],"lodz":[51.77,19.46],"vyborg":[60.71,28.75],"st_petersburg":[59.93,30.3],"torun":[53.02,18.6],"kolari":[67.33,23.78],"rovaniemi":[66.5,25.72],"kemi":[65.74,24.56],"stockholm_arch":[59.35,18.9],"landsort":[58.74,17.87],"oland_n":[57.35,17.1],"ottenby":[56.2,16.4],"gomel":[52.43,31],"minsk":[53.9,27.57],"vilnius":[54.69,25.28],"pripyat":[51.9,29.9],"pori":[61.48,21.8],"rauma":[61.13,21.5],"rapla":[59,24.8],"paide":[58.89,25.56],"viljandi":[58.36,25.6],"pakri_land":[59.36,24.05],"kihnu":[58.13,23.97],"riga_gulf_n":[57.85,23.3],"kuusamo":[65.96,29.18],"taivalkoski":[65.57,28.25],"tahkuna_land":[59.08,22.55],"kalana_land":[58.95,22.1],"osmussaar_land":[59.3,23.37],"hornborgasjon":[58.32,13.55],"takern":[58.35,14.8],"braviken":[58.6,16.6]},"lanes":{"SEA_W":{"label":"Kattegat → S Baltic → Irbe → W headlands","nodes":["skagen","kattegat","oresund","bornholm_n","gdansk_bay","s_baltic","gotland_e","irbe","sorve_sea","ristna_sea","poosaspea_sea"]},"SEA_N":{"label":"Bothnia → Åland → Gulf mouth → Põõsaspea","nodes":["kvarken","bothnia_s","aland","hanko_sea","poosaspea_sea","ristna_sea","sorve_sea","irbe"]},"COAST_W":{"label":"West-Estonian coastal funnel (Põõsaspea → Sõrve → Kolka)","nodes":["poosaspea","haapsalu","matsalu","muhu","kuressaare","sorve","kolka","ventspils"]},"GULF_X_W":{"label":"Hanko → Põõsaspea crossing","nodes":["hanko","osmussaar_land","poosaspea"]},"GULF_X_MID":{"label":"Porkkala → Tallinn crossing","nodes":["porkkala","paljassaare"]},"GULF_X_E":{"label":"Kotka → Narva-Jõesuu crossing","nodes":["kotka","narva_joesuu"]},"INLAND_SE":{"label":"Narva → Peipsi → Tartu → Valga → LV interior","nodes":["narva_joesuu","vasknarva","tartu","valga","valmiera","daugavpils"]},"SOUTH_LAND":{"label":"PL → LT → LV → S Estonia","nodes":["warsaw","bialystok","kaunas","riga","parnu","valga"]},"NE_TAIGA":{"label":"SE Finland → Narva / Lahemaa → inland","nodes":["lahti","kotka","narva_joesuu","kasmu","rakvere","tartu"]},"FI_INLAND":{"label":"Kvarken → Tampere → Lahti → Kotka (Finnish overland)","nodes":["oulu","kvarken_land","tampere","lahti","kotka"]},"LV_COAST":{"label":"Riga → Jūrmala → Kolka → Sõrve (Irbe ~28 km)","nodes":["riga","jurmala","kolka","sorve"]},"RU_LEN":{"label":"Ingria coast → Kingisepp → Narva-Jõesuu","nodes":["lebyazhye","kingisepp","narva_joesuu"]},"PARNU_LINK":{"label":"Pärnu → Matsalu (joins the coastal funnel)","nodes":["parnu","matsalu"]},"FI_SW":{"label":"Turku → Hanko → Porkkala → Helsinki → Kotka (Finnish south coast)","nodes":["turku","hanko","porkkala","helsinki_w","kotka"]},"SEA_GULF":{"label":"Gulf of Finland sea lane: Seskar -> Narva Bay -> Kunda -> Parispea -> Naissaar -> Poosaspea","nodes":["seskar","narva_bay","kunda_sea","parispea_sea","naissaar_sea","poosaspea_sea"]},"PL_INLAND":{"label":"S Poland interior -> Lodz -> Warsaw (joins SOUTH_LAND)","nodes":["krakow","lodz","warsaw"]},"RU_KAR":{"label":"Karelian Isthmus -> St Petersburg -> Lebyazhye (round the Gulf head, joins RU_LEN)","nodes":["vyborg","st_petersburg","lebyazhye"]},"VISTULA":{"label":"Warsaw -> Torun -> Gdansk Bay (Vistula valley to the coast; gulls and waterfowl from inland PL reach the sea here)","nodes":["warsaw","torun","gdansk_bay"]},"FI_LAPLAND":{"label":"Lapland -> Kemi -> Oulu (joins FI_INLAND)","nodes":["kolari","rovaniemi","kemi","oulu"]},"SE_EAST":{"label":"Stockholm archipelago -> Landsort -> Oland -> Ottenby -> S Baltic (Swedish east-coast sea lane)","nodes":["stockholm_arch","landsort","oland_n","ottenby","s_baltic"]},"SE_EAST_X":{"label":"Ottenby -> Gotland -> Irbe -> Sorve (Oland-Gotland-Irbe crossing; seabirds already have SEA_W from gotland_e)","nodes":["ottenby","gotland_e","irbe","sorve"]},"BY_EAST":{"label":"Pripyat -> Gomel -> Minsk -> Vilnius -> Kaunas (joins SOUTH_LAND)","nodes":["pripyat","gomel","minsk","vilnius","kaunas"]},"FI_WEST":{"label":"Kvarken -> Pori -> Rauma -> Turku (Finnish west coast)","nodes":["kvarken_land","pori","rauma","turku"]},"EE_CENTRAL_N":{"label":"Tallinn coast -> Rapla -> Paide -> Tartu (central Estonia from the north)","nodes":["paljassaare","rapla","paide","tartu"]},"EE_CENTRAL_S":{"label":"Parnu -> Viljandi -> Tartu (central Estonia from the west)","nodes":["parnu","viljandi","tartu"]},"EE_PAIDE_LINK":{"label":"Rakvere -> Paide (joins NE_TAIGA to the central lanes)","nodes":["rakvere","paide"]},"GULF_X_PAKRI":{"label":"Porkkala -> Pakri crossing (~63 km, the western mid-Gulf diagonal)","nodes":["porkkala","pakri_land"]},"PAKRI_LINK":{"label":"Poosaspea -> Pakri -> Paljassaare coastal links","nodes":["poosaspea","pakri_land","paljassaare"]},"EE_CENTRAL_W":{"label":"Rapla -> Viljandi (central Estonia, west branch)","nodes":["rapla","viljandi"]},"EE_WEST_COAST":{"label":"Parnu -> Kihnu -> Gulf of Riga (north) -> Kolka","nodes":["parnu","kihnu","riga_gulf_n","kolka"]},"FI_NE":{"label":"Kuusamo -> Taivalkoski -> Oulu (NE Finland feeder to the Bothnian coast)","nodes":["kuusamo","taivalkoski","oulu"]},"EE_HIIUMAA":{"label":"Hiiumaa land lane (Põõsaspea → Tahkuna → Kalana)","nodes":["poosaspea","tahkuna_land","kalana_land"]},"GULF_X_HIIUMAA":{"label":"Helsinki -> Tahkuna direct Gulf crossing (nocturnal passerines only)","nodes":["helsinki_w","tahkuna_land"]},"SEA_W_SHORT":{"label":"Bornholm -> S Baltic direct (skips Gdansk Bay)","nodes":["bornholm_n","s_baltic"]},"GULF_LANDFALL_W":{"label":"Gulf sea lane → Põõsaspea / Tallinn landfall (waterbird)","nodes":["poosaspea","poosaspea_sea","naissaar_sea","paljassaare"]},"GULF_LANDFALL_E":{"label":"Gulf sea lane → Kunda / Narva-Jõesuu landfall (waterbird)","nodes":["rakvere","kunda_sea","narva_bay","narva_joesuu"]},"SE_INLAND":{"label":"Hornborgasjön -> Tåkern -> Bråviken -> Landsort (Swedish interior to the east-coast sea lane)","nodes":["hornborgasjon","takern","braviken","landsort"]}}};
-
-  // Two-point haversine, [lat,lon] pairs. Deliberately NOT aliased to kmBetween(aLat,aLon,bLat,bLon)
-  // above: different signature, and routeTrack is ported verbatim from the mock, which calls this one.
-  function km(a,b){var R=6371,dLat=(b[0]-a[0])*Math.PI/180,dLon=(b[1]-a[1])*Math.PI/180,la1=a[0]*Math.PI/180,la2=b[0]*Math.PI/180;var h=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)*Math.sin(dLon/2);return 2*R*Math.asin(Math.sqrt(h));}
-
-  // Ported verbatim from "Claude outputs/P9-corridors-mock.html". Dijkstra over the lanes this class
-  // may use; the two straight legs (source -> lane entry, lane exit -> site) are each bounded by the
-  // class max_crossing_km. On failure it still returns pts = [src, site], the straight fallback.
-  function routeTrack(C, src, site, cls){
-    var spec = C.classes[cls]; if(!spec) return { ok:false, reason:'no_class', pts:[src, site] };
-    var adj = {}, allowed = {};
-    for(var li=0; li<spec.lanes.length; li++){ var ns = C.lanes[spec.lanes[li]].nodes;
-      for(var i=0;i<ns.length;i++){ allowed[ns[i]] = true; if(i+1<ns.length){ var a=ns[i], b=ns[i+1], d=km(C.nodes[a],C.nodes[b]);
-        (adj[a]=adj[a]||[]).push([b,d]); (adj[b]=adj[b]||[]).push([a,d]); } } }
-    var en=null, ed=1e9, xn=null, xd=1e9, n;
-    for(n in allowed){ var d1=km(src,C.nodes[n]); if(d1<ed){ed=d1;en=n;} var d2=km(site,C.nodes[n]); if(d2<xd){xd=d2;xn=n;} }
-    var lim=spec.max_crossing_km;
-    // P27: Dijkstra from a given lane node to xn. Returns final dist[] and prev[].
-    function dijkstra(start){
-      var dist={}, prev={}, Q={}, n; for(n in allowed){ dist[n]=1e12; Q[n]=true; } dist[start]=0;
-      while(true){ var u=null; for(n in Q){ if(u===null||dist[n]<dist[u]) u=n; } if(u===null) break; delete Q[u]; if(u===xn) break;
-        var e=adj[u]||[]; for(var k=0;k<e.length;k++){ var v=e[k][0], w=e[k][1]; if(dist[u]+w<dist[v]){ dist[v]=dist[u]+w; prev[v]=u; } } }
-      return { dist:dist, prev:prev };
-    }
-    // P27: the nearest node is the baseline entry. Try the next K_ENTRY-1 nearest allowed nodes inside
-    // the cap and take one only if W_ENTRY*entry_leg + lane_km is strictly lower -- ties keep the
-    // nearest. The straight leg is weighted x2 so a farther entry has to save more than twice the
-    // extra leg; unweighted, straight legs always beat the lane they replace and the track collapses
-    // (P9f). xn is never a candidate for the same reason. If the nearest entry already fails the cap
-    // nothing is tried, so the entry_leg failure reason is unchanged.
-    var K_ENTRY = 5, W_ENTRY = 2;
-    var run = dijkstra(en), best = W_ENTRY*ed + run.dist[xn];
-    if(en !== xn && ed <= lim){
-      var cand = []; for(n in allowed){ if(n===en || n===xn) continue; var dc=km(src,C.nodes[n]); if(dc<=lim) cand.push([n,dc]); }
-      cand.sort(function(a,b){ return a[1]-b[1]; });
-      for(var ci=0; ci<cand.length && ci<K_ENTRY-1; ci++){
-        var r = dijkstra(cand[ci][0]), tot = W_ENTRY*cand[ci][1] + r.dist[xn];
-        if(tot < best){ best = tot; en = cand[ci][0]; ed = cand[ci][1]; run = r; }
-      }
-    }
-    var dist = run.dist, prev = run.prev;
-    var path=[]; for(var c=xn; c; c=prev[c]){ path.unshift(c); if(c===en) break; }
-    // P22: trim the overshoot-and-return tail. The exit node is the lane node nearest the site, so the
-    // path often runs to a node 1 km nearer and comes back (tartu>viljandi then 34 km east). Drop the
-    // last leg while it is more than TRIM_F times the exit-leg distance it saves. Only trailing nodes
-    // go and never below two, so a track cannot collapse to a straight line (min-total routing was
-    // tried and rejected in P9f for exactly that). dist[] of the remaining nodes is already final.
-    var TRIM_F = 3;
-    while(path.length > 2 && path[0]===en){
-      var tLast = path[path.length-1], tPrev = path[path.length-2];
-      var tLeg = km(C.nodes[tPrev], C.nodes[tLast]);
-      var tSave = km(C.nodes[tPrev], site) - km(C.nodes[tLast], site);
-      if(tLeg > TRIM_F * tSave){ path.pop(); xn = tPrev; xd = km(C.nodes[xn], site); }
-      else break;
-    }
-    var ok = ed<=lim && xd<=lim && path[0]===en;
-    if(en===xn){ var sd=km(src,site); ok = sd<=lim; return { ok:ok, reason: ok?'ok_direct':'direct_leg', entry_km:Math.round(ed), exit_km:Math.round(xd), lane_km:0, path:[en], pts:[src,site] }; }
-    var pts=[src]; for(var p=0;p<path.length;p++) pts.push(C.nodes[path[p]]); pts.push(site);
-    return { ok:ok, reason: ok?'ok':(ed>lim?'entry_leg':(xd>lim?'exit_leg':'no_path')), entry_km:Math.round(ed), exit_km:Math.round(xd), lane_km:Math.round(dist[xn]), path:path, pts:pts };
-  }
-
-  // P17: one lane node beyond the exit node, continuing away from the source. null when none.
-  function onwardNode(C, cls, path, src){
-    try{
-      var spec = C.classes[cls]; if(!spec || !path || path.length < 1) return null;
-      var xn = path[path.length-1], prevN = path.length > 1 ? path[path.length-2] : null;
-      var best = null, bestD = -1;
-      for(var li=0; li<spec.lanes.length; li++){ var ns = C.lanes[spec.lanes[li]].nodes; var i = ns.indexOf(xn); if(i < 0) continue;
-        var cand = [ns[i-1], ns[i+1]];
-        for(var k=0;k<2;k++){ var n = cand[k]; if(!n || n === prevN || path.indexOf(n) >= 0) continue;
-          var d = km(src, C.nodes[n]); if(d > bestD){ bestD = d; best = n; } } }
-      return best;
-    }catch(e){ return null; }
-  }
-
-  // P17b: "a>b>c" ends with "b>c" -- the same lane joined further downstream. The shorter path is
-  // then a duplicate of the longer one and only the longer is drawn.
-  function pathEndsWith(a, b){ var t = '>' + b; return a.length >= t.length && a.lastIndexOf(t) === a.length - t.length; }
-
-  // upstream_obs.location is free eBird text — long, often non-Latin. Shorten it for the origin
-  // label only; the popup keeps the same shortened form so a 220 px popup cannot be blown open.
+  // eBird location text is free text: long, often non-Latin. shortLoc bounds it for the event
+  // labels and popups so a 240 px popup cannot be blown open.
   var ORIGIN_LABEL_MAX = 20;
   var ORIGIN_LABEL_MIN_WORD = 10;
-  var ORIGIN_DOT_STYLE = { radius: 5, color: '#0f172a', weight: 2, fillColor: '#ffffff', fillOpacity: 1 };
-  // P17b: the non-freshest sources get the same dot at half the radius -- enough that a thin track
-  // does not just stop in open sea, small enough not to compete with the freshest, labelled dot.
-  // Derived from ORIGIN_DOT_STYLE so the two cannot drift apart.
-  var ALT_ORIGIN_DOT_STYLE = { radius: ORIGIN_DOT_STYLE.radius / 2, color: ORIGIN_DOT_STYLE.color,
-    weight: ORIGIN_DOT_STYLE.weight, fillColor: ORIGIN_DOT_STYLE.fillColor, fillOpacity: ORIGIN_DOT_STYLE.fillOpacity };
-  var SITE_HALO_STYLE = { radius: 11, fill: false, color: '#7c3aed', weight: 2, opacity: 0.55 };
 
   var predLayer = window.__bm_predLayer = L.layerGroup();
-  var activeTrack = null;
-  // P17: every track layer beyond the three scalars below -- the onward stub today, the per-source
-  // tracks next. hideTrack empties it, so a popup close can never leak a polyline onto the map.
-  var activeExtras = [];
-  var activeOrigin = null;
-  var activeHalo = null;
+  // P184g: legend control, created once in bootstrap and shown only while the layer is on.
+  var legendCtl = null;
+  var legendOn = false;
   var lastRow = null;
   var warnedNoKey = false;
   var warnedEmpty = false;
@@ -14417,32 +14301,8 @@ document.addEventListener('DOMContentLoaded', function(){
     }catch(e){ return ''; }
   }
 
-  function fmtObsDate(iso){
-    try{
-      var d = new Date(String(iso).replace(' ', 'T'));
-      var parts = new Intl.DateTimeFormat('et-EE', { timeZone: 'Europe/Tallinn', day: '2-digit', month: '2-digit' }).formatToParts(d);
-      var m = {};
-      parts.forEach(function(p){ m[p.type] = p.value; });
-      return m.day + '.' + m.month;
-    }catch(e){ return ''; }
-  }
-
-  // Destination point from a start coord along a bearing/distance — upstream_obs carries
-  // bearing_from_ee + distance_km, not lat/lon, so the "last seen" track endpoint must be derived.
-  function destPoint(lat, lon, bearingDeg, km){
-    try{
-      var d = km / EARTH_R_KM;
-      var brng = bearingDeg * Math.PI / 180;
-      var lat1 = lat * Math.PI / 180;
-      var lon1 = lon * Math.PI / 180;
-      var lat2 = Math.asin(Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(brng));
-      var lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(d) * Math.cos(lat1), Math.cos(d) - Math.sin(lat1) * Math.sin(lat2));
-      return [lat2 * 180 / Math.PI, lon2 * 180 / Math.PI];
-    }catch(e){ return null; }
-  }
-
-  // Great-circle distance. The route orders every predicted site by how far it lies from the
-  // source, so the polyline reads outward from the last observation instead of zig-zagging.
+  // Great-circle distance in km. P184g: Hooaeg sites within HOO_CLUSTER_KM of a cluster's first
+  // site share one pin.
   function kmBetween(aLat, aLon, bLat, bLon){
     try{
       var dLat = (bLat - aLat) * Math.PI / 180;
@@ -14468,160 +14328,6 @@ document.addEventListener('DOMContentLoaded', function(){
     }catch(e){ return ''; }
   }
 
-  // The one place the source point is derived. P5a replaces upstream_obs bearing/distance with a
-  // real lat/lon — when it lands this becomes `return [obs.lat, obs.lon];` and nothing else moves.
-  function sourcePoint(obs){
-    if(!obs || typeof obs.bearing_from_ee !== 'number' || typeof obs.distance_km !== 'number') return null;
-    return destPoint(TURI.lat, TURI.lon, obs.bearing_from_ee, obs.distance_km);
-  }
-
-  function dropLayer(layer){
-    try{ if(layer && window.map) window.map.removeLayer(layer); }catch(e){}
-  }
-
-  // P9b: ONE routed track, source -> the clicked site, along the corridor lanes this species'
-  // flight_class may use. The pre-P9b polyline through every predicted site nearest-first is gone:
-  // it drew a single line touching three sites, which read as one bird visiting all of them.
-  // `site` is now both the highlight and the far end of the line.
-  function showTrack(site, entry){
-    try{
-      hideTrack();
-      if(!window.map) return;
-
-      // The halo marks which site was clicked, so it is independent of whether a track is drawable
-      // and is placed before every early return below.
-      var hasSite = site && typeof site.lat === 'number' && typeof site.lon === 'number';
-      if(hasSite){
-        activeHalo = L.circleMarker([site.lat, site.lon], SITE_HALO_STYLE);
-        activeHalo.addTo(window.map);
-      }
-
-      // P8b: no observation inside the curated source arc means the freshest obs lies in the wrong
-      // direction, so any line drawn from it would be a guess. The popup says so; nothing is drawn.
-      var pf = entry.probability_factors;
-      if(pf && pf.source_in_arc === false) return;
-
-      var obs = (entry.upstream_obs && entry.upstream_obs[0]) ? entry.upstream_obs[0] : null;
-      // P5a carries the observation's own coordinates. sourcePoint() reconstructs them from
-      // bearing/distance off the Türi anchor and stays the fallback for raports predating P5a.
-      var source = (obs && typeof obs.lat === 'number' && typeof obs.lon === 'number')
-        ? [obs.lat, obs.lon]
-        : sourcePoint(obs);
-      if(!source) return;
-
-      if(hasSite){
-        // P17b: every in-arc source gets a track, not only the freshest. The EF caps upstream_obs
-        // at 2 today, so this draws at most two; the cap here is 3 in case that is raised.
-        var dest = [site.lat, site.lon];
-        var ups = entry.upstream_obs || [];
-        var cands = [{ idx: 0, pt: source }];
-        for(var si=1; si<Math.min(ups.length, 3); si++){
-          var uo = ups[si];
-          // No sourcePoint() fallback beyond the freshest: a bearing/distance reconstruction off
-          // the Türi anchor is too coarse to justify a second line on the map.
-          if(!uo || typeof uo.lat !== 'number' || typeof uo.lon !== 'number') continue;
-          cands.push({ idx: si, pt: [uo.lat, uo.lon] });
-        }
-        for(var ci=0; ci<cands.length; ci++){
-          var rr = routeTrack(BM_CORRIDORS, cands[ci].pt, dest, entry.flight_class);
-          cands[ci].r = rr;
-          // A route with no path (unknown class) shares no lane with anything, so it is keyed by
-          // index and can never be deduped away.
-          cands[ci].key = (rr && rr.path && rr.path.length) ? rr.path.join('>') : ('#' + cands[ci].idx);
-          cands[ci].len = (rr && rr.path) ? rr.path.length : 0;
-        }
-        // Longest path first, so a source that joins the same lane further downstream is dropped as
-        // a suffix of one already drawn. Sort is stable, so equal-length ties keep source order.
-        cands.sort(function(a,b){ return b.len - a.len; });
-
-        var drawnKeys = [], drawList = [], key0 = null;
-        for(var di=0; di<cands.length; di++){
-          var cd = cands[di], dup = false;
-          if(cd.idx === 0) key0 = cd.key;
-          for(var dk=0; dk<drawnKeys.length; dk++){
-            if(drawnKeys[dk] === cd.key || pathEndsWith(drawnKeys[dk], cd.key)){ dup = true; break; }
-          }
-          if(dup) continue;
-          drawnKeys.push(cd.key);
-          drawList.push(cd);
-        }
-
-        // The freshest source carries the solid line and the onward leg. When its own path was
-        // dropped as a suffix, the longer path that swallowed it carries them instead: same lane to
-        // the same site, so the solid line still traces the freshest bird's route rather than
-        // leaving the entry with nothing but a thin secondary track.
-        var solid = null, pi;
-        for(pi=0; pi<drawList.length; pi++) if(drawList[pi].idx === 0){ solid = drawList[pi]; break; }
-        if(!solid && key0 !== null){
-          for(pi=0; pi<drawList.length; pi++) if(pathEndsWith(drawList[pi].key, key0)){ solid = drawList[pi]; break; }
-        }
-        if(!solid && drawList.length) solid = drawList[0];
-
-        for(var wi=0; wi<drawList.length; wi++){
-          var cw = drawList[wi];
-          // No class, an unknown class, or a leg over the class cap all come back ok:false with a
-          // straight [src, site] in pts -- the pre-P9b line, greyed so it never reads as a route.
-          var r = cw.r;
-          var trackCls = (r && r.ok) ? 'bm-pred-track' : 'bm-pred-track bm-pred-track--unresolved';
-          var pts = (r && r.pts && r.pts.length) ? r.pts : [cw.pt, dest];
-
-          if(cw !== solid){
-            var alt = L.polyline(pts, { className: trackCls + ' bm-pred-track--alt', interactive: false });
-            alt.addTo(window.map);
-            activeExtras.push(alt);
-            var altDot = L.circleMarker(cw.pt, ALT_ORIGIN_DOT_STYLE);
-            altDot.addTo(window.map);
-            activeExtras.push(altDot);
-            continue;
-          }
-
-          activeTrack = L.polyline(pts, { className: trackCls });
-          activeTrack.addTo(window.map);
-
-          // activeOrigin, the labelled "Viimati nähtud" dot, always sits at upstream_obs[0]. When
-          // the solid line came from an older source, that source still needs its own small dot.
-          if(cw.idx !== 0){
-            var solidDot = L.circleMarker(cw.pt, ALT_ORIGIN_DOT_STYLE);
-            solidDot.addTo(window.map);
-            activeExtras.push(solidDot);
-          }
-
-          // P17: the bird does not stop at the site, so continue one lane node further. Gated on a
-          // real lane: a single-node path is routeTrack's direct case, whose pts is a straight
-          // source->site line with no lane drawn, and a stub off it would invent a route.
-          if(r && r.ok && r.path && r.path.length > 1){
-            var on = onwardNode(BM_CORRIDORS, entry.flight_class, r.path, cw.pt);
-            if(on){
-              var stub = L.polyline([dest, BM_CORRIDORS.nodes[on]],
-                { className: 'bm-pred-track bm-pred-track--onward', interactive: false });
-              stub.addTo(window.map);
-              activeExtras.push(stub);
-            }
-          }
-        }
-      }
-
-      activeOrigin = L.circleMarker(source, ORIGIN_DOT_STYLE);
-      // Leaflet writes tooltip content with innerHTML, so every value is escaped here too.
-      activeOrigin.bindTooltip(
-        'Viimati nähtud · ' + escapeHtml(shortLoc(obs.location)) + ' · ' + escapeHtml(fmtObsDate(obs.date)),
-        { permanent: true, direction: 'top', className: 'bm-pred-origin-tip' }
-      );
-      activeOrigin.addTo(window.map);
-    }catch(e){ console.warn('[bm_pred] showTrack failed', e); }
-  }
-
-  function hideTrack(){
-    dropLayer(activeTrack);
-    dropLayer(activeOrigin);
-    dropLayer(activeHalo);
-    for(var i=0;i<activeExtras.length;i++) dropLayer(activeExtras[i]);
-    activeExtras = [];
-    activeTrack = null;
-    activeOrigin = null;
-    activeHalo = null;
-  }
-
   // P7a: the popup element for the rating key currently awaiting a result, so
   // PREDICTION_RATE_RESULT can correct the optimistic state it belongs to.
   var pendingRate = {}; // key -> { el: popupElement, prev: previousRatingOrEmpty, prevNote: previousNoteOrEmpty }
@@ -14630,18 +14336,10 @@ document.addEventListener('DOMContentLoaded', function(){
     try{
       if(!el) return;
       var cur = myRatings[key] || '';
-      // The route chip shares .bm-pred-chip for styling; it is painted separately below.
-      var chips = el.querySelectorAll('.bm-pred-chip:not(.bm-pred-chip--route)');
+      var chips = el.querySelectorAll('.bm-pred-chip');
       for(var i = 0; i < chips.length; i++){
         var v = chips[i].getAttribute('data-rate');
         chips[i].className = 'bm-pred-chip' + (cur && cur === v ? ' on' : '');
-      }
-      // P20: route chip -- on from myNotes, disabled until the key has a rating.
-      var route = el.querySelector('.bm-pred-chip--route');
-      if(route){
-        route.className = 'bm-pred-chip bm-pred-chip--route' + (myNotes[key] === 'route_wrong' ? ' on' : '');
-        if(cur){ route.removeAttribute('disabled'); route.removeAttribute('title'); }
-        else{ route.setAttribute('disabled', ''); route.setAttribute('title', 'Vali enne hinnang'); }
       }
     }catch(e){}
   }
@@ -14653,28 +14351,30 @@ document.addEventListener('DOMContentLoaded', function(){
     }catch(e){}
   }
 
-  // rateIdx, like popupHtml's, is the already-collapsed rating key from
-  // siteMarker (-1 for watch-list). Never re-collapse it here.
-  function wireButtons(ev, entry, site, rateIdx){
+  function popupEl(ev){
+    return (ev && ev.popup && typeof ev.popup.getElement === 'function') ? ev.popup.getElement() : null;
+  }
+
+  // P6: the Ulevaade jump. Lahenemas sends its species code; a Hooaeg pin sends an empty code
+  // (several species), which opens the section without a per-species jump.
+  function wireOpen(el, ebirdCode){
     try{
-      var el = (ev && ev.popup && typeof ev.popup.getElement === 'function') ? ev.popup.getElement() : null;
+      var openBtn = el ? el.querySelector('.bm-pred-open') : null;
+      if(!openBtn) return;
+      openBtn.onclick = function(){
+        try{ window.parent.postMessage({ type: 'OPEN_ULEVAADE', section: 'toenaosus', ebird_code: ebirdCode || '' }, '*'); }catch(e){}
+      };
+    }catch(e){}
+  }
+
+  // P7a chips, P184g species level: site_index is always -1. Optimistic locally, corrected by
+  // PREDICTION_RATE_RESULT.
+  function wireChips(el, ebirdCode){
+    try{
       if(!el) return;
-      var openBtn = el.querySelector('.bm-pred-open');
-      var copyBtn = el.querySelector('.bm-pred-copy');
-      if(openBtn){
-        openBtn.onclick = function(){
-          try{ window.parent.postMessage({ type: 'OPEN_ULEVAADE', section: 'toenaosus', ebird_code: entry.ebird_code || '' }, '*'); }catch(e){}
-        };
-      }
-      if(copyBtn){
-        copyBtn.onclick = function(){
-          try{ navigator.clipboard.writeText(site.lat.toFixed(4) + ', ' + site.lon.toFixed(4)); }catch(e){}
-        };
-      }
-      // P7a chips: optimistic locally, corrected by PREDICTION_RATE_RESULT.
-      var idx = (typeof rateIdx === 'number') ? rateIdx : -1;
-      var key = rateKey(entry.ebird_code, idx);
-      var chips = el.querySelectorAll('.bm-pred-chip:not(.bm-pred-chip--route)');
+      var idx = -1;
+      var key = rateKey(ebirdCode, idx);
+      var chips = el.querySelectorAll('.bm-pred-chip');
       for(var i = 0; i < chips.length; i++){
         (function(btn){
           btn.onclick = function(){
@@ -14693,7 +14393,7 @@ document.addEventListener('DOMContentLoaded', function(){
               window.parent.postMessage({
                 type: 'PREDICTION_RATE',
                 raport_id: curRaportId,
-                ebird_code: entry.ebird_code || '',
+                ebird_code: ebirdCode || '',
                 site_index: idx,
                 rating: val,
                 note: myNotes[key] || null
@@ -14701,30 +14401,6 @@ document.addEventListener('DOMContentLoaded', function(){
             }catch(e){ console.warn('[bm_pred] rate click failed', e); }
           };
         })(chips[i]);
-      }
-      // P20: route chip toggles note = 'route_wrong' and keeps the current rating.
-      var routeBtn = el.querySelector('.bm-pred-chip--route');
-      if(routeBtn){
-        routeBtn.onclick = function(){
-          try{
-            if(!curRaportId) return;
-            var cur = myRatings[key];
-            if(!cur) return; // no invented ratings
-            var prevNote = myNotes[key] || '';
-            myNotes[key] = prevNote === 'route_wrong' ? '' : 'route_wrong';
-            paintChips(el, key);
-            rateMsg(el, '');
-            pendingRate[key] = { el: el, prev: cur, prevNote: prevNote };
-            window.parent.postMessage({
-              type: 'PREDICTION_RATE',
-              raport_id: curRaportId,
-              ebird_code: entry.ebird_code || '',
-              site_index: idx,
-              rating: cur,
-              note: myNotes[key] || null
-            }, '*');
-          }catch(e){ console.warn('[bm_pred] route click failed', e); }
-        };
       }
     }catch(e){}
   }
@@ -14748,174 +14424,224 @@ document.addEventListener('DOMContentLoaded', function(){
         chips += '<button type="button" class="bm-pred-chip' + (cur === v ? ' on' : '') +
           '" data-rate="' + v + '">' + escapeHtml(RATE_LABELS[v]) + '</button>';
       }
-      // P20: route feedback, separate from the rating; disabled until rated.
-      var route = '<button type="button" class="bm-pred-chip bm-pred-chip--route' +
-        (myNotes[key] === 'route_wrong' ? ' on' : '') + '" data-route="route_wrong"' +
-        (cur ? '' : ' disabled title="Vali enne hinnang"') + '>marsruut vale</button>';
       return '<div class="bm-pred-rate">' +
         '<div class="bm-pred-rate-q">Kas ennustus oli õige?</div>' +
         '<div class="bm-pred-chips">' + chips + '</div>' +
-        '<div class="bm-pred-chips">' + route + '</div>' +
         '<div class="bm-pred-rate-msg"></div>' +
         '</div>';
     }catch(e){ return ''; }
   }
 
-  // rateIdx is the ALREADY-COLLAPSED rating key from siteMarker (-1 for
-  // watch-list rows), not the raw predicted_sites index. Do not re-collapse.
-  // P18: a high in-arc neighbour count means the species' migration window is open, so the marker
-  // turns the pill red from here up.
-  var NB_HOT_MIN = 40;
+  // ---- P184g: evidence lists on the map (Lahenemas tracks, Hooaeg season sites) ----
+  // Only real sightings are drawn: nothing past the last event, never a predicted site.
+  var LAH_LINE = '#185FA5';
+  var HOO_CLUSTER_KM = 15;
+  var MONTHS_SHORT = ['jaan', 'veebr', 'm&auml;rts', 'apr', 'mai', 'juuni', 'juuli', 'aug', 'sept', 'okt', 'nov', 'dets'];
+  var POPUP_OPTS = { closeOnClick: false, autoClose: false, maxWidth: 240, className: 'bm-pred-popup' };
 
-  // P18: in-arc neighbour observations only -- the same figure the Ülevaade card prints as
-  // "Naabermaad". Deliberately NOT total_neighbor_obs_30d, which counts every direction and is
-  // dominated by Poland even when nothing is moving towards Estonia.
-  function nbCount(e){
-    try{ return (e.neighbor_breakdown || []).reduce(function(s,b){ return s + (Number(b.obs_count) || 0); }, 0); }
-    catch(_){ return 0; }
+  // "7. nov" from YYYY-MM-DD, same as the Ulevaade formatDay. Returns HTML (entity month names).
+  function fmtDayMon(iso){
+    try{
+      var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+      if(!m) return escapeHtml(String(iso || ''));
+      var mon = MONTHS_SHORT[Number(m[2]) - 1];
+      return mon ? (Number(m[3]) + '. ' + mon) : escapeHtml(String(iso));
+    }catch(e){ return ''; }
   }
 
-  function popupHtml(entry, site, isWl, generatedAt, rateIdx){
+  // "1 isend" / "N isendit"; '' when the event has no count.
+  function isendLabel(c){
+    if(c === null || c === undefined || c === '') return '';
+    var n = Number(c);
+    if(!isFinite(n)) return '';
+    return n + ' ' + (n === 1 ? 'isend' : 'isendit');
+  }
+
+  // Text before the first comma (as on the Ulevaade card), then bounded by shortLoc. Escaped.
+  function placeName(loc){
+    return escapeHtml(shortLoc(String(loc == null ? '' : loc).split(',')[0]));
+  }
+
+  function kmRound(v){
+    var n = Number(v);
+    return isFinite(n) ? String(Math.round(n)) : '?';
+  }
+
+  // Events with coordinates, oldest first. Sorted on a copy: the row is the cached raport.
+  function sortedEvents(item){
+    var evs = [];
     try{
-      var speciesEt = escapeHtml(entry.species_et || '');
-      var speciesLat = escapeHtml(entry.species_lat || '');
-      var avatarUrl = escapeHtml(entry.avatar_url || '');
-      var pctEl = '';
-      if(!isWl && typeof entry.ee_probability_pct === 'number'){
-        pctEl = '<div class="pct">' + escapeHtml(Math.round(entry.ee_probability_pct) + ' %') + '</div>';
+      var raw = (item && Array.isArray(item.events)) ? item.events : [];
+      for(var i = 0; i < raw.length; i++){
+        var e = raw[i];
+        if(e && typeof e.lat === 'number' && typeof e.lon === 'number') evs.push(e);
       }
+      evs.sort(function(a, b){ var x = String(a.date || ''), y = String(b.date || ''); return x < y ? -1 : (x > y ? 1 : 0); });
+    }catch(e){}
+    return evs;
+  }
 
-      // P6b.3: mode() labels sometimes already carry the county ("Lääne maakond, Põõsaspea neem").
-      // Append it only when the label does not already contain it, and only in the short form —
-      // the label text itself is never rewritten.
-      var labelText = String(site.label || '');
-      var countyEl = '';
-      if(site.county && labelText.toLowerCase().indexOf(String(site.county).toLowerCase()) === -1){
-        countyEl = ' <span class="k">(' + escapeHtml(String(site.county).replace(/maakond/i, 'mk')) + ')</span>';
-      }
+  function eventLabel(ev){
+    var n = isendLabel(ev.count);
+    return fmtDayMon(ev.date) + (n ? (' &middot; ' + n) : '');
+  }
 
-      var seenEl = '';
-      var obs = (entry.upstream_obs && entry.upstream_obs[0]) ? entry.upstream_obs[0] : null;
-      if(obs && obs.location){
-        seenEl = '<div class="seen" title="' + escapeHtml(obs.location) + '">Viimati nähtud · ' +
-          escapeHtml(shortLoc(obs.location)) + ' · ' + escapeHtml(fmtObsDate(obs.date)) + '</div>';
-      }
+  function isTrackItem(item, evs){
+    return !!item && item.kind === 'track' && evs.length > 1;
+  }
 
-      // Basis and arrival collapse onto one line — same strings as before, joined with "·".
-      var basisParts = [];
-      if(site.source === 'history' && site.cluster_n != null){
-        basisParts.push('Vaatlusi ruudus: ' + escapeHtml(String(site.cluster_n)));
-      }else if(site.source === 'anchor'){
-        basisParts.push('Tuntud vaatluskoht');
-      }
-      if(isWl){
-        basisParts.push('Tingimused soodsad · jälgimisnimekiri');
-      }else if(entry.arrival_window_et){
-        basisParts.push(escapeHtml(entry.arrival_window_et));
-      }
-      var basisEl = basisParts.length ? ('<div class="basis">' + basisParts.join(' · ') + '</div>') : '';
+  function footHtml(generatedAt){
+    return generatedAt ? ('<div class="foot">T&otilde;en&auml;osus-raport ' + escapeHtml(fmtTallinn(generatedAt)) + '</div>') : '';
+  }
 
-      // P18: same wording as the Ülevaade card. Sorted by obs_count desc with the leader bold, so
-      // the country actually driving the prediction reads first. Sorted on a copy: entry is the
-      // cached raport row and every other reader expects the payload's own order.
-      var nb = (entry.neighbor_breakdown || []).slice().sort(function(a,b){
-        return (Number(b.obs_count) || 0) - (Number(a.obs_count) || 0);
-      });
-      var nbEl = '';
-      if(nb.length){
-        var nbParts = [];
-        for(var nbi=0; nbi<nb.length; nbi++){
-          var nbLabel = escapeHtml(String(nb[nbi].country_code || '')) + ' ×' + (Number(nb[nbi].obs_count) || 0);
-          nbParts.push(nbi === 0 ? ('<b>' + nbLabel + '</b>') : nbLabel);
-        }
-        nbEl = '<div class="basis">Naabermaad: ' + nbParts.join(' · ') + '</div>';
-      }
-
-      var footEl = generatedAt ? ('<div class="foot">Tõenäosus-raport ' + escapeHtml(fmtTallinn(generatedAt)) + '</div>') : '';
-      // P9b: showTrack draws nothing when source_in_arc is false, so the popup has to say why the
-      // track is missing. Static text, no interpolation -- nothing to escape.
-      var arcNoteEl = (entry.probability_factors && entry.probability_factors.source_in_arc === false)
-        ? '<div class="bm-pred-note">Lähtekoht ebaselge – rändeteed ei kuvata.</div>'
-        : '';
-      var avatarImg = entry.avatar_url ? ('<img src="' + avatarUrl + '" onerror="this.style.visibility=\'hidden\'">') : '';
-
+  function lahPopupHtml(item, evs, generatedAt){
+    try{
+      var first = evs[0], last = evs[evs.length - 1];
+      var track = isTrackItem(item, evs);
+      var evLine = track
+        ? (placeName(first.location) + ' ' + fmtDayMon(first.date) + ' &rarr; ' + placeName(last.location) + ' ' + fmtDayMon(last.date))
+        : (placeName(last.location) + ' &middot; ' + fmtDayMon(last.date));
+      var kmLine = track
+        ? ('Liigub Eesti poole: ' + kmRound(first.km_to_turi) + ' km &rarr; ' + kmRound(last.km_to_turi) + ' km')
+        : ('Kaugus ' + kmRound(last.km_to_turi) + ' km');
+      var n = isendLabel(last.count);
+      if(n) kmLine += ' &middot; ' + n;
+      var rar = (typeof _bmMkRar === 'function') ? _bmMkRar(item.rarity_level) : '';
+      var avatarImg = item.avatar_url ? ('<img src="' + escapeHtml(item.avatar_url) + '" onerror="this.style.visibility=\'hidden\'">') : '';
+      var lat = escapeHtml(item.species_lat || '');
       return '<div class="bm-pred-pop">' +
-        '<div class="h">' + avatarImg + '<div class="sp">' + speciesEt + '</div>' + pctEl + '</div>' +
-        (speciesLat ? '<div class="lat">' + speciesLat + '</div>' : '') +
-        '<div class="site">' + escapeHtml(labelText) + countyEl + '</div>' +
-        seenEl +
-        basisEl +
-        nbEl +
-        '<div class="links"><button type="button" class="bm-pred-open">Ava Ülevaates</button>' +
-        '<span class="sep">·</span>' +
-        '<button type="button" class="bm-pred-copy">Kopeeri koordinaadid</button></div>' +
-        arcNoteEl +
-        rateChipsHtml(entry.ebird_code, rateIdx) +
-        footEl +
+        '<div class="h">' + avatarImg + '<div class="sp">' + escapeHtml(item.species_et || '') + '</div>' + rar + '</div>' +
+        (lat ? '<div class="lat">' + lat + '</div>' : '') +
+        '<div class="tag">L&auml;henemas</div>' +
+        '<div class="site">' + evLine + '</div>' +
+        '<div class="basis">' + kmLine + '</div>' +
+        rateChipsHtml(item.ebird_code, -1) +
+        '<div class="links"><button type="button" class="bm-pred-open">Ava &Uuml;levaates</button></div>' +
+        footHtml(generatedAt) +
         '</div>';
     }catch(e){
-      console.warn('[bm_pred] popupHtml failed', e);
-      return '<div class="bm-pred-pop">—</div>';
+      console.warn('[bm_pred] lahPopupHtml failed', e);
+      return '<div class="bm-pred-pop">-</div>';
     }
   }
 
-  function siteMarker(entry, site, isWl, generatedAt, siteIdx){
+  // Screen angle (deg, clockwise from east) of the last leg. Web Mercator is conformal, so the
+  // angle at one zoom holds at every zoom.
+  function legAngle(a, b){
     try{
-      if(!site || typeof site.lat !== 'number' || typeof site.lon !== 'number') return null;
-      var pctVal = isWl ? null : entry.ee_probability_pct;
-      var pctLabel = (typeof pctVal === 'number') ? (Math.round(pctVal) + '%') : '?';
-      var avatarUrl = String(entry.avatar_url || '').replace(/'/g, '%27');
-      var avEl = entry.avatar_url ? ('<div class="bm-pred-av" style="background-image:url(\'' + avatarUrl + '\')"></div>') : '<div class="bm-pred-av"></div>';
-      // P18: the count is a summed integer, never free text, so it needs no escaping. Absent or
-      // zero draws nothing rather than a "0" pill on every quiet species.
-      var nb = nbCount(entry);
-      var html = '<div class="bm-pred-marker' + (isWl ? ' wl' : '') + '">' +
-        '<div class="bm-pred-ring"></div>' +
-        avEl +
-        '<div class="bm-pred-q">?</div>' +
-        '<div class="bm-pred-pct">' + escapeHtml(pctLabel) + '</div>' +
-        (nb > 0 ? ('<span class="bm-pred-nb' + (nb >= NB_HOT_MIN ? ' hot' : '') + '">' + nb + '</span>') : '') +
-        '</div>';
-      var divIcon = L.divIcon({ className: '', iconSize: [38, 38], iconAnchor: [19, 19], popupAnchor: [0, -18], html: html });
-      var marker = L.marker([site.lat, site.lon], { icon: divIcon });
-      // The ONLY place the watch-list collapse happens. Both the display key
-      // (popupHtml -> rateChipsHtml) and the write key (wireButtons) take this
-      // one value: computed separately they could drift, and the chip would
-      // show one site's verdict while the tap wrote another's.
-      var rateIdx = isWl ? -1 : siteIdx;
-      marker.bindPopup(function(){ return popupHtml(entry, site, isWl, generatedAt, rateIdx); }, { closeOnClick: false, autoClose: false, maxWidth: 240, className: 'bm-pred-popup' });
-      marker.on('popupopen', function(ev){
-        try{ showTrack(site, entry); }catch(e){}
-        try{ wireButtons(ev, entry, site, rateIdx); }catch(e){}
-      });
-      marker.on('popupclose', function(){ try{ hideTrack(); }catch(e){} });
-      return marker;
-    }catch(e){ console.warn('[bm_pred] siteMarker failed', e); return null; }
+      var p = window.map.project([a.lat, a.lon], 0), q = window.map.project([b.lat, b.lon], 0);
+      return Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI;
+    }catch(e){ return 0; }
   }
 
-  // Rows entering the layer: entries at pct>=20 or ranked <10, plus every watch-list item.
-  // Display filter only — the EF still emits passed/out_of_window rows at 15 %, P4.1 fixes the
-  // engine. The band gate must sit ahead of both branches or those rows return through the other
-  // one. A missing band is kept: older cached raports carry none and must not blank the layer.
-  function select(row){
-    var entries = [];
-    var watchlist = [];
+  // One species: solid line through its own events (tracks), a small labelled dot per earlier
+  // event, an arrow ending just short of the latest event, and the latest-event marker, which
+  // owns the popup. Returns the number of species drawn (0 or 1).
+  function addLahenemas(item, generatedAt){
     try{
-      var rowEntries = Array.isArray(row.entries) ? row.entries : [];
-      for(var i = 0; i < rowEntries.length; i++){
-        var e = rowEntries[i];
-        if(!e) continue;
-        if(e.timing_band === 'passed' || e.timing_band === 'out_of_window') continue;
-        if((typeof e.ee_probability_pct === 'number' && e.ee_probability_pct >= 20) || i < 10){
-          entries.push(e);
+      var evs = sortedEvents(item);
+      if(!evs.length || !item.ebird_code) return 0;
+      var last = evs[evs.length - 1];
+      if(isTrackItem(item, evs)){
+        var pts = evs.map(function(e){ return [e.lat, e.lon]; });
+        predLayer.addLayer(L.polyline(pts, { color: LAH_LINE, weight: 3, opacity: 0.9, interactive: false }));
+        for(var i = 0; i < evs.length - 1; i++){
+          var dot = L.circleMarker([evs[i].lat, evs[i].lon], { radius: 4, color: '#ffffff', weight: 1.5, fillColor: LAH_LINE, fillOpacity: 1, interactive: false });
+          dot.bindTooltip(eventLabel(evs[i]), { permanent: true, direction: 'right', offset: [6, 0], className: 'bm-lah-tip' });
+          predLayer.addLayer(dot);
+        }
+        // The tip sits 8 px before the latest event (the marker radius), so nothing is drawn past it.
+        var ang = legAngle(evs[evs.length - 2], last);
+        var arrowHtml = '<svg class="bm-lah-arrow" width="24" height="12" viewBox="0 0 24 12" aria-hidden="true" style="display:block;overflow:visible;transform:rotate(' + ang.toFixed(1) + 'deg);transform-origin:24px 6px"><path d="M0 0L16 6L0 12z" fill="' + LAH_LINE + '"/></svg>';
+        predLayer.addLayer(L.marker([last.lat, last.lon], { icon: L.divIcon({ className: '', iconSize: [24, 12], iconAnchor: [24, 6], html: arrowHtml }), interactive: false, keyboard: false, zIndexOffset: 900 }));
+      }
+      var icon = L.divIcon({ className: '', iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -8], html: '<div class="bm-lah-dot"></div>' });
+      var marker = L.marker([last.lat, last.lon], { icon: icon, zIndexOffset: 1000 });
+      if(isTrackItem(item, evs)) marker.bindTooltip(eventLabel(last), { permanent: true, direction: 'right', offset: [8, 0], className: 'bm-lah-tip' });
+      marker.bindPopup(function(){ return lahPopupHtml(item, evs, generatedAt); }, POPUP_OPTS);
+      marker.on('popupopen', function(ev){
+        var el = popupEl(ev);
+        try{ wireOpen(el, item.ebird_code); }catch(e){}
+        try{ wireChips(el, item.ebird_code); }catch(e){}
+      });
+      predLayer.addLayer(marker);
+      return 1;
+    }catch(e){ console.warn('[bm_pred] addLahenemas failed', e); return 0; }
+  }
+
+  // Greedy clustering over every Hooaeg site of every species: a site joins the first cluster
+  // whose FIRST site is within HOO_CLUSTER_KM, else it starts a new one. One row per species;
+  // a species with several sites in one cluster keeps its largest n_days (not the sum).
+  function clusterHooaeg(items){
+    var clusters = [];
+    try{
+      for(var i = 0; i < items.length; i++){
+        var it = items[i];
+        if(!it || !Array.isArray(it.sites)) continue;
+        var spKey = String(it.ebird_code || it.species_et || '');
+        for(var j = 0; j < it.sites.length; j++){
+          var s = it.sites[j];
+          if(!s || typeof s.lat !== 'number' || typeof s.lon !== 'number') continue;
+          var c = null;
+          for(var k = 0; k < clusters.length; k++){
+            if(kmBetween(clusters[k].first.lat, clusters[k].first.lon, s.lat, s.lon) <= HOO_CLUSTER_KM){ c = clusters[k]; break; }
+          }
+          if(!c){ c = { first: s, species: {}, order: [] }; clusters.push(c); }
+          var nd = Number(s.n_days) || 0;
+          var row = c.species[spKey];
+          if(!row){ c.species[spKey] = { species_et: it.species_et || '', n_days: nd }; c.order.push(spKey); }
+          else if(nd > row.n_days){ row.n_days = nd; }
         }
       }
-      var rowWatchlist = Array.isArray(row.corridor_watchlist) ? row.corridor_watchlist : [];
-      for(var j = 0; j < rowWatchlist.length; j++){
-        if(rowWatchlist[j]) watchlist.push(rowWatchlist[j]);
-      }
     }catch(e){}
-    return { entries: entries, watchlist: watchlist };
+    return clusters;
+  }
+
+  function hooPopupHtml(c, generatedAt){
+    try{
+      var labelText = String(c.first.label || '');
+      var county = String(c.first.county || '');
+      var countyEl = '';
+      if(county && labelText.toLowerCase().indexOf(county.toLowerCase()) === -1){
+        countyEl = labelText ? (' <span class="k">(' + escapeHtml(county.replace(/maakond/i, 'mk')) + ')</span>') : escapeHtml(county);
+      }
+      var rows = c.order.map(function(k){ return c.species[k]; });
+      rows.sort(function(a, b){ return b.n_days - a.n_days; });
+      var rowsHtml = '';
+      for(var i = 0; i < rows.length; i++){
+        rowsHtml += '<div class="hrow"><span>' + escapeHtml(rows[i].species_et) + '</span><span class="n">' + rows[i].n_days + ' p&auml;eval</span></div>';
+      }
+      return '<div class="bm-pred-pop">' +
+        '<div class="site"><b>' + escapeHtml(labelText) + '</b>' + countyEl + '</div>' +
+        '<div class="seen">sel aastaajal siin varem n&auml;htud</div>' +
+        rowsHtml +
+        '<div class="links"><button type="button" class="bm-pred-open">Ava &Uuml;levaates</button></div>' +
+        footHtml(generatedAt) +
+        '</div>';
+    }catch(e){
+      console.warn('[bm_pred] hooPopupHtml failed', e);
+      return '<div class="bm-pred-pop">-</div>';
+    }
+  }
+
+  function hooMarker(c, generatedAt){
+    try{
+      var n = c.order.length;
+      var icon = L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -12], html: '<div class="bm-hoo-pin">' + n + '</div>' });
+      var marker = L.marker([c.first.lat, c.first.lon], { icon: icon });
+      marker.bindPopup(function(){ return hooPopupHtml(c, generatedAt); }, POPUP_OPTS);
+      marker.on('popupopen', function(ev){ try{ wireOpen(popupEl(ev), ''); }catch(e){} });
+      return marker;
+    }catch(e){ console.warn('[bm_pred] hooMarker failed', e); return null; }
+  }
+
+  // Juba Eestis draws nothing here: those birds are already normal map pins.
+  function selectEvidence(row){
+    var ev = (row && row.evidence_lists && typeof row.evidence_lists === 'object') ? row.evidence_lists : null;
+    return {
+      lah: (ev && Array.isArray(ev.lahenemas)) ? ev.lahenemas : [],
+      hoo: (ev && Array.isArray(ev.hooaeg)) ? ev.hooaeg : []
+    };
   }
 
   function warnEmptyOnce(){
@@ -14938,27 +14664,26 @@ document.addEventListener('DOMContentLoaded', function(){
     try{
       lastRow = row;
       predLayer.clearLayers();
-      hideTrack();
       if(!row){
         warnEmptyOnce();
         updatePillTooltip(0);
         return;
       }
       var generatedAt = row.generated_at || null;
-      var sel = select(row);
-      var count = 0;
-      function addSites(entry, isWl){
-        if(!entry || !Array.isArray(entry.predicted_sites)) return;
-        entry.predicted_sites.forEach(function(site, siteIdx){
-          // P7a: siteIdx is the RAW predicted_sites index. siteMarker is the one
-          // place that collapses it to the rating key (-1 for watch-list rows).
-          var m = siteMarker(entry, site, isWl, generatedAt, siteIdx);
-          if(m){ predLayer.addLayer(m); count++; }
-        });
+      var sel = selectEvidence(row);
+      // Badge N = Lahenemas species drawn + distinct Hooaeg species (per species, not pins).
+      var hooSeen = {}, nHoo = 0;
+      for(var i = 0; i < sel.hoo.length; i++){
+        var hk = sel.hoo[i] ? String(sel.hoo[i].ebird_code || sel.hoo[i].species_et || '') : '';
+        if(hk && !hooSeen[hk]){ hooSeen[hk] = true; nHoo++; }
       }
-      sel.entries.forEach(function(entry){ addSites(entry, false); });
-      sel.watchlist.forEach(function(entry){ addSites(entry, true); });
-      updatePillTooltip(count);
+      clusterHooaeg(sel.hoo).forEach(function(c){
+        var m = hooMarker(c, generatedAt);
+        if(m) predLayer.addLayer(m);
+      });
+      var nLah = 0;
+      sel.lah.forEach(function(item){ nLah += addLahenemas(item, generatedAt); });
+      updatePillTooltip(nLah + nHoo);
     }catch(e){ console.warn('[bm_pred] render failed', e); }
   }
 
@@ -14967,10 +14692,29 @@ document.addEventListener('DOMContentLoaded', function(){
       if(!window.map) return;
       if(isLayerOn()){
         if(!window.map.hasLayer(predLayer)) predLayer.addTo(window.map);
+        if(legendCtl && !legendOn){ legendCtl.addTo(window.map); legendOn = true; }
       }else{
         if(window.map.hasLayer(predLayer)) window.map.removeLayer(predLayer);
+        if(legendCtl && legendOn){ window.map.removeControl(legendCtl); legendOn = false; }
       }
     }catch(e){}
+  }
+
+  // P184g: bottomright, because #probInfoPanel sits bottom-left on phones.
+  function buildLegend(){
+    try{
+      var Ctrl = L.Control.extend({
+        options: { position: 'bottomright' },
+        onAdd: function(){
+          var div = L.DomUtil.create('div', 'bm-pred-legend');
+          div.innerHTML = '<div class="r"><span class="ln"></span>L&auml;henemas: tegelik liikumine</div>' +
+            '<div class="r"><span class="pin">3</span>Hooaja kohad (liikide arv)</div>';
+          try{ L.DomEvent.disableClickPropagation(div); }catch(e){}
+          return div;
+        }
+      });
+      legendCtl = new Ctrl();
+    }catch(e){ console.warn('[bm_pred] legend control failed', e); }
   }
 
   function buildPill(){
@@ -15016,7 +14760,7 @@ document.addEventListener('DOMContentLoaded', function(){
         render(cached ? cached.row : null);
         return;
       }
-      var url = cfg.supabaseUrl + '/rest/v1/toenaosus_raport?select=id,generated_at,entries,corridor_watchlist&order=generated_at.desc&limit=1';
+      var url = cfg.supabaseUrl + '/rest/v1/toenaosus_raport?select=id,generated_at,evidence_lists&order=generated_at.desc&limit=1';
       fetch(url, {
         cache: 'no-store',
         headers: { apikey: cfg.anonKey, Authorization: 'Bearer ' + cfg.anonKey }
@@ -15057,7 +14801,9 @@ document.addEventListener('DOMContentLoaded', function(){
 
   function bootstrap(){
     try{
+      try{ localStorage.removeItem('bm_pred_raport_v1'); }catch(e){}
       buildPill();
+      buildLegend();
       var cached = loadCache();
       if(cached && cached.row) render(cached.row);
       applyLayerState();

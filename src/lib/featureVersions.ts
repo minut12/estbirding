@@ -343,6 +343,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-09-17', ref: 'P34', kind: 'patch', text: 'Koridoride kavandid 6\u201317' },
       { date: '2026-09-19', ref: 'P41', kind: 'minor', text: 'Ennustuse nupp ikoonina koos kohtade arvuga' },
       { date: '2026-09-24', ref: 'P73b', kind: 'patch', text: 'Fenoloogia: Soome ja Rootsi l\u00e4hted, s\u00fcgisene k\u00f5rvalekalle' },
+      { date: '2026-11-17', ref: 'P184g', kind: 'major', text: 'Kaardil ainult tegelikud vaatlused: L\u00e4henemas ja Hooaja kohad, marsruudid eemaldatud' },
     ],
   },
   {

@@ -34,7 +34,7 @@ const PAYLOAD = {
       species_et: 'Kaelus-kiirlind', species_lat: 'Phoenicurus ochruros', ebird_code: 'blkred',
       rarity_level: 'rare', avatar_url: null, first_date: '2026-11-07', last_date: '2026-11-09',
       n_obs: 15, max_count: 1, counties: ['Tartu maakond'],
-      stay: { n_birds: 5, median_days: 2, pct_over_3d: 40 },
+      stay: { n_birds: 5, n_multi_day: 2, n_over_3d: 1 },
       hk: { accepted_records: 12, months: [10, 11] },
     },
     { species_et: 'broken' }, // malformed: dropped
@@ -78,20 +78,27 @@ describe('parseEvidenceLists', () => {
 });
 
 describe('staySentence', () => {
-  it('n=5, median 2, pct 40 gives K=2', () => {
-    const s = staySentence({ n_birds: 5, median_days: 2, pct_over_3d: 40 });
-    expect(s).toContain(' 2 ');
-    expect(s).toBe(TEXT.stay_many.replace('{d}', '2').split('{n}').join('5').replace('{k}', '2'));
-  });
-
-  it('median 1 uses stay_one', () => {
-    const s = staySentence({ n_birds: 4, median_days: 1, pct_over_3d: 25 });
-    expect(s).toBe(TEXT.stay_one.split('{n}').join('4').replace('{k}', '1'));
+  it('n=30, m=1, k=0 fills stay_counts', () => {
+    const s = staySentence({ n_birds: 30, n_multi_day: 1, n_over_3d: 0 });
+    expect(s).toBe(TEXT.stay_counts.replace('{n}', '30').replace('{m}', '1').replace('{k}', '0'));
+    expect(s).not.toContain('{');
   });
 
   it('null or a single bird gives stay_none', () => {
     expect(staySentence(null)).toBe(TEXT.stay_none);
-    expect(staySentence({ n_birds: 1, median_days: 1, pct_over_3d: 0 })).toBe(TEXT.stay_none);
+    expect(staySentence({ n_birds: 1, n_multi_day: 0, n_over_3d: 0 })).toBe(TEXT.stay_none);
+  });
+
+  it('old raport shape (median_days / pct_over_3d) parses to null -> stay_none', () => {
+    const old = {
+      ...PAYLOAD,
+      juba_eestis: [{ ...PAYLOAD.juba_eestis[0], stay: { n_birds: 5, median_days: 2, pct_over_3d: 40 } }],
+    };
+    const parsed = parseEvidenceLists(old);
+    expect(parsed).not.toBeNull();
+    const item = parsed?.juba_eestis[0];
+    expect(item?.stay).toBeNull();
+    expect(staySentence(item?.stay ?? null)).toBe(TEXT.stay_none);
   });
 });
 

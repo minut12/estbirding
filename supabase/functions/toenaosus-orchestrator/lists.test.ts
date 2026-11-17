@@ -9,6 +9,7 @@ import {
   findTrack,
   groupJubaEestis,
   isSeasonal,
+  nearAllowed,
   nearEvent,
   type RareObsRow,
   type SightingEvent,
@@ -73,6 +74,51 @@ Deno.test("nearEvent: Tuhk-lehelind 11 Nov FI 181 km, gone by 17 Nov", () => {
   assertEquals(nearEvent(events, "2026-11-15")?.date, "2026-11-11");
   assertEquals(nearEvent(events, "2026-11-15")?.km_to_turi, 181);
   assertEquals(nearEvent(events, "2026-11-17"), null);
+});
+
+// P184f: direction gate. Events within NEAR_KM and NEAR_MAX_AGE_DAYS, so only
+// the latitude vs Turi (58.81) and the month decide.
+Deno.test("nearEvent: November keeps only birds north of Turi", () => {
+  assertEquals(nearEvent([ev("2026-11-16", "LV", 56.9, 24.1, 230)], "2026-11-17"), null);
+  assertEquals(
+    nearEvent([ev("2026-11-16", "FI", 60.2, 24.9, 150)], "2026-11-17")?.country_code,
+    "FI",
+  );
+  assertEquals(nearEvent([ev("2026-11-16", "RU-PSK", 57.8, 28.3, 220)], "2026-11-17"), null);
+  assertEquals(
+    nearEvent([ev("2026-11-16", "SE", 59.3, 18.1, 290)], "2026-11-17")?.country_code,
+    "SE",
+  );
+});
+
+Deno.test("nearEvent: May keeps only birds south of Turi", () => {
+  assertEquals(
+    nearEvent([ev("2026-05-09", "LV", 56.9, 24.1, 230)], "2026-05-10")?.country_code,
+    "LV",
+  );
+  assertEquals(nearEvent([ev("2026-05-09", "FI", 60.2, 24.9, 150)], "2026-05-10"), null);
+});
+
+Deno.test("nearEvent: January and July allow either direction", () => {
+  assertEquals(
+    nearEvent([ev("2026-01-14", "LV", 56.9, 24.1, 230)], "2026-01-15")?.country_code,
+    "LV",
+  );
+  assertEquals(
+    nearEvent([ev("2026-07-14", "LV", 56.9, 24.1, 230)], "2026-07-15")?.country_code,
+    "LV",
+  );
+});
+
+Deno.test("nearAllowed: month boundaries", () => {
+  const lv = ev("2026-11-16", "LV", 56.9, 24.1, 230);
+  const fi = ev("2026-11-16", "FI", 60.2, 24.9, 150);
+  assertEquals(nearAllowed(lv, "2026-08-01"), false);
+  assertEquals(nearAllowed(fi, "2026-12-31"), true);
+  assertEquals(nearAllowed(lv, "2026-02-01"), true);
+  assertEquals(nearAllowed(fi, "2026-06-30"), false);
+  assertEquals(nearAllowed(fi, "2026-01-15"), true);
+  assertEquals(nearAllowed(fi, "2026-07-15"), true);
 });
 
 Deno.test("dedupeEvents: same species/day/cell -> one event, min km, max count", () => {

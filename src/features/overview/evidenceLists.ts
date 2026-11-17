@@ -39,7 +39,7 @@ export interface JubaEestisItem {
   n_obs: number;
   max_count: number | null;
   counties: string[];
-  stay: { n_birds: number; median_days: number; pct_over_3d: number } | null;
+  stay: { n_birds: number; n_multi_day: number; n_over_3d: number } | null;
   hk: { accepted_records: number; months: number[] } | null;
 }
 
@@ -107,8 +107,9 @@ function compact<T>(raw: unknown, parse: (r: Rec) => T | null): T[] {
 }
 
 function parseStay(v: unknown): JubaEestisItem['stay'] {
-  if (!isRec(v) || !isNum(v.n_birds) || !isNum(v.median_days) || !isNum(v.pct_over_3d)) return null;
-  return { n_birds: v.n_birds, median_days: v.median_days, pct_over_3d: v.pct_over_3d };
+  // Older raport shape (median_days / pct_over_3d) has no counts -> null.
+  if (!isRec(v) || !isNum(v.n_birds) || !isNum(v.n_multi_day) || !isNum(v.n_over_3d)) return null;
+  return { n_birds: v.n_birds, n_multi_day: v.n_multi_day, n_over_3d: v.n_over_3d };
 }
 
 function parseHk(v: unknown): JubaEestisItem['hk'] {
@@ -252,9 +253,7 @@ export function joinCounties(counties: readonly string[]): string {
 export function staySentence(stay: JubaEestisItem['stay']): string {
   // The orchestrator already sends null below 2 birds; guard here too.
   if (!stay || stay.n_birds < 2) return TEXT.stay_none;
-  const k = Math.round((stay.n_birds * stay.pct_over_3d) / 100);
-  if (stay.median_days === 1) return fill(TEXT.stay_one, { n: stay.n_birds, k });
-  return fill(TEXT.stay_many, { d: stay.median_days, n: stay.n_birds, k });
+  return fill(TEXT.stay_counts, { n: stay.n_birds, m: stay.n_multi_day, k: stay.n_over_3d });
 }
 
 export function hkSentence(hk: JubaEestisItem['hk']): string | null {

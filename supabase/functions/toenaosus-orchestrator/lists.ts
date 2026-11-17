@@ -28,7 +28,7 @@ export interface JubaEestisItem {
   n_obs: number;
   max_count: number | null;
   counties: string[];
-  stay: { n_birds: number; median_days: number; pct_over_3d: number } | null;
+  stay: { n_birds: number; n_multi_day: number; n_over_3d: number } | null;
   hk: { accepted_records: number; months: number[] } | null;
 }
 
@@ -146,6 +146,7 @@ const JUBA_WINDOW_DAYS = 14;
 const LAHENEMAS_WINDOW_DAYS = 14;
 const NEAR_KM = 300;
 const NEAR_MAX_AGE_DAYS = 5;
+const TURI_LAT = 58.81;
 const TRACK_MAX_AGE_DAYS = 7;
 const TRACK_STEP_DAYS = 7;
 const TRACK_STEP_KM = 300;
@@ -342,13 +343,27 @@ function byRecency(a: SightingEvent, b: SightingEvent): number {
   return a.km_to_turi - b.km_to_turi;
 }
 
+/**
+ * Migration direction gate for "near" events: autumn birds come from the
+ * north, spring birds from the south. Jan and Jul allow either side.
+ * asOf is already a Tallinn YYYY-MM-DD.
+ */
+export function nearAllowed(e: SightingEvent, asOf: string): boolean {
+  const month = Number(asOf.slice(5, 7));
+  if (month >= 8 && month <= 12) return e.lat > TURI_LAT;
+  if (month >= 2 && month <= 6) return e.lat < TURI_LAT;
+  return true;
+}
+
 export function nearEvent(
   events: SightingEvent[],
   asOf: string,
 ): SightingEvent | null {
   const since = addDays(asOf, -NEAR_MAX_AGE_DAYS);
   const hits = events
-    .filter((e) => e.km_to_turi <= NEAR_KM && e.date >= since)
+    .filter((e) =>
+      e.km_to_turi <= NEAR_KM && e.date >= since && nearAllowed(e, asOf)
+    )
     .sort(byRecency);
   return hits[0] ?? null;
 }
@@ -581,8 +596,8 @@ interface VaatlusteRow {
 interface StayRow {
   species_et: string;
   n_birds: number;
-  median_days: number;
-  pct_over_3d: number;
+  n_multi_day: number;
+  n_over_3d: number;
 }
 
 interface HkSpeciesRow {
@@ -748,8 +763,8 @@ async function buildJuba(
       stay: s && s.n_birds >= 2
         ? {
           n_birds: s.n_birds,
-          median_days: s.median_days,
-          pct_over_3d: s.pct_over_3d,
+          n_multi_day: s.n_multi_day,
+          n_over_3d: s.n_over_3d,
         }
         : null,
       hk: hk.get(g.species_et) ?? null,

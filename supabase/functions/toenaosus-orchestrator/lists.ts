@@ -13,7 +13,7 @@ export interface EvidenceLists {
   as_of: string; // YYYY-MM-DD, Europe/Tallinn
   juba_eestis: JubaEestisItem[]; // last_date desc
   lahenemas: LahenemasItem[]; // latest_km asc
-  hooaeg: HooaegItem[]; // years desc, then last10 desc; only >= 2 years
+  hooaeg: HooaegItem[]; // chance desc, then years desc, then last10 desc; only >= 2 years
   diag: { rarity_species: number; errors: string[]; elapsed_ms: number };
 }
 
@@ -30,6 +30,7 @@ export interface JubaEestisItem {
   counties: string[];
   stay: { n_birds: number; n_multi_day: number; n_over_3d: number } | null;
   hk: { accepted_records: number; months: number[] } | null;
+  chance_pct: number | null;
 }
 
 export interface SightingEvent {
@@ -52,6 +53,8 @@ export interface LahenemasItem {
   events: SightingEvent[];
   latest_km: number;
   hooaeg_years: number | null;
+  years_in_window_last10: number;
+  chance_pct: number | null; // null only when buildHooaeg failed
 }
 
 export interface HooaegItem {
@@ -71,6 +74,7 @@ export interface HooaegItem {
     county: string | null;
     n_days: number;
   }[];
+  chance_pct: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +146,20 @@ export interface LahenemasPick {
 // ---------------------------------------------------------------------------
 
 const RARITY_LEVELS: readonly RarityLevel[] = ["rare", "super", "mega"];
+
+// P184h1: calibrated chance_pct, from the P184a backtest (Elurikkus 2016-2025,
+// 8 Sep - 31 Oct 2026), keyed by years_in_window_last10. P184e refits these
+// numbers from real outcomes.
+export const SEASON_CHANCE_STEPS: readonly { minLast10: number; pct: number }[] =
+  [
+    { minLast10: 6, pct: 38 },
+    { minLast10: 4, pct: 15 },
+    { minLast10: 2, pct: 11 },
+    { minLast10: 1, pct: 7 },
+    { minLast10: 0, pct: 1 },
+  ];
+// Lahenemas species with no years_in_window_last10 history.
+export const NEIGHBOUR_NO_HISTORY_CHANCE = 8;
 const JUBA_WINDOW_DAYS = 14;
 const LAHENEMAS_WINDOW_DAYS = 14;
 const NEAR_KM = 300;
@@ -462,13 +480,59 @@ export function sortHooaeg<
     species_et: string;
     years_in_window_since_1990: number;
     years_in_window_last10: number;
+    chance_pct: number;
   },
 >(items: T[]): T[] {
   return [...items].sort((a, b) =>
+    b.chance_pct - a.chance_pct ||
     b.years_in_window_since_1990 - a.years_in_window_since_1990 ||
     b.years_in_window_last10 - a.years_in_window_last10 ||
     a.species_et.localeCompare(b.species_et)
   );
+}
+
+/** P184h1: first step with last10 >= minLast10. */
+export function seasonChance(last10: number): number {
+  const step = SEASON_CHANCE_STEPS.find((s) => last10 >= s.minLast10);
+  return step ? step.pct : SEASON_CHANCE_STEPS[SEASON_CHANCE_STEPS.length - 1].pct;
+}
+
+export function lahenemasChance(last10: number): number {
+  return last10 >= 1 ? seasonChance(last10) : NEIGHBOUR_NO_HISTORY_CHANCE;
+}
+
+export function jubaChance(stay: JubaEestisItem["stay"]): number | null {
+  return stay ? Math.round(100 * stay.n_multi_day / stay.n_birds) : null;
+}
+
+/** P184h1: last10 === null means the season prior (buildHooaeg) failed. */
+export function toLahenemasItems(
+  picks: LahenemasPick[],
+  bySpecies: Map<string, RaritySpecies>,
+  hooaeg: HooaegItem[],
+  last10: Map<string, number> | null,
+): LahenemasItem[] {
+  const years = new Map(
+    hooaeg.map((h) => [h.species_et, h.years_in_window_since_1990]),
+  );
+  return picks.flatMap((p) => {
+    const m = bySpecies.get(p.species_et);
+    if (!m) return [];
+    const l = last10 === null ? 0 : last10.get(p.species_et) ?? 0;
+    return [{
+      species_et: p.species_et,
+      species_lat: m.sci,
+      ebird_code: m.ebird_code ?? p.species_code,
+      rarity_level: m.level,
+      avatar_url: m.avatar_url,
+      kind: p.kind,
+      events: p.events,
+      latest_km: p.latest_km,
+      hooaeg_years: years.get(p.species_et) ?? null,
+      years_in_window_last10: l,
+      chance_pct: last10 === null ? null : lahenemasChance(l),
+    }];
+  });
 }
 
 export function seasonMonthsAround(asOf: string): number[] {
@@ -749,6 +813,13 @@ async function buildJuba(
     const meta = bySpecies.get(g.species_et);
     if (!meta) continue;
     const s = stay.get(g.species_et);
+    const st: JubaEestisItem["stay"] = s && s.n_birds >= 2
+      ? {
+        n_birds: s.n_birds,
+        n_multi_day: s.n_multi_day,
+        n_over_3d: s.n_over_3d,
+      }
+      : null;
     out.push({
       species_et: g.species_et,
       species_lat: meta.sci,
@@ -760,14 +831,9 @@ async function buildJuba(
       n_obs: g.n_obs,
       max_count: g.max_count,
       counties: g.counties,
-      stay: s && s.n_birds >= 2
-        ? {
-          n_birds: s.n_birds,
-          n_multi_day: s.n_multi_day,
-          n_over_3d: s.n_over_3d,
-        }
-        : null,
+      stay: st,
       hk: hk.get(g.species_et) ?? null,
+      chance_pct: jubaChance(st),
     });
   }
   return out;
@@ -779,7 +845,7 @@ async function buildHooaeg(
   names: string[],
   exclude: Set<string>,
   asOf: string,
-): Promise<HooaegItem[]> {
+): Promise<{ items: HooaegItem[]; last10: Map<string, number> }> {
   const prior: SeasonPriorRow[] = [];
   for (const part of chunk(names, RPC_CHUNK)) {
     prior.push(
@@ -790,6 +856,10 @@ async function buildHooaeg(
       }),
     );
   }
+  // P184h1: last10 from ALL prior rows (before the Hooaeg filter), for Lahenemas.
+  const last10 = new Map<string, number>(
+    prior.map((r) => [r.species_et, r.years_in_window_last10]),
+  );
   const kept = prior.filter((r) =>
     r.years_in_window_since_1990 >= HOOAEG_MIN_YEARS &&
     Array.isArray(r.years_by_month) &&
@@ -801,7 +871,7 @@ async function buildHooaeg(
     ) &&
     !exclude.has(r.species_et) && bySpecies.has(r.species_et)
   );
-  if (kept.length === 0) return [];
+  if (kept.length === 0) return { items: [], last10 };
 
   const cells = new Map<string, HooaegItem["sites"]>();
   const months = seasonMonthsAround(asOf);
@@ -844,9 +914,10 @@ async function buildHooaeg(
       last_year_in_window: r.last_year_in_window ?? null,
       years_by_month: Array.isArray(r.years_by_month) ? r.years_by_month : [],
       sites,
+      chance_pct: seasonChance(r.years_in_window_last10),
     });
   }
-  return sortHooaeg(items);
+  return { items: sortHooaeg(items), last10 };
 }
 
 async function buildLahenemas(
@@ -913,30 +984,16 @@ export async function buildEvidenceLists(
   ]);
 
   let hooaeg: HooaegItem[] = [];
-  if (hooaegRes.ok) hooaeg = hooaegRes.v;
-  else errors.push(`hooaeg: ${errText(hooaegRes.e)}`);
+  let last10: Map<string, number> | null = null;
+  if (hooaegRes.ok) {
+    hooaeg = hooaegRes.v.items;
+    last10 = hooaegRes.v.last10;
+  } else errors.push(`hooaeg: ${errText(hooaegRes.e)}`);
 
   let lahenemas: LahenemasItem[] = [];
   if (lahenemasRes.ok) {
     try {
-      const years = new Map(
-        hooaeg.map((h) => [h.species_et, h.years_in_window_since_1990]),
-      );
-      lahenemas = lahenemasRes.v.flatMap((p) => {
-        const m = bySpecies.get(p.species_et);
-        if (!m) return [];
-        return [{
-          species_et: p.species_et,
-          species_lat: m.sci,
-          ebird_code: m.ebird_code ?? p.species_code,
-          rarity_level: m.level,
-          avatar_url: m.avatar_url,
-          kind: p.kind,
-          events: p.events,
-          latest_km: p.latest_km,
-          hooaeg_years: years.get(p.species_et) ?? null,
-        }];
-      });
+      lahenemas = toLahenemasItems(lahenemasRes.v, bySpecies, hooaeg, last10);
     } catch (e) {
       errors.push(`lahenemas: ${errText(e)}`);
       lahenemas = [];

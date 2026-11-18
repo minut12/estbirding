@@ -9,13 +9,19 @@ import {
   findTrack,
   groupJubaEestis,
   isSeasonal,
+  jubaChance,
+  lahenemasChance,
+  type LahenemasPick,
   nearAllowed,
   nearEvent,
   type RareObsRow,
+  type RaritySpecies,
+  seasonChance,
   type SightingEvent,
   type SiteCellRow,
   sortHooaeg,
   tallinnDate,
+  toLahenemasItems,
 } from "./lists.ts";
 
 function ev(
@@ -187,6 +193,7 @@ Deno.test("sortHooaeg: years desc, then last10 desc, then name asc", () => {
     species_et,
     years_in_window_since_1990: y,
     years_in_window_last10: l,
+    chance_pct: 1,
   });
   const out = sortHooaeg([
     mk("B", 5, 1),
@@ -195,6 +202,87 @@ Deno.test("sortHooaeg: years desc, then last10 desc, then name asc", () => {
     mk("D", 9, 0),
   ]);
   assertEquals(out.map((x) => x.species_et), ["D", "C", "A", "B"]);
+});
+
+// ---------------------------------------------------------------------------
+// P184h1: calibrated chance_pct
+// ---------------------------------------------------------------------------
+
+Deno.test("seasonChance: P184a steps by last10", () => {
+  const cases: [number, number][] = [
+    [0, 1],
+    [1, 7],
+    [2, 11],
+    [3, 11],
+    [4, 15],
+    [5, 15],
+    [6, 38],
+    [10, 38],
+  ];
+  for (const [l, want] of cases) assertEquals(seasonChance(l), want);
+});
+
+Deno.test("lahenemasChance: no history -> 8, else season step", () => {
+  assertEquals(lahenemasChance(0), 8);
+  assertEquals(lahenemasChance(7), 38);
+});
+
+Deno.test("jubaChance: multi-day share of birds, null without stay", () => {
+  assertEquals(jubaChance({ n_birds: 177, n_multi_day: 38, n_over_3d: 0 }), 21);
+  assertEquals(jubaChance(null), null);
+});
+
+Deno.test("sortHooaeg: chance desc beats more years", () => {
+  const out = sortHooaeg([
+    {
+      species_et: "A",
+      years_in_window_since_1990: 20,
+      years_in_window_last10: 2,
+      chance_pct: 11,
+    },
+    {
+      species_et: "B",
+      years_in_window_since_1990: 8,
+      years_in_window_last10: 6,
+      chance_pct: 38,
+    },
+  ]);
+  assertEquals(out.map((x) => x.species_et), ["B", "A"]);
+});
+
+Deno.test("toLahenemasItems: chance_pct and last10 from the prior map", () => {
+  const picks: LahenemasPick[] = [{
+    species_et: "Kaljukajakas",
+    species_code: "kitwak",
+    kind: "near",
+    events: [ev("2026-11-10", "FI", 60.1, 24.9, 120)],
+    latest_km: 120,
+  }];
+  const meta: RaritySpecies = {
+    name_et: "Kaljukajakas",
+    sci: "Rissa tridactyla",
+    ebird_code: "bklkit",
+    level: "rare",
+    avatar_url: null,
+  };
+  const by = new Map([["Kaljukajakas", meta]]);
+
+  const failed = toLahenemasItems(picks, by, [], null);
+  assertEquals(failed[0].chance_pct, null);
+  assertEquals(failed[0].years_in_window_last10, 0);
+
+  const noRow = toLahenemasItems(picks, by, [], new Map());
+  assertEquals(noRow[0].chance_pct, 8);
+  assertEquals(noRow[0].years_in_window_last10, 0);
+
+  const seven = toLahenemasItems(
+    picks,
+    by,
+    [],
+    new Map([["Kaljukajakas", 7]]),
+  );
+  assertEquals(seven[0].chance_pct, 38);
+  assertEquals(seven[0].years_in_window_last10, 7);
 });
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-18 - P184h1 evidence_lists chance_pct (calibrated, server only)
 // redeploy-marker: 2026-11-17 - P184f Lahenemas season direction + stay counts without flybys
 // redeploy-marker: 2026-11-15 - P184d1 Hooaeg seasonality filter + clean sites
 // redeploy-marker: 2026-11-15 - P184c1 evidence_lists via lists.ts (shadow, no UI change)

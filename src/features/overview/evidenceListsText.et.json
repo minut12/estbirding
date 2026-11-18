@@ -27,6 +27,10 @@
   "empty_list": "Praegu pole ühtegi liiki.",
   "no_data": "Tõenäosuse andmed pole veel saadaval.",
   "lah_stat": "lähenemas",
+  "chance_pct": "~{n}%",
+  "chance_stay": "Võimalus, et lind on veel leitav",
+  "chance_two_weeks": "Võimalus näha Eestis järgmise 2 nädala jooksul",
+  "chance_basis": "Arvutatud varasemate aastate vaatluste põhjal.",
   "months_short": ["jaan","veebr","märts","apr","mai","juuni","juuli","aug","sept","okt","nov","dets"],
   "months_initial": ["J","V","M","A","M","J","J","A","S","O","N","D"],
   "rarity": { "mega": "Mega rari", "super": "Super rari", "rare": "Rari" }

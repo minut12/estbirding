@@ -11,8 +11,10 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import {
+  CHANCE_STYLE,
   HOOAEG_TOP_N,
   TEXT,
+  chanceChip,
   countLine,
   currentTallinnMonth,
   fill,
@@ -91,11 +93,12 @@ function RarityPill({ level }: { level: RarityLevel }) {
   );
 }
 
-function SpeciesHeader({ speciesEt, speciesLat, level, avatarUrl }: {
+function SpeciesHeader({ speciesEt, speciesLat, level, avatarUrl, chip }: {
   speciesEt: string;
   speciesLat: string;
   level: RarityLevel;
   avatarUrl: string | undefined;
+  chip?: { text: string; fg: string; bg: string } | null;
 }) {
   return (
     <div className="flex items-start gap-3">
@@ -113,6 +116,14 @@ function SpeciesHeader({ speciesEt, speciesLat, level, avatarUrl }: {
         </div>
         <RarityPill level={level} />
       </div>
+      {chip && (
+        <span
+          className="self-start shrink-0 rounded-md px-2 py-0.5 text-[18px] leading-tight font-medium tabular-nums"
+          style={{ color: chip.fg, backgroundColor: chip.bg }}
+        >
+          {chip.text}
+        </span>
+      )}
     </div>
   );
 }
@@ -163,11 +174,19 @@ function JubaCard({ item, isTarget, avatarUrl, onShowOnMap }: {
   onShowOnMap: (speciesEt: string) => void;
 }) {
   const hk = hkSentence(item.hk);
+  const chance = chanceChip(item.chance_pct);
   return (
     <Card {...jumpAttrs(item.ebird_code, isTarget)} className="p-4 space-y-2">
-      <SpeciesHeader speciesEt={item.species_et} speciesLat={item.species_lat} level={item.rarity_level} avatarUrl={avatarUrl} />
+      <SpeciesHeader
+        speciesEt={item.species_et}
+        speciesLat={item.species_lat}
+        level={item.rarity_level}
+        avatarUrl={avatarUrl}
+        chip={chance ? { text: chance, ...CHANCE_STYLE.juba } : null}
+      />
       <p className="text-sm">{jubaLine(item)}</p>
       <p className="text-xs text-muted-foreground">{staySentence(item.stay)}</p>
+      {chance && <p className="text-xs text-muted-foreground">{TEXT.chance_stay}</p>}
       {hk && <p className="text-xs text-muted-foreground">{hk}</p>}
       <button
         type="button"
@@ -187,14 +206,27 @@ function LahenemasCard({ item, isTarget, avatarUrl, rating }: {
   rating: ReactNode;
 }) {
   const count = countLine(item.events);
+  const chance = chanceChip(item.chance_pct);
   return (
     <Card {...jumpAttrs(item.ebird_code, isTarget)} className="p-4 space-y-2">
-      <SpeciesHeader speciesEt={item.species_et} speciesLat={item.species_lat} level={item.rarity_level} avatarUrl={avatarUrl} />
+      <SpeciesHeader
+        speciesEt={item.species_et}
+        speciesLat={item.species_lat}
+        level={item.rarity_level}
+        avatarUrl={avatarUrl}
+        chip={chance ? { text: chance, ...CHANCE_STYLE.lah } : null}
+      />
       <p className="text-sm">{trackLine(item.events)}</p>
       <p className="text-xs text-muted-foreground">
         {moveLine(item.events)}
         {count && <> &middot; {count}</>}
       </p>
+      {chance && (
+        <>
+          <p className="text-xs text-muted-foreground">{TEXT.chance_two_weeks}</p>
+          <p className="text-xs text-muted-foreground">{TEXT.chance_basis}</p>
+        </>
+      )}
       {item.hooaeg_years !== null && (
         <span
           className="inline-flex rounded-md px-2 py-0.5 text-xs font-medium"
@@ -215,11 +247,24 @@ function HooaegCard({ item, isTarget, avatarUrl, currentMonth, rating }: {
   currentMonth: number;
   rating: ReactNode;
 }) {
+  const chance = chanceChip(item.chance_pct);
   return (
     <Card {...jumpAttrs(item.ebird_code, isTarget)} className="p-4 space-y-2">
-      <SpeciesHeader speciesEt={item.species_et} speciesLat={item.species_lat} level={item.rarity_level} avatarUrl={avatarUrl} />
+      <SpeciesHeader
+        speciesEt={item.species_et}
+        speciesLat={item.species_lat}
+        level={item.rarity_level}
+        avatarUrl={avatarUrl}
+        chip={chance ? { text: chance, ...CHANCE_STYLE.hoo } : null}
+      />
       <p className="text-sm">{hooSeenLine(item)}</p>
       <p className="text-xs text-muted-foreground">{hooLast10Line(item)}</p>
+      {chance && (
+        <>
+          <p className="text-xs text-muted-foreground">{TEXT.chance_two_weeks}</p>
+          <p className="text-xs text-muted-foreground">{TEXT.chance_basis}</p>
+        </>
+      )}
       <MonthChart yearsByMonth={item.years_by_month} currentMonth={currentMonth} accent={SEGMENT_STYLE.hoo.fg} />
       {rating}
     </Card>

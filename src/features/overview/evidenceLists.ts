@@ -24,7 +24,7 @@ export interface EvidenceLists {
   as_of: string; // YYYY-MM-DD, Europe/Tallinn
   juba_eestis: JubaEestisItem[]; // last_date desc
   lahenemas: LahenemasItem[]; // latest_km asc
-  hooaeg: HooaegItem[]; // years desc, then last10 desc; only >= 2 years
+  hooaeg: HooaegItem[]; // chance_pct desc (server order); only >= 2 years
   diag: { rarity_species: number; errors: string[]; elapsed_ms: number };
 }
 
@@ -41,6 +41,7 @@ export interface JubaEestisItem {
   counties: string[];
   stay: { n_birds: number; n_multi_day: number; n_over_3d: number } | null;
   hk: { accepted_records: number; months: number[] } | null;
+  chance_pct: number | null;
 }
 
 export interface SightingEvent {
@@ -63,6 +64,7 @@ export interface LahenemasItem {
   events: SightingEvent[];
   latest_km: number;
   hooaeg_years: number | null;
+  chance_pct: number | null;
 }
 
 export interface HooaegItem {
@@ -82,6 +84,7 @@ export interface HooaegItem {
     county: string | null;
     n_days: number;
   }[];
+  chance_pct: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +137,7 @@ function parseJuba(r: Rec): JubaEestisItem | null {
     counties: Array.isArray(r.counties) ? r.counties.filter(isStr) : [],
     stay: parseStay(r.stay),
     hk: parseHk(r.hk),
+    chance_pct: numOrNull(r.chance_pct),
   };
 }
 
@@ -167,6 +171,7 @@ function parseLahenemas(r: Rec): LahenemasItem | null {
     events,
     latest_km: r.latest_km,
     hooaeg_years: numOrNull(r.hooaeg_years),
+    chance_pct: numOrNull(r.chance_pct),
   };
 }
 
@@ -197,6 +202,7 @@ function parseHooaeg(r: Rec): HooaegItem | null {
     last_year_in_window: numOrNull(r.last_year_in_window),
     years_by_month,
     sites: compact(r.sites, parseSite),
+    chance_pct: numOrNull(r.chance_pct),
   };
 }
 
@@ -254,6 +260,12 @@ export function staySentence(stay: JubaEestisItem['stay']): string {
   // The orchestrator already sends null below 2 birds; guard here too.
   if (!stay || stay.n_birds < 2) return TEXT.stay_none;
   return fill(TEXT.stay_counts, { n: stay.n_birds, m: stay.n_multi_day, k: stay.n_over_3d });
+}
+
+/** "~38%" from chance_pct; null when there is no number (no chip, no basis line). */
+export function chanceChip(pct: number | null): string | null {
+  if (pct === null || !Number.isFinite(pct)) return null;
+  return fill(TEXT.chance_pct, { n: Math.round(pct) });
 }
 
 export function hkSentence(hk: JubaEestisItem['hk']): string | null {
@@ -352,6 +364,12 @@ export function currentTallinnMonth(now: Date = new Date()): number {
 // ---------------------------------------------------------------------------
 
 export type EvidenceSegment = 'juba' | 'lah' | 'hoo';
+
+export const CHANCE_STYLE: Record<EvidenceSegment, { fg: string; bg: string }> = {
+  juba: { fg: '#27500A', bg: '#EAF3DE' },
+  lah: { fg: '#0C447C', bg: '#E6F1FB' },
+  hoo: { fg: '#3C3489', bg: '#EEEDFE' },
+};
 
 export const HOOAEG_TOP_N = 8;
 

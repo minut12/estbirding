@@ -4,6 +4,7 @@ import {
   MIDDOT,
   NDASH,
   TEXT,
+  chanceChip,
   countLine,
   currentTallinnMonth,
   firstOccurrences,
@@ -196,5 +197,40 @@ describe('firstOccurrences', () => {
     const t = firstOccurrences(parseEvidenceLists(PAYLOAD)!);
     expect(t.get('blkred')).toEqual({ segment: 'juba', index: 0 });
     expect(t.get('parcro2')).toEqual({ segment: 'lah', index: 0 });
+  });
+});
+
+describe('chance_pct', () => {
+  const withChance = (v: unknown) => ({
+    ...PAYLOAD,
+    juba_eestis: [{ ...PAYLOAD.juba_eestis[0], chance_pct: v }],
+    lahenemas: [{ ...PAYLOAD.lahenemas[0], chance_pct: v }],
+    hooaeg: [{ ...PAYLOAD.hooaeg[0], chance_pct: v }],
+  });
+
+  it('keeps a numeric chance_pct on juba, lahenemas and hooaeg items', () => {
+    const lists = parseEvidenceLists(withChance(38));
+    expect(lists?.juba_eestis[0].chance_pct).toBe(38);
+    expect(lists?.lahenemas[0].chance_pct).toBe(38);
+    expect(lists?.hooaeg[0].chance_pct).toBe(38);
+  });
+
+  it('is null when the field is missing (older raport)', () => {
+    const lists = parseEvidenceLists(PAYLOAD);
+    expect(lists?.juba_eestis[0].chance_pct).toBeNull();
+    expect(lists?.lahenemas[0].chance_pct).toBeNull();
+    expect(lists?.hooaeg[0].chance_pct).toBeNull();
+  });
+
+  it('is null when the field is the string "38"', () => {
+    const lists = parseEvidenceLists(withChance('38'));
+    expect(lists?.juba_eestis[0].chance_pct).toBeNull();
+    expect(lists?.lahenemas[0].chance_pct).toBeNull();
+    expect(lists?.hooaeg[0].chance_pct).toBeNull();
+  });
+
+  it('chanceChip formats ~N% and returns null without a number', () => {
+    expect(chanceChip(38)).toBe('~38%');
+    expect(chanceChip(null)).toBeNull();
   });
 });

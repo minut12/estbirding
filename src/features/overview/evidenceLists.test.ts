@@ -9,7 +9,10 @@ import {
   currentTallinnMonth,
   firstOccurrences,
   hkSentence,
-  hooLast10Line,
+  HOOAEG_HALFWIDTH_DAYS,
+  hooSinceLine,
+  hooWindowLine,
+  hooWindowRange,
   jubaLine,
   monthBars,
   monthChartLabel,
@@ -139,31 +142,37 @@ describe('trackLine / moveLine', () => {
   });
 });
 
-describe('hooLast10Line', () => {
-  const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
-  const last10 = (n: number): string => TEXT.hoo_last10.replace('{n}', String(n));
-  const lastYear = (y: number): string => TEXT.hoo_last_year.replace('{year}', String(y));
+describe('hooWindowLine / hooSinceLine', () => {
+  const AUML = String.fromCharCode(0x00e4);
+  const range = `5. nov${NDASH}3. dets`;
 
-  it('last10 = 7: both parts joined by a middot, capitalised', () => {
-    expect(hooLast10Line({ years_in_window_last10: 7, last_year_in_window: 2025 }))
-      .toBe(cap(`${last10(7)} ${MIDDOT} ${lastYear(2025)}`));
+  it('window is as_of +/- 14 days', () => {
+    expect(HOOAEG_HALFWIDTH_DAYS).toBe(14);
+    expect(hooWindowRange('2026-11-19')).toBe(range);
+    expect(hooWindowRange('2026-11-30')).toBe(`16. nov${NDASH}14. dets`);
+    expect(hooWindowRange('2026-12-25')).toBe(`11. dets${NDASH}8. jaan`);
   });
 
-  it('last10 = 1: both parts joined by a middot', () => {
-    expect(hooLast10Line({ years_in_window_last10: 1, last_year_in_window: 2019 }))
-      .toBe(cap(`${last10(1)} ${MIDDOT} ${lastYear(2019)}`));
+  it('last10 = 10: range + count of the last 10 years', () => {
+    expect(hooWindowLine({ years_in_window_last10: 10 }, '2026-11-19'))
+      .toBe(`${range} on liiki Eestis n${AUML}htud 10 aastal viimasest 10-st`);
   });
 
-  it('last10 = 0: only the capitalised last-year part', () => {
-    const line = hooLast10Line({ years_in_window_last10: 0, last_year_in_window: 2009 });
-    expect(line).toBe(cap(lastYear(2009)));
-    expect(line).not.toContain(MIDDOT);
-    expect(line.charAt(0)).toBe('V');
+  it('last10 = 0: none string', () => {
+    expect(hooWindowLine({ years_in_window_last10: 0 }, '2026-11-19'))
+      .toBe(`${range} pole liiki viimase 10 aasta jooksul Eestis n${AUML}htud`);
   });
 
-  it('drops the last-year part when last_year_in_window is null', () => {
-    expect(hooLast10Line({ years_in_window_last10: 6, last_year_in_window: null })).toBe(cap(last10(6)));
-    expect(hooLast10Line({ years_in_window_last10: 0, last_year_in_window: null })).toBe('');
+  it('null when as_of does not parse', () => {
+    expect(hooWindowLine({ years_in_window_last10: 3 }, '')).toBeNull();
+  });
+
+  it('since line: no viimati when last_year is null, viimati 2024 otherwise', () => {
+    const none = hooSinceLine({ years_in_window_since_1990: 9, last_year_in_window: null });
+    expect(none).toBe('Alates 1990: 9 eri aastal');
+    expect(none).not.toContain('viimati');
+    expect(hooSinceLine({ years_in_window_since_1990: 9, last_year_in_window: 2024 }))
+      .toBe(`Alates 1990: 9 eri aastal ${MIDDOT} viimati 2024`);
   });
 });
 

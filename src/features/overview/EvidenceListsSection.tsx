@@ -20,8 +20,8 @@ import {
   fill,
   firstOccurrences,
   hkSentence,
-  hooLast10Line,
-  hooSeenLine,
+  hooSinceLine,
+  hooWindowLine,
   jubaLine,
   monthBars,
   monthChartLabel,
@@ -240,14 +240,16 @@ function LahenemasCard({ item, isTarget, avatarUrl, rating }: {
   );
 }
 
-function HooaegCard({ item, isTarget, avatarUrl, currentMonth, rating }: {
+function HooaegCard({ item, isTarget, avatarUrl, currentMonth, asOf, rating }: {
   item: HooaegItem;
   isTarget: boolean;
   avatarUrl: string | undefined;
   currentMonth: number;
+  asOf: string;
   rating: ReactNode;
 }) {
   const chance = chanceChip(item.chance_pct);
+  const windowLine = hooWindowLine(item, asOf);
   return (
     <Card {...jumpAttrs(item.ebird_code, isTarget)} className="p-4 space-y-2">
       <SpeciesHeader
@@ -257,8 +259,8 @@ function HooaegCard({ item, isTarget, avatarUrl, currentMonth, rating }: {
         avatarUrl={avatarUrl}
         chip={chance ? { text: chance, ...CHANCE_STYLE.hoo } : null}
       />
-      <p className="text-sm">{hooSeenLine(item)}</p>
-      <p className="text-xs text-muted-foreground">{hooLast10Line(item)}</p>
+      {windowLine && <p className="text-sm">{windowLine}</p>}
+      <p className="text-xs text-muted-foreground">{hooSinceLine(item)}</p>
       {chance && (
         <>
           <p className="text-xs text-muted-foreground">{TEXT.chance_two_weeks}</p>
@@ -378,6 +380,7 @@ export function EvidenceListsSection({
               isTarget={isTarget(item.ebird_code, 'hoo', i)}
               avatarUrl={resolveAvatar(item)}
               currentMonth={currentMonth}
+              asOf={lists.as_of}
               rating={item.ebird_code ? renderRating(item.ebird_code) : null}
             />
           ))}

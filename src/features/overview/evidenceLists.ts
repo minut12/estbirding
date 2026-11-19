@@ -311,21 +311,44 @@ export function countLine(events: readonly SightingEvent[]): string | null {
   return `${c} ${c === 1 ? TEXT.ind_one : TEXT.ind_many}`;
 }
 
-export function hooSeenLine(item: Pick<HooaegItem, 'years_in_window_since_1990'>): string {
-  return fill(TEXT.hoo_seen, { n: item.years_in_window_since_1990 });
+// Mirrors HOOAEG_HALFWIDTH in supabase/functions/toenaosus-orchestrator/lists.ts
+// (the Hooaeg window is as_of +/- this many days). Keep the two in sync.
+export const HOOAEG_HALFWIDTH_DAYS = 14;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** YYYY-MM-DD shifted by `days`, computed on UTC date parts; null when iso does not parse. */
+export function shiftIsoDate(iso: string, days: number): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return null;
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (!Number.isFinite(t)) return null;
+  return new Date(t + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** "5. nov-3. dets" (en dash): as_of +/- HOOAEG_HALFWIDTH_DAYS; null when as_of does not parse. */
+export function hooWindowRange(asOf: string): string | null {
+  const first = shiftIsoDate(asOf, -HOOAEG_HALFWIDTH_DAYS);
+  const last = shiftIsoDate(asOf, HOOAEG_HALFWIDTH_DAYS);
+  return first && last ? formatDateRange(first, last) : null;
 }
 
 /**
- * "<hoo_last10> MIDDOT <hoo_last_year>". The hoo_last10 part is
- * dropped when last10 = 0, the hoo_last_year part when last_year_in_window is null.
- * The first letter of the line is capitalised.
+ * "{range} on liiki Eestis nahtud {n} aastal viimasest 10-st" (hoo_window), or
+ * hoo_window_none when last10 = 0. Null when as_of does not parse.
  */
-export function hooLast10Line(item: Pick<HooaegItem, 'years_in_window_last10' | 'last_year_in_window'>): string {
-  const parts: string[] = [];
-  if (item.years_in_window_last10 > 0) parts.push(fill(TEXT.hoo_last10, { n: item.years_in_window_last10 }));
-  if (item.last_year_in_window !== null) parts.push(fill(TEXT.hoo_last_year, { year: item.last_year_in_window }));
-  const line = parts.join(` ${MIDDOT} `);
-  return line.charAt(0).toUpperCase() + line.slice(1);
+export function hooWindowLine(item: Pick<HooaegItem, 'years_in_window_last10'>, asOf: string): string | null {
+  const range = hooWindowRange(asOf);
+  if (range === null) return null;
+  if (item.years_in_window_last10 >= 1) return fill(TEXT.hoo_window, { range, n: item.years_in_window_last10 });
+  return fill(TEXT.hoo_window_none, { range });
+}
+
+/** "Alates 1990: {n} eri aastal" (hoo_since) + " MIDDOT viimati {year}" when last_year_in_window is set. */
+export function hooSinceLine(item: Pick<HooaegItem, 'years_in_window_since_1990' | 'last_year_in_window'>): string {
+  const since = fill(TEXT.hoo_since, { n: item.years_in_window_since_1990 });
+  if (item.last_year_in_window === null) return since;
+  return `${since} ${MIDDOT} ${fill(TEXT.hoo_last_year, { year: item.last_year_in_window })}`;
 }
 
 export interface MonthBar {

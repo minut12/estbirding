@@ -439,6 +439,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-17', ref: 'P184d3', kind: 'patch', text: 'Hooaja kaardi tekstid selgemaks' },
       { date: '2026-11-17', ref: 'P184f', kind: 'minor', text: 'L\u00e4henemas arvestab r\u00e4ndesuunda; p\u00fcsimisaeg ilma l\u00e4bilennuta' },
       { date: '2026-11-18', ref: 'P184h2', kind: 'minor', text: 'T\u00f5en\u00e4osus protsendina, arvutatud varasemate vaatluste p\u00f5hjal' },
+      { date: '2026-11-19', ref: 'P184h4', kind: 'patch', text: 'Hooaja kaardil kuup\u00e4evavahemik ja viimase 10 aasta arv' },
     ],
   },
   {

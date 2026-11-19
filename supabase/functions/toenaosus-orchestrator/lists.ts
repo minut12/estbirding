@@ -501,8 +501,21 @@ export function lahenemasChance(last10: number): number {
   return last10 >= 1 ? seasonChance(last10) : NEIGHBOUR_NO_HISTORY_CHANCE;
 }
 
-export function jubaChance(stay: JubaEestisItem["stay"]): number | null {
-  return stay ? Math.round(100 * stay.n_multi_day / stay.n_birds) : null;
+/**
+ * P184h5: chance depends on days since the last report (Tallinn dates).
+ * d <= 1 -> multi-day share; d 2..3 -> over-3-day share; d >= 4 -> null.
+ * 4+ days matches rarity_stay_days' run gap (> 3 days = a new bird).
+ */
+export function jubaChance(
+  stay: JubaEestisItem["stay"],
+  lastDate: string,
+  asOf: string,
+): number | null {
+  if (!stay) return null;
+  const d = dayDiff(asOf, lastDate);
+  if (d <= 1) return Math.round(100 * stay.n_multi_day / stay.n_birds);
+  if (d <= 3) return Math.round(100 * stay.n_over_3d / stay.n_birds);
+  return null;
 }
 
 /** P184h1: last10 === null means the season prior (buildHooaeg) failed. */
@@ -833,7 +846,7 @@ async function buildJuba(
       counties: g.counties,
       stay: st,
       hk: hk.get(g.species_et) ?? null,
-      chance_pct: jubaChance(st),
+      chance_pct: jubaChance(st, g.last_date, asOf),
     });
   }
   return out;

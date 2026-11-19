@@ -227,9 +227,17 @@ Deno.test("lahenemasChance: no history -> 8, else season step", () => {
   assertEquals(lahenemasChance(7), 38);
 });
 
-Deno.test("jubaChance: multi-day share of birds, null without stay", () => {
-  assertEquals(jubaChance({ n_birds: 177, n_multi_day: 38, n_over_3d: 0 }), 21);
-  assertEquals(jubaChance(null), null);
+Deno.test("jubaChance: depends on days since last report, null without stay", () => {
+  const asOf = "2026-11-19";
+  const lounatirk = { n_birds: 30, n_multi_day: 1, n_over_3d: 0 };
+  assertEquals(jubaChance(lounatirk, "2026-11-19", asOf), 3);
+  assertEquals(jubaChance(lounatirk, "2026-11-17", asOf), 0);
+  assertEquals(jubaChance(lounatirk, "2026-11-06", asOf), null);
+  const big = { n_birds: 177, n_multi_day: 38, n_over_3d: 18 };
+  assertEquals(jubaChance(big, "2026-11-18", asOf), 21);
+  assertEquals(jubaChance(big, "2026-11-16", asOf), 10);
+  assertEquals(jubaChance(big, "2026-11-15", asOf), null);
+  assertEquals(jubaChance(null, "2026-11-19", asOf), null);
 });
 
 Deno.test("sortHooaeg: chance desc beats more years", () => {

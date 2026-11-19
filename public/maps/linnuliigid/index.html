@@ -620,14 +620,19 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
 .bm-pred-pop .tag{margin-top:3px;font-size:12px;font-weight:700;color:#185FA5}
 .bm-pred-pop .hrow{display:flex;justify-content:space-between;gap:10px;font-size:12px;margin-top:2px}
 .bm-pred-pop .hrow .n{flex:0 0 auto;color:var(--eb-slate-500)}
-.bm-lah-dot{width:16px;height:16px;box-sizing:border-box;border-radius:50%;background:#378ADD;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:pointer}
+.bm-pred-pop .hrow .pc{flex:0 0 auto;white-space:nowrap}
+/* P184h3: avatar pins. 40px avatar inside a 3px ring = 46px outer, radius 23 (LAH_PIN_R). */
+.bm-ava-pin{position:relative;width:46px;height:46px;cursor:pointer}
+.bm-ava-pin .av{width:46px;height:46px;box-sizing:border-box;border-radius:50%;border:3px solid #7F77DD;background:#fff;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.bm-ava-pin .av img{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%}
+.bm-ava-pin .sil{display:block;width:100%;height:100%}
+.bm-ava-plus{position:absolute;top:-4px;right:-6px;min-width:18px;height:18px;box-sizing:border-box;padding:0 4px;border-radius:9px;background:#534AB7;color:#fff;border:1.5px solid #fff;font:700 10px/15px system-ui,sans-serif;text-align:center}
+.bm-ava-chance{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:2px;padding:0 6px;border-radius:9px;color:#fff;font:700 11px/16px system-ui,sans-serif;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)}
 .bm-lah-arrow{pointer-events:none}
 .bm-lah-tip{font-size:12px;line-height:1.3;font-weight:600;color:#185FA5;padding:1px 5px}
-.bm-hoo-pin{width:26px;height:26px;box-sizing:border-box;border-radius:50%;background:#AFA9EC;border:2px solid #fff;color:#3C3489;font:700 12px/22px system-ui,sans-serif;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer}
 .bm-pred-legend{background:rgba(255,255,255,.94);border-radius:10px;padding:6px 9px;box-shadow:0 2px 8px rgba(0,0,0,.18);font-size:12px;line-height:1.5;color:var(--eb-slate-700,#334155)}
 .bm-pred-legend .r{display:flex;align-items:center;gap:6px;white-space:nowrap}
-.bm-pred-legend .ln{display:inline-block;width:18px;height:3px;border-radius:2px;background:#185FA5}
-.bm-pred-legend .pin{display:inline-block;width:16px;height:16px;border-radius:50%;background:#AFA9EC;color:#3C3489;font:700 9px/16px system-ui,sans-serif;text-align:center}
+.bm-pred-legend .ring{display:inline-block;width:16px;height:16px;box-sizing:border-box;border-radius:50%;border:3px solid #7F77DD;background:#fff}
 /* /P6b-iframe */
 
 </style>
@@ -14435,9 +14440,67 @@ document.addEventListener('DOMContentLoaded', function(){
   // ---- P184g: evidence lists on the map (Lahenemas tracks, Hooaeg season sites) ----
   // Only real sightings are drawn: nothing past the last event, never a predicted site.
   var LAH_LINE = '#185FA5';
+  // P184h3: outer radius of the avatar pin (20 px avatar radius + 3 px ring); the arrow tip stops here.
+  var LAH_PIN_R = 23;
+  var HOO_RING = '#7F77DD';
+  var HOO_CHIP = '#534AB7';
   var HOO_CLUSTER_KM = 15;
   var MONTHS_SHORT = ['jaan', 'veebr', 'm&auml;rts', 'apr', 'mai', 'juuni', 'juuli', 'aug', 'sept', 'okt', 'nov', 'dets'];
   var POPUP_OPTS = { closeOnClick: false, autoClose: false, maxWidth: 240, className: 'bm-pred-popup' };
+
+  // P184h3: rounded chance_pct, or null when missing / not a number (never "~null%").
+  function chancePct(v){
+    if(v === null || v === undefined || v === '') return null;
+    var n = Number(v);
+    return isFinite(n) ? Math.round(n) : null;
+  }
+
+  // "~N%" pill under an avatar pin; '' when there is no chance.
+  function chanceChipHtml(pct, bg){
+    if(pct === null || pct === undefined) return '';
+    return '<div class="bm-ava-chance" style="background:' + bg + '">~' + pct + '%</div>';
+  }
+
+  // Avatar url, escaped for an attribute: item.avatar_url, then the map's own species avatar
+  // lookup (same as the sidebar rows). '' when only the placeholder is known.
+  function predAvatarUrl(avatarUrl, speciesEt){
+    try{
+      var u = avatarUrl ? String(avatarUrl) : '';
+      if(!u && speciesEt && typeof getDisplayAvatar === 'function') u = String(getDisplayAvatar(String(speciesEt)) || '');
+      if(!u || u.indexOf('placeholder') !== -1) return '';
+      return escapeHtml(u);
+    }catch(e){ return ''; }
+  }
+
+  function silhouetteSvg(ring, hidden){
+    return '<svg class="sil" viewBox="0 0 40 40" aria-hidden="true"' + (hidden ? ' style="display:none"' : '') + '>' +
+      '<path fill="' + ring + '" d="M27 11c-2.2 0-3.9 1.5-4.4 3.5L12 21c-2.2 1.3-3.5 3.6-3.5 6.1V29l5-2.2c1.6 1.4 3.7 2.2 6 2.2 4.8 0 8.6-3.8 8.6-8.6v-2.3l3.9-1.6-3.6-1.4C28.6 13 28.1 11 27 11z"/>' +
+      '<circle cx="27" cy="14.5" r="1.1" fill="#fff"/></svg>';
+  }
+
+  // 46 px pin: 40 px avatar in a 3 px ring of `ring`. A failed image hides itself and reveals the
+  // silhouette, so a 404 never breaks the pin. extraHtml = badge / chance chip.
+  function avatarPinHtml(url, ring, extraHtml){
+    var inner = url
+      ? ('<img src="' + url + '" alt="" onerror="this.style.display=\'none\';if(this.nextSibling)this.nextSibling.style.display=\'block\'">' + silhouetteSvg(ring, true))
+      : silhouetteSvg(ring, false);
+    return '<div class="bm-ava-pin"><div class="av" style="border-color:' + ring + '">' + inner + '</div>' + (extraHtml || '') + '</div>';
+  }
+
+  // Hooaeg species order: chance desc, then years_in_window_since_1990 desc, then name.
+  function hooRowCmp(a, b){
+    var ca = a.chance_pct === null ? -1 : a.chance_pct, cb = b.chance_pct === null ? -1 : b.chance_pct;
+    if(cb !== ca) return cb - ca;
+    if(b.years !== a.years) return b.years - a.years;
+    return String(a.species_et || '').localeCompare(String(b.species_et || ''), 'et');
+  }
+
+  // Cluster rows sorted by hooRowCmp (a copy; the cluster keeps its insertion order).
+  function hooTop(c){
+    var rows = c.order.map(function(k){ return c.species[k]; });
+    rows.sort(hooRowCmp);
+    return rows;
+  }
 
   // "7. nov" from YYYY-MM-DD, same as the Ulevaade formatDay. Returns HTML (entity month names).
   function fmtDayMon(iso){
@@ -14509,12 +14572,15 @@ document.addEventListener('DOMContentLoaded', function(){
       var rar = (typeof _bmMkRar === 'function') ? _bmMkRar(item.rarity_level) : '';
       var avatarImg = item.avatar_url ? ('<img src="' + escapeHtml(item.avatar_url) + '" onerror="this.style.visibility=\'hidden\'">') : '';
       var lat = escapeHtml(item.species_lat || '');
+      var pct = chancePct(item.chance_pct);
+      var chanceLine = pct === null ? '' : ('<div class="basis">V&otilde;imalus n&auml;ha Eestis j&auml;rgmise 2 n&auml;dala jooksul: ~' + pct + '%</div>');
       return '<div class="bm-pred-pop">' +
         '<div class="h">' + avatarImg + '<div class="sp">' + escapeHtml(item.species_et || '') + '</div>' + rar + '</div>' +
         (lat ? '<div class="lat">' + lat + '</div>' : '') +
         '<div class="tag">L&auml;henemas</div>' +
         '<div class="site">' + evLine + '</div>' +
         '<div class="basis">' + kmLine + '</div>' +
+        chanceLine +
         rateChipsHtml(item.ebird_code, -1) +
         '<div class="links"><button type="button" class="bm-pred-open">Ava &Uuml;levaates</button></div>' +
         footHtml(generatedAt) +
@@ -14550,14 +14616,18 @@ document.addEventListener('DOMContentLoaded', function(){
           dot.bindTooltip(eventLabel(evs[i]), { permanent: true, direction: 'right', offset: [6, 0], className: 'bm-lah-tip' });
           predLayer.addLayer(dot);
         }
-        // The tip sits 8 px before the latest event (the marker radius), so nothing is drawn past it.
+        // The 16 px arrow head ends LAH_PIN_R px before the latest event (the avatar pin's outer
+        // radius), so nothing is drawn past it. Rotation origin = the anchor = the event.
         var ang = legAngle(evs[evs.length - 2], last);
-        var arrowHtml = '<svg class="bm-lah-arrow" width="24" height="12" viewBox="0 0 24 12" aria-hidden="true" style="display:block;overflow:visible;transform:rotate(' + ang.toFixed(1) + 'deg);transform-origin:24px 6px"><path d="M0 0L16 6L0 12z" fill="' + LAH_LINE + '"/></svg>';
-        predLayer.addLayer(L.marker([last.lat, last.lon], { icon: L.divIcon({ className: '', iconSize: [24, 12], iconAnchor: [24, 6], html: arrowHtml }), interactive: false, keyboard: false, zIndexOffset: 900 }));
+        var aw = 16 + LAH_PIN_R;
+        var arrowHtml = '<svg class="bm-lah-arrow" width="' + aw + '" height="12" viewBox="0 0 ' + aw + ' 12" aria-hidden="true" style="display:block;overflow:visible;transform:rotate(' + ang.toFixed(1) + 'deg);transform-origin:' + aw + 'px 6px"><path d="M0 0L16 6L0 12z" fill="' + LAH_LINE + '"/></svg>';
+        predLayer.addLayer(L.marker([last.lat, last.lon], { icon: L.divIcon({ className: '', iconSize: [aw, 12], iconAnchor: [aw, 6], html: arrowHtml }), interactive: false, keyboard: false, zIndexOffset: 900 }));
       }
-      var icon = L.divIcon({ className: '', iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -8], html: '<div class="bm-lah-dot"></div>' });
+      var pinHtml = avatarPinHtml(predAvatarUrl(item.avatar_url, item.species_et), LAH_LINE, chanceChipHtml(chancePct(item.chance_pct), LAH_LINE));
+      var d = LAH_PIN_R * 2;
+      var icon = L.divIcon({ className: '', iconSize: [d, d], iconAnchor: [LAH_PIN_R, LAH_PIN_R], popupAnchor: [0, -LAH_PIN_R], html: pinHtml });
       var marker = L.marker([last.lat, last.lon], { icon: icon, zIndexOffset: 1000 });
-      if(isTrackItem(item, evs)) marker.bindTooltip(eventLabel(last), { permanent: true, direction: 'right', offset: [8, 0], className: 'bm-lah-tip' });
+      if(isTrackItem(item, evs)) marker.bindTooltip(eventLabel(last), { permanent: true, direction: 'right', offset: [LAH_PIN_R + 3, 0], className: 'bm-lah-tip' });
       marker.bindPopup(function(){ return lahPopupHtml(item, evs, generatedAt); }, POPUP_OPTS);
       marker.on('popupopen', function(ev){
         var el = popupEl(ev);
@@ -14589,7 +14659,15 @@ document.addEventListener('DOMContentLoaded', function(){
           if(!c){ c = { first: s, species: {}, order: [] }; clusters.push(c); }
           var nd = Number(s.n_days) || 0;
           var row = c.species[spKey];
-          if(!row){ c.species[spKey] = { species_et: it.species_et || '', n_days: nd }; c.order.push(spKey); }
+          if(!row){
+            c.species[spKey] = {
+              species_et: it.species_et || '', n_days: nd,
+              chance_pct: chancePct(it.chance_pct),
+              years: Number(it.years_in_window_since_1990) || 0,
+              avatar_url: it.avatar_url || ''
+            };
+            c.order.push(spKey);
+          }
           else if(nd > row.n_days){ row.n_days = nd; }
         }
       }
@@ -14605,11 +14683,11 @@ document.addEventListener('DOMContentLoaded', function(){
       if(county && labelText.toLowerCase().indexOf(county.toLowerCase()) === -1){
         countyEl = labelText ? (' <span class="k">(' + escapeHtml(county.replace(/maakond/i, 'mk')) + ')</span>') : escapeHtml(county);
       }
-      var rows = c.order.map(function(k){ return c.species[k]; });
-      rows.sort(function(a, b){ return b.n_days - a.n_days; });
+      var rows = hooTop(c);
       var rowsHtml = '';
       for(var i = 0; i < rows.length; i++){
-        rowsHtml += '<div class="hrow"><span>' + escapeHtml(rows[i].species_et) + '</span><span class="n">' + rows[i].n_days + ' p&auml;eval</span></div>';
+        var pc = rows[i].chance_pct === null ? '' : ('~' + rows[i].chance_pct + '% &middot; ');
+        rowsHtml += '<div class="hrow"><span>' + escapeHtml(rows[i].species_et) + '</span><span class="pc">' + pc + '<span class="n">' + rows[i].n_days + ' p&auml;eval</span></span></div>';
       }
       return '<div class="bm-pred-pop">' +
         '<div class="site"><b>' + escapeHtml(labelText) + '</b>' + countyEl + '</div>' +
@@ -14626,8 +14704,14 @@ document.addEventListener('DOMContentLoaded', function(){
 
   function hooMarker(c, generatedAt){
     try{
-      var n = c.order.length;
-      var icon = L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -12], html: '<div class="bm-hoo-pin">' + n + '</div>' });
+      var rows = hooTop(c);
+      if(!rows.length) return null;
+      var top = rows[0];
+      var others = rows.length - 1;
+      var extra = (others >= 1 ? ('<div class="bm-ava-plus">+' + others + '</div>') : '') + chanceChipHtml(top.chance_pct, HOO_CHIP);
+      var html = avatarPinHtml(predAvatarUrl(top.avatar_url, top.species_et), HOO_RING, extra);
+      var d = LAH_PIN_R * 2;
+      var icon = L.divIcon({ className: '', iconSize: [d, d], iconAnchor: [LAH_PIN_R, LAH_PIN_R], popupAnchor: [0, -LAH_PIN_R], html: html });
       var marker = L.marker([c.first.lat, c.first.lon], { icon: icon });
       marker.bindPopup(function(){ return hooPopupHtml(c, generatedAt); }, POPUP_OPTS);
       marker.on('popupopen', function(ev){ try{ wireOpen(popupEl(ev), ''); }catch(e){} });
@@ -14707,8 +14791,8 @@ document.addEventListener('DOMContentLoaded', function(){
         options: { position: 'bottomright' },
         onAdd: function(){
           var div = L.DomUtil.create('div', 'bm-pred-legend');
-          div.innerHTML = '<div class="r"><span class="ln"></span>L&auml;henemas: tegelik liikumine</div>' +
-            '<div class="r"><span class="pin">3</span>Hooaja kohad (liikide arv)</div>';
+          div.innerHTML = '<div class="r"><span class="ring" style="border-color:' + HOO_RING + '"></span>Hooaja kohad</div>' +
+            '<div class="r"><span class="ring" style="border-color:' + LAH_LINE + '"></span>L&auml;henemas: tegelik liikumine</div>';
           try{ L.DomEvent.disableClickPropagation(div); }catch(e){}
           return div;
         }

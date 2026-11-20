@@ -597,7 +597,7 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
 .bm-pred-pop .sp{font-weight:700;font-size:12px;flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bm-pred-pop .lat{color:var(--eb-slate-500);font-size:12px;font-style:italic;margin-left:28px}
 .bm-pred-pop .row{margin-top:3px;font-size:12px}
-.bm-pred-pop .row,.bm-pred-pop .basis,.bm-pred-pop .foot,.bm-pred-pop .site,.bm-pred-pop .seen,.bm-pred-pop .links,.bm-pred-pop .bm-pred-rate,.bm-pred-pop .bm-pred-rate-q,.bm-pred-pop .bm-pred-rate-msg{display:block;grid-template-columns:none;gap:0}
+.bm-pred-pop .row,.bm-pred-pop .basis,.bm-pred-pop .foot,.bm-pred-pop .site,.bm-pred-pop .links,.bm-pred-pop .bm-pred-rate,.bm-pred-pop .bm-pred-rate-q,.bm-pred-pop .bm-pred-rate-msg{display:block;grid-template-columns:none;gap:0}
 /* The chip row must re-declare display:flex AFTER the override above, or the
    page's global .row{display:grid} / the block reset would hijack it (rule 18). */
 .bm-pred-pop .bm-pred-rate{margin-top:4px}
@@ -608,7 +608,6 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
 .bm-pred-pop .bm-pred-rate-msg{font-size:12px;color:var(--eb-slate-400);margin-top:2px}
 .bm-pred-pop .k{color:var(--eb-slate-500)}
 .bm-pred-pop .site{font-size:12px;margin-top:3px}
-.bm-pred-pop .seen{font-size:12px;color:var(--eb-slate-500);margin-top:2px}
 .bm-pred-pop .basis{font-size:12px;color:var(--eb-violet-700);margin-top:2px}
 .bm-pred-pop .links{margin-top:4px;font-size:12px}
 .bm-pred-pop .links button{background:none;border:0;padding:0;font:inherit;color:var(--eb-violet-700);text-decoration:underline;cursor:pointer}
@@ -618,17 +617,18 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
 /* P184g: Lahenemas (real movement) + Hooaeg (season sites) layer */
 .bm-pred-pop .h .bm-mk-rar{position:static;flex:0 0 auto;display:inline-block;min-width:16px;height:16px;font-size:9px;line-height:13px}
 .bm-pred-pop .tag{margin-top:3px;font-size:12px;font-weight:700;color:#185FA5}
-.bm-pred-pop .hrow{display:flex;justify-content:space-between;gap:10px;font-size:12px;margin-top:2px}
-.bm-pred-pop .hrow .n{flex:0 0 auto;color:var(--eb-slate-500)}
-.bm-pred-pop .hrow .pc{flex:0 0 auto;white-space:nowrap}
-/* P184h3: avatar pins. 40px avatar inside a 3px ring = 46px outer, radius 23 (LAH_PIN_R). */
+/* P184h6: one block per Hooaeg species: name / chance with date range / muted days line. */
+.bm-pred-pop .hblk{font-size:12px;line-height:1.35;margin-top:5px}
+.bm-pred-pop .hblk .hs{font-weight:600}
+.bm-pred-pop .hblk .n{color:var(--eb-slate-500)}
+/* P184h3: avatar pins. 40px avatar inside a 3px ring = 46px outer, radius 23 (LAH_PIN_R).
+   P184h6: Lahenemas draws no lines or arrows; earlier events are small dated dots. */
 .bm-ava-pin{position:relative;width:46px;height:46px;cursor:pointer}
 .bm-ava-pin .av{width:46px;height:46px;box-sizing:border-box;border-radius:50%;border:3px solid #7F77DD;background:#fff;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.35)}
 .bm-ava-pin .av img{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%}
 .bm-ava-pin .sil{display:block;width:100%;height:100%}
 .bm-ava-plus{position:absolute;top:-4px;right:-6px;min-width:18px;height:18px;box-sizing:border-box;padding:0 4px;border-radius:9px;background:#534AB7;color:#fff;border:1.5px solid #fff;font:700 10px/15px system-ui,sans-serif;text-align:center}
 .bm-ava-chance{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:2px;padding:0 6px;border-radius:9px;color:#fff;font:700 11px/16px system-ui,sans-serif;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)}
-.bm-lah-arrow{pointer-events:none}
 .bm-lah-tip{font-size:12px;line-height:1.3;font-weight:600;color:#185FA5;padding:1px 5px}
 .bm-pred-legend{background:rgba(255,255,255,.94);border-radius:10px;padding:6px 9px;box-shadow:0 2px 8px rgba(0,0,0,.18);font-size:12px;line-height:1.5;color:var(--eb-slate-700,#334155)}
 .bm-pred-legend .r{display:flex;align-items:center;gap:6px;white-space:nowrap}
@@ -14437,10 +14437,11 @@ document.addEventListener('DOMContentLoaded', function(){
     }catch(e){ return ''; }
   }
 
-  // ---- P184g: evidence lists on the map (Lahenemas tracks, Hooaeg season sites) ----
+  // ---- P184g: evidence lists on the map (Lahenemas reports, Hooaeg season sites) ----
   // Only real sightings are drawn: nothing past the last event, never a predicted site.
+  // P184h6: no lines between Lahenemas reports (they are often different birds).
   var LAH_LINE = '#185FA5';
-  // P184h3: outer radius of the avatar pin (20 px avatar radius + 3 px ring); the arrow tip stops here.
+  // P184h3: outer radius of the avatar pin (20 px avatar radius + 3 px ring); tooltip offsets use it.
   var LAH_PIN_R = 23;
   var HOO_RING = '#7F77DD';
   var HOO_CHIP = '#534AB7';
@@ -14512,6 +14513,21 @@ document.addEventListener('DOMContentLoaded', function(){
     }catch(e){ return ''; }
   }
 
+  // P184h6: forecast window as_of .. as_of + 14 d, like the Ulevaade formatDateRange:
+  // "19. nov&ndash;3. dets", same month "19.&ndash;30. nov". '' when as_of does not parse.
+  function lahRange(asOf){
+    try{
+      var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(asOf || ''));
+      if(!m) return '';
+      var t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      var s = new Date(t), e = new Date(t + 14 * 86400000);
+      if(isNaN(s.getTime()) || s.getUTCDate() !== Number(m[3])) return '';
+      var iso = function(d){ return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2); }
+      if(s.getUTCMonth() === e.getUTCMonth()) return s.getUTCDate() + '.&ndash;' + fmtDayMon(iso(e));
+      return fmtDayMon(iso(s)) + '&ndash;' + fmtDayMon(iso(e));
+    }catch(err){ return ''; }
+  }
+
   // "1 isend" / "N isendit"; '' when the event has no count.
   function isendLabel(c){
     if(c === null || c === undefined || c === '') return '';
@@ -14549,31 +14565,24 @@ document.addEventListener('DOMContentLoaded', function(){
     return fmtDayMon(ev.date) + (n ? (' &middot; ' + n) : '');
   }
 
-  function isTrackItem(item, evs){
-    return !!item && item.kind === 'track' && evs.length > 1;
-  }
-
   function footHtml(generatedAt){
     return generatedAt ? ('<div class="foot">T&otilde;en&auml;osus-raport ' + escapeHtml(fmtTallinn(generatedAt)) + '</div>') : '';
   }
 
-  function lahPopupHtml(item, evs, generatedAt){
+  // P184h6: latest event only (no route text); earlier reports are dated dots on the map.
+  function lahPopupHtml(item, evs, generatedAt, asOf){
     try{
-      var first = evs[0], last = evs[evs.length - 1];
-      var track = isTrackItem(item, evs);
-      var evLine = track
-        ? (placeName(first.location) + ' ' + fmtDayMon(first.date) + ' &rarr; ' + placeName(last.location) + ' ' + fmtDayMon(last.date))
-        : (placeName(last.location) + ' &middot; ' + fmtDayMon(last.date));
-      var kmLine = track
-        ? ('Liigub Eesti poole: ' + kmRound(first.km_to_turi) + ' km &rarr; ' + kmRound(last.km_to_turi) + ' km')
-        : ('Kaugus ' + kmRound(last.km_to_turi) + ' km');
+      var last = evs[evs.length - 1];
+      var evLine = placeName(last.location) + ' &middot; ' + fmtDayMon(last.date);
+      var kmLine = 'Kaugus ' + kmRound(last.km_to_turi) + ' km';
       var n = isendLabel(last.count);
       if(n) kmLine += ' &middot; ' + n;
       var rar = (typeof _bmMkRar === 'function') ? _bmMkRar(item.rarity_level) : '';
       var avatarImg = item.avatar_url ? ('<img src="' + escapeHtml(item.avatar_url) + '" onerror="this.style.visibility=\'hidden\'">') : '';
       var lat = escapeHtml(item.species_lat || '');
       var pct = chancePct(item.chance_pct);
-      var chanceLine = pct === null ? '' : ('<div class="basis">V&otilde;imalus n&auml;ha Eestis j&auml;rgmise 2 n&auml;dala jooksul: ~' + pct + '%</div>');
+      var range = lahRange(asOf);
+      var chanceLine = pct === null ? '' : ('<div class="basis">V&otilde;imalus n&auml;ha Eestis ' + (range || 'j&auml;rgmise 2 n&auml;dala jooksul') + ': ~' + pct + '%</div>');
       return '<div class="bm-pred-pop">' +
         '<div class="h">' + avatarImg + '<div class="sp">' + escapeHtml(item.species_et || '') + '</div>' + rar + '</div>' +
         (lat ? '<div class="lat">' + lat + '</div>' : '') +
@@ -14591,44 +14600,25 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
 
-  // Screen angle (deg, clockwise from east) of the last leg. Web Mercator is conformal, so the
-  // angle at one zoom holds at every zoom.
-  function legAngle(a, b){
-    try{
-      var p = window.map.project([a.lat, a.lon], 0), q = window.map.project([b.lat, b.lon], 0);
-      return Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI;
-    }catch(e){ return 0; }
-  }
-
-  // One species: solid line through its own events (tracks), a small labelled dot per earlier
-  // event, an arrow ending just short of the latest event, and the latest-event marker, which
-  // owns the popup. Returns the number of species drawn (0 or 1).
-  function addLahenemas(item, generatedAt){
+  // One species (P184h6): a small dated dot per earlier event and the latest-event avatar pin,
+  // which owns the popup. No lines or arrows (separate reports are often different birds) and
+  // no chance chip (the pin is abroad; the % is for Estonia). Returns species drawn (0 or 1).
+  function addLahenemas(item, generatedAt, asOf){
     try{
       var evs = sortedEvents(item);
       if(!evs.length || !item.ebird_code) return 0;
       var last = evs[evs.length - 1];
-      if(isTrackItem(item, evs)){
-        var pts = evs.map(function(e){ return [e.lat, e.lon]; });
-        predLayer.addLayer(L.polyline(pts, { color: LAH_LINE, weight: 3, opacity: 0.9, interactive: false }));
-        for(var i = 0; i < evs.length - 1; i++){
-          var dot = L.circleMarker([evs[i].lat, evs[i].lon], { radius: 4, color: '#ffffff', weight: 1.5, fillColor: LAH_LINE, fillOpacity: 1, interactive: false });
-          dot.bindTooltip(eventLabel(evs[i]), { permanent: true, direction: 'right', offset: [6, 0], className: 'bm-lah-tip' });
-          predLayer.addLayer(dot);
-        }
-        // The 16 px arrow head ends LAH_PIN_R px before the latest event (the avatar pin's outer
-        // radius), so nothing is drawn past it. Rotation origin = the anchor = the event.
-        var ang = legAngle(evs[evs.length - 2], last);
-        var aw = 16 + LAH_PIN_R;
-        var arrowHtml = '<svg class="bm-lah-arrow" width="' + aw + '" height="12" viewBox="0 0 ' + aw + ' 12" aria-hidden="true" style="display:block;overflow:visible;transform:rotate(' + ang.toFixed(1) + 'deg);transform-origin:' + aw + 'px 6px"><path d="M0 0L16 6L0 12z" fill="' + LAH_LINE + '"/></svg>';
-        predLayer.addLayer(L.marker([last.lat, last.lon], { icon: L.divIcon({ className: '', iconSize: [aw, 12], iconAnchor: [aw, 6], html: arrowHtml }), interactive: false, keyboard: false, zIndexOffset: 900 }));
+      for(var i = 0; i < evs.length - 1; i++){
+        var dot = L.circleMarker([evs[i].lat, evs[i].lon], { radius: 4, color: '#ffffff', weight: 1.5, fillColor: LAH_LINE, fillOpacity: 1, interactive: false });
+        dot.bindTooltip(eventLabel(evs[i]), { permanent: true, direction: 'right', offset: [6, 0], className: 'bm-lah-tip' });
+        predLayer.addLayer(dot);
       }
-      var pinHtml = avatarPinHtml(predAvatarUrl(item.avatar_url, item.species_et), LAH_LINE, chanceChipHtml(chancePct(item.chance_pct), LAH_LINE));
+      var pinHtml = avatarPinHtml(predAvatarUrl(item.avatar_url, item.species_et), LAH_LINE, '');
       var d = LAH_PIN_R * 2;
       var icon = L.divIcon({ className: '', iconSize: [d, d], iconAnchor: [LAH_PIN_R, LAH_PIN_R], popupAnchor: [0, -LAH_PIN_R], html: pinHtml });
       var marker = L.marker([last.lat, last.lon], { icon: icon, zIndexOffset: 1000 });
-      if(isTrackItem(item, evs)) marker.bindTooltip(eventLabel(last), { permanent: true, direction: 'right', offset: [LAH_PIN_R + 3, 0], className: 'bm-lah-tip' });
-      marker.bindPopup(function(){ return lahPopupHtml(item, evs, generatedAt); }, POPUP_OPTS);
+      marker.bindTooltip(eventLabel(last), { permanent: true, direction: 'right', offset: [LAH_PIN_R + 3, 0], className: 'bm-lah-tip' });
+      marker.bindPopup(function(){ return lahPopupHtml(item, evs, generatedAt, asOf); }, POPUP_OPTS);
       marker.on('popupopen', function(ev){
         var el = popupEl(ev);
         try{ wireOpen(el, item.ebird_code); }catch(e){}
@@ -14675,7 +14665,7 @@ document.addEventListener('DOMContentLoaded', function(){
     return clusters;
   }
 
-  function hooPopupHtml(c, generatedAt){
+  function hooPopupHtml(c, generatedAt, asOf){
     try{
       var labelText = String(c.first.label || '');
       var county = String(c.first.county || '');
@@ -14684,14 +14674,17 @@ document.addEventListener('DOMContentLoaded', function(){
         countyEl = labelText ? (' <span class="k">(' + escapeHtml(county.replace(/maakond/i, 'mk')) + ')</span>') : escapeHtml(county);
       }
       var rows = hooTop(c);
+      var range = lahRange(asOf);
       var rowsHtml = '';
+      // P184h6: one block per species: name / chance with date range / muted days line.
+      // Without a usable as_of the chance line falls back to the plain "~N%".
       for(var i = 0; i < rows.length; i++){
-        var pc = rows[i].chance_pct === null ? '' : ('~' + rows[i].chance_pct + '% &middot; ');
-        rowsHtml += '<div class="hrow"><span>' + escapeHtml(rows[i].species_et) + '</span><span class="pc">' + pc + '<span class="n">' + rows[i].n_days + ' p&auml;eval</span></span></div>';
+        var pc = rows[i].chance_pct === null ? '' : ('<div>' + (range ? ('T&otilde;en&auml;osus ' + range + ': ') : '') + '~' + rows[i].chance_pct + '%</div>');
+        rowsHtml += '<div class="hblk"><div class="hs">' + escapeHtml(rows[i].species_et) + '</div>' + pc +
+          '<div class="n">Siin varem n&auml;htud ' + rows[i].n_days + ' p&auml;eval</div></div>';
       }
       return '<div class="bm-pred-pop">' +
         '<div class="site"><b>' + escapeHtml(labelText) + '</b>' + countyEl + '</div>' +
-        '<div class="seen">sel aastaajal siin varem n&auml;htud</div>' +
         rowsHtml +
         '<div class="links"><button type="button" class="bm-pred-open">Ava &Uuml;levaates</button></div>' +
         footHtml(generatedAt) +
@@ -14702,7 +14695,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
 
-  function hooMarker(c, generatedAt){
+  function hooMarker(c, generatedAt, asOf){
     try{
       var rows = hooTop(c);
       if(!rows.length) return null;
@@ -14713,7 +14706,7 @@ document.addEventListener('DOMContentLoaded', function(){
       var d = LAH_PIN_R * 2;
       var icon = L.divIcon({ className: '', iconSize: [d, d], iconAnchor: [LAH_PIN_R, LAH_PIN_R], popupAnchor: [0, -LAH_PIN_R], html: html });
       var marker = L.marker([c.first.lat, c.first.lon], { icon: icon });
-      marker.bindPopup(function(){ return hooPopupHtml(c, generatedAt); }, POPUP_OPTS);
+      marker.bindPopup(function(){ return hooPopupHtml(c, generatedAt, asOf); }, POPUP_OPTS);
       marker.on('popupopen', function(ev){ try{ wireOpen(popupEl(ev), ''); }catch(e){} });
       return marker;
     }catch(e){ console.warn('[bm_pred] hooMarker failed', e); return null; }
@@ -14724,7 +14717,8 @@ document.addEventListener('DOMContentLoaded', function(){
     var ev = (row && row.evidence_lists && typeof row.evidence_lists === 'object') ? row.evidence_lists : null;
     return {
       lah: (ev && Array.isArray(ev.lahenemas)) ? ev.lahenemas : [],
-      hoo: (ev && Array.isArray(ev.hooaeg)) ? ev.hooaeg : []
+      hoo: (ev && Array.isArray(ev.hooaeg)) ? ev.hooaeg : [],
+      asOf: (ev && typeof ev.as_of === 'string') ? ev.as_of : ''
     };
   }
 
@@ -14762,11 +14756,11 @@ document.addEventListener('DOMContentLoaded', function(){
         if(hk && !hooSeen[hk]){ hooSeen[hk] = true; nHoo++; }
       }
       clusterHooaeg(sel.hoo).forEach(function(c){
-        var m = hooMarker(c, generatedAt);
+        var m = hooMarker(c, generatedAt, sel.asOf);
         if(m) predLayer.addLayer(m);
       });
       var nLah = 0;
-      sel.lah.forEach(function(item){ nLah += addLahenemas(item, generatedAt); });
+      sel.lah.forEach(function(item){ nLah += addLahenemas(item, generatedAt, sel.asOf); });
       updatePillTooltip(nLah + nHoo);
     }catch(e){ console.warn('[bm_pred] render failed', e); }
   }
@@ -14792,7 +14786,7 @@ document.addEventListener('DOMContentLoaded', function(){
         onAdd: function(){
           var div = L.DomUtil.create('div', 'bm-pred-legend');
           div.innerHTML = '<div class="r"><span class="ring" style="border-color:' + HOO_RING + '"></span>Hooaja kohad</div>' +
-            '<div class="r"><span class="ring" style="border-color:' + LAH_LINE + '"></span>L&auml;henemas: tegelik liikumine</div>';
+            '<div class="r"><span class="ring" style="border-color:' + LAH_LINE + '"></span>L&auml;henemas: viimased vaatlused</div>';
           try{ L.DomEvent.disableClickPropagation(div); }catch(e){}
           return div;
         }

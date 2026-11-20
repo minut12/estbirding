@@ -447,7 +447,9 @@ export function pickLahenemas(
   for (const [species_et, list] of bySpecies) {
     const code = list[0].species_code;
     const track = findTrack(list, asOf);
-    if (track) {
+    // P184h8: the season direction gate applies to the track's latest event
+    // too; a failing track falls through to the near check.
+    if (track && nearAllowed(track[track.length - 1], asOf)) {
       out.push({
         species_et,
         species_code: code,

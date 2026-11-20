@@ -14,11 +14,13 @@ import {
   type LahenemasPick,
   nearAllowed,
   nearEvent,
+  pickLahenemas,
   type RareObsRow,
   type RaritySpecies,
   seasonChance,
   type SightingEvent,
   type SiteCellRow,
+  type SpeciesEvent,
   sortHooaeg,
   tallinnDate,
   toLahenemasItems,
@@ -114,6 +116,47 @@ Deno.test("nearEvent: January and July allow either direction", () => {
     nearEvent([ev("2026-07-14", "LV", 56.9, 24.1, 230)], "2026-07-15")?.country_code,
     "LV",
   );
+});
+
+// P184h8: the direction gate also applies to the latest event of a track.
+// km_to_turi = haversineKm to Turi (58.81, 25.43), rounded; each step is
+// <= TRACK_STEP_KM and <= TRACK_STEP_DAYS apart.
+function sev(species_et: string, e: SightingEvent): SpeciesEvent {
+  return { ...e, species_et, species_code: "test1" };
+}
+
+Deno.test("pickLahenemas: November track ending south of Turi is dropped", () => {
+  const name = "M\u00e4gikiur";
+  const events = [
+    ev("2026-11-07", "PL", 52.0, 21.0, 807),
+    ev("2026-11-10", "PL", 53.1, 21.5, 680),
+    ev("2026-11-15", "PL", 54.4, 22.5, 522),
+    ev("2026-11-19", "LV", 56.5, 24.0, 271),
+  ];
+  // Without the gate this is a valid 4-step track.
+  assertEquals(findTrack(events, "2026-11-19")?.length, 4);
+  const out = pickLahenemas(events.map((e) => sev(name, e)), "2026-11-19");
+  assertEquals(out.find((p) => p.species_et === name), undefined);
+});
+
+Deno.test("pickLahenemas: November track from the north is kept", () => {
+  const name = "M\u00e4nni-k\u00e4bilind";
+  const events = [
+    ev("2026-11-15", "FI", 62.1, 24.0, 374),
+    ev("2026-11-18", "FI", 59.8, 24.0, 137),
+  ];
+  const out = pickLahenemas(events.map((e) => sev(name, e)), "2026-11-19");
+  assertEquals(out.find((p) => p.species_et === name)?.kind, "track");
+});
+
+Deno.test("pickLahenemas: May track from the south is kept", () => {
+  const name = "Testlind";
+  const events = [
+    ev("2026-05-05", "LV", 56.2, 24.0, 303),
+    ev("2026-05-09", "LV", 57.5, 24.5, 156),
+  ];
+  const out = pickLahenemas(events.map((e) => sev(name, e)), "2026-05-10");
+  assertEquals(out.find((p) => p.species_et === name)?.kind, "track");
 });
 
 Deno.test("nearAllowed: month boundaries", () => {

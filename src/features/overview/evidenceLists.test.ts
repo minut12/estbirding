@@ -5,6 +5,7 @@ import {
   NDASH,
   TEXT,
   chanceChip,
+  chancePeriodLine,
   countLine,
   currentTallinnMonth,
   firstOccurrences,
@@ -139,6 +140,20 @@ describe('trackLine / moveLine', () => {
     const one = [MANNI_EVENTS[1]];
     expect(trackLine(one)).toBe(`Pomarkku ${MIDDOT} 15. nov`);
     expect(moveLine(one)).toBe(TEXT.distance.replace('{km}', '376'));
+  });
+});
+
+describe('chancePeriodLine', () => {
+  it('as_of .. as_of + 14 days across months', () => {
+    expect(chancePeriodLine('2026-11-19')).toBe('V\u00f5imalus n\u00e4ha Eestis 19. nov\u20133. dets');
+  });
+
+  it('as_of .. as_of + 14 days within one month', () => {
+    expect(chancePeriodLine('2026-11-10')).toBe('V\u00f5imalus n\u00e4ha Eestis 10.\u201324. nov');
+  });
+
+  it('falls back to chance_two_weeks when as_of does not parse', () => {
+    expect(chancePeriodLine('not-a-date')).toBe(TEXT.chance_two_weeks);
   });
 });
 

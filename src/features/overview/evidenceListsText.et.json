@@ -31,6 +31,7 @@
   "chance_pct": "~{n}%",
   "chance_stay": "Võimalus, et lind on veel leitav",
   "chance_two_weeks": "Võimalus näha Eestis järgmise 2 nädala jooksul",
+  "chance_period": "Võimalus näha Eestis {range}",
   "chance_basis": "Arvutatud varasemate aastate vaatluste põhjal.",
   "months_short": ["jaan","veebr","märts","apr","mai","juuni","juuli","aug","sept","okt","nov","dets"],
   "months_initial": ["J","V","M","A","M","J","J","A","S","O","N","D"],

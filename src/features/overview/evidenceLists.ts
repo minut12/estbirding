@@ -333,6 +333,17 @@ export function hooWindowRange(asOf: string): string | null {
   return first && last ? formatDateRange(first, last) : null;
 }
 
+// The chance_pct horizon on Lahenemas / Hooaeg cards: as_of .. as_of + this many days.
+export const CHANCE_PERIOD_DAYS = 14;
+
+/** "Voimalus naha Eestis 19. nov-3. dets": as_of .. as_of + 14 d; chance_two_weeks when as_of does not parse. */
+export function chancePeriodLine(asOf: string): string {
+  const first = shiftIsoDate(asOf, 0);
+  const last = shiftIsoDate(asOf, CHANCE_PERIOD_DAYS);
+  if (first === null || last === null) return TEXT.chance_two_weeks;
+  return fill(TEXT.chance_period, { range: formatDateRange(first, last) });
+}
+
 /**
  * "{range} on liiki Eestis nahtud {n} aastal viimasest 10-st" (hoo_window), or
  * hoo_window_none when last10 = 0. Null when as_of does not parse.

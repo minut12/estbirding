@@ -15,6 +15,7 @@ import {
   HOOAEG_TOP_N,
   TEXT,
   chanceChip,
+  chancePeriodLine,
   countLine,
   currentTallinnMonth,
   fill,
@@ -199,10 +200,11 @@ function JubaCard({ item, isTarget, avatarUrl, onShowOnMap }: {
   );
 }
 
-function LahenemasCard({ item, isTarget, avatarUrl, rating }: {
+function LahenemasCard({ item, isTarget, avatarUrl, asOf, rating }: {
   item: LahenemasItem;
   isTarget: boolean;
   avatarUrl: string | undefined;
+  asOf: string;
   rating: ReactNode;
 }) {
   const count = countLine(item.events);
@@ -223,7 +225,7 @@ function LahenemasCard({ item, isTarget, avatarUrl, rating }: {
       </p>
       {chance && (
         <>
-          <p className="text-xs text-muted-foreground">{TEXT.chance_two_weeks}</p>
+          <p className="text-xs text-muted-foreground">{chancePeriodLine(asOf)}</p>
           <p className="text-xs text-muted-foreground">{TEXT.chance_basis}</p>
         </>
       )}
@@ -263,7 +265,7 @@ function HooaegCard({ item, isTarget, avatarUrl, currentMonth, asOf, rating }: {
       <p className="text-xs text-muted-foreground">{hooSinceLine(item)}</p>
       {chance && (
         <>
-          <p className="text-xs text-muted-foreground">{TEXT.chance_two_weeks}</p>
+          <p className="text-xs text-muted-foreground">{chancePeriodLine(asOf)}</p>
           <p className="text-xs text-muted-foreground">{TEXT.chance_basis}</p>
         </>
       )}
@@ -365,6 +367,7 @@ export function EvidenceListsSection({
               item={item}
               isTarget={isTarget(item.ebird_code, 'lah', i)}
               avatarUrl={resolveAvatar(item)}
+              asOf={lists.as_of}
               rating={renderRating(item.ebird_code)}
             />
           ))}

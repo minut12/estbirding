@@ -346,6 +346,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-17', ref: 'P184g', kind: 'major', text: 'Kaardil ainult tegelikud vaatlused: L\u00e4henemas ja Hooaja kohad, marsruudid eemaldatud' },
       { date: '2026-11-19', ref: 'P184h3', kind: 'minor', text: 'Kaardil lindude pildid ja t\u00f5en\u00e4osus protsendina' },
       { date: '2026-11-20', ref: 'P184h6', kind: 'patch', text: 'L\u00e4henemas ilma joonteta; t\u00f5en\u00e4osus kuup\u00e4evavahemikuga' },
+      { date: '2026-11-20', ref: 'P184h9', kind: 'patch', text: 'L\u00e4henemas sildil liigi nimi' },
     ],
   },
   {

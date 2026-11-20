@@ -14560,9 +14560,10 @@ document.addEventListener('DOMContentLoaded', function(){
     return evs;
   }
 
-  function eventLabel(ev){
+  function eventLabel(ev, speciesEt){
     var n = isendLabel(ev.count);
-    return fmtDayMon(ev.date) + (n ? (' &middot; ' + n) : '');
+    var sp = speciesEt ? (escapeHtml(String(speciesEt)) + ' &middot; ') : '';
+    return sp + fmtDayMon(ev.date) + (n ? (' &middot; ' + n) : '');
   }
 
   function footHtml(generatedAt){
@@ -14610,14 +14611,14 @@ document.addEventListener('DOMContentLoaded', function(){
       var last = evs[evs.length - 1];
       for(var i = 0; i < evs.length - 1; i++){
         var dot = L.circleMarker([evs[i].lat, evs[i].lon], { radius: 4, color: '#ffffff', weight: 1.5, fillColor: LAH_LINE, fillOpacity: 1, interactive: false });
-        dot.bindTooltip(eventLabel(evs[i]), { permanent: true, direction: 'right', offset: [6, 0], className: 'bm-lah-tip' });
+        dot.bindTooltip(eventLabel(evs[i], item.species_et), { permanent: true, direction: 'right', offset: [6, 0], className: 'bm-lah-tip' });
         predLayer.addLayer(dot);
       }
       var pinHtml = avatarPinHtml(predAvatarUrl(item.avatar_url, item.species_et), LAH_LINE, '');
       var d = LAH_PIN_R * 2;
       var icon = L.divIcon({ className: '', iconSize: [d, d], iconAnchor: [LAH_PIN_R, LAH_PIN_R], popupAnchor: [0, -LAH_PIN_R], html: pinHtml });
       var marker = L.marker([last.lat, last.lon], { icon: icon, zIndexOffset: 1000 });
-      marker.bindTooltip(eventLabel(last), { permanent: true, direction: 'right', offset: [LAH_PIN_R + 3, 0], className: 'bm-lah-tip' });
+      marker.bindTooltip(eventLabel(last, item.species_et), { permanent: true, direction: 'right', offset: [LAH_PIN_R + 3, 0], className: 'bm-lah-tip' });
       marker.bindPopup(function(){ return lahPopupHtml(item, evs, generatedAt, asOf); }, POPUP_OPTS);
       marker.on('popupopen', function(ev){
         var el = popupEl(ev);

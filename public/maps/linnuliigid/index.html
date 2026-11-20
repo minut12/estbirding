@@ -622,9 +622,12 @@ a.bm-card-recent-row:hover .bm-card-recent-place{text-decoration:underline}
 .bm-pred-pop .hblk .hs{font-weight:600}
 .bm-pred-pop .hblk .n{color:var(--eb-slate-500)}
 /* P184h3: avatar pins. 40px avatar inside a 3px ring = 46px outer, radius 23 (LAH_PIN_R).
-   P184h6: Lahenemas draws no lines or arrows; earlier events are small dated dots. */
+   P184h6: Lahenemas draws no lines or arrows.
+   P184h10: earlier Lahenemas events use the small pin (.sm): 34px outer, 2px ring, radius 17 (LAH_PIN_SM_R). */
 .bm-ava-pin{position:relative;width:46px;height:46px;cursor:pointer}
 .bm-ava-pin .av{width:46px;height:46px;box-sizing:border-box;border-radius:50%;border:3px solid #7F77DD;background:#fff;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.bm-ava-pin.sm,.bm-ava-pin.sm .av{width:34px;height:34px}
+.bm-ava-pin.sm .av{border-width:2px}
 .bm-ava-pin .av img{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%}
 .bm-ava-pin .sil{display:block;width:100%;height:100%}
 .bm-ava-plus{position:absolute;top:-4px;right:-6px;min-width:18px;height:18px;box-sizing:border-box;padding:0 4px;border-radius:9px;background:#534AB7;color:#fff;border:1.5px solid #fff;font:700 10px/15px system-ui,sans-serif;text-align:center}
@@ -14443,6 +14446,8 @@ document.addEventListener('DOMContentLoaded', function(){
   var LAH_LINE = '#185FA5';
   // P184h3: outer radius of the avatar pin (20 px avatar radius + 3 px ring); tooltip offsets use it.
   var LAH_PIN_R = 23;
+  // P184h10: outer radius of the small avatar pin (.bm-ava-pin.sm, 34 px) for earlier Lahenemas events.
+  var LAH_PIN_SM_R = 17;
   var HOO_RING = '#7F77DD';
   var HOO_CHIP = '#534AB7';
   var HOO_CLUSTER_KM = 15;
@@ -14481,11 +14486,12 @@ document.addEventListener('DOMContentLoaded', function(){
 
   // 46 px pin: 40 px avatar in a 3 px ring of `ring`. A failed image hides itself and reveals the
   // silhouette, so a 404 never breaks the pin. extraHtml = badge / chance chip.
-  function avatarPinHtml(url, ring, extraHtml){
+  // P184h10: small = true gives the 34 px pin (class "sm", 2 px ring).
+  function avatarPinHtml(url, ring, extraHtml, small){
     var inner = url
       ? ('<img src="' + url + '" alt="" onerror="this.style.display=\'none\';if(this.nextSibling)this.nextSibling.style.display=\'block\'">' + silhouetteSvg(ring, true))
       : silhouetteSvg(ring, false);
-    return '<div class="bm-ava-pin"><div class="av" style="border-color:' + ring + '">' + inner + '</div>' + (extraHtml || '') + '</div>';
+    return '<div class="bm-ava-pin' + (small ? ' sm' : '') + '"><div class="av" style="border-color:' + ring + '">' + inner + '</div>' + (extraHtml || '') + '</div>';
   }
 
   // Hooaeg species order: chance desc, then years_in_window_since_1990 desc, then name.
@@ -14601,31 +14607,31 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
 
-  // One species (P184h6): a small dated dot per earlier event and the latest-event avatar pin,
-  // which owns the popup. No lines or arrows (separate reports are often different birds) and
-  // no chance chip (the pin is abroad; the % is for Estonia). Returns species drawn (0 or 1).
+  // One species (P184h10): every event gets a species avatar pin with its dated label; earlier
+  // events use the small 34 px pin, the latest the 46 px pin on top. Every pin opens the same
+  // popup. No lines or arrows (separate reports are often different birds) and no chance chip
+  // (the pins are abroad; the % is for Estonia). Returns species drawn (0 or 1).
   function addLahenemas(item, generatedAt, asOf){
     try{
       var evs = sortedEvents(item);
       if(!evs.length || !item.ebird_code) return 0;
-      var last = evs[evs.length - 1];
-      for(var i = 0; i < evs.length - 1; i++){
-        var dot = L.circleMarker([evs[i].lat, evs[i].lon], { radius: 4, color: '#ffffff', weight: 1.5, fillColor: LAH_LINE, fillOpacity: 1, interactive: false });
-        dot.bindTooltip(eventLabel(evs[i], item.species_et), { permanent: true, direction: 'right', offset: [6, 0], className: 'bm-lah-tip' });
-        predLayer.addLayer(dot);
-      }
-      var pinHtml = avatarPinHtml(predAvatarUrl(item.avatar_url, item.species_et), LAH_LINE, '');
-      var d = LAH_PIN_R * 2;
-      var icon = L.divIcon({ className: '', iconSize: [d, d], iconAnchor: [LAH_PIN_R, LAH_PIN_R], popupAnchor: [0, -LAH_PIN_R], html: pinHtml });
-      var marker = L.marker([last.lat, last.lon], { icon: icon, zIndexOffset: 1000 });
-      marker.bindTooltip(eventLabel(last, item.species_et), { permanent: true, direction: 'right', offset: [LAH_PIN_R + 3, 0], className: 'bm-lah-tip' });
-      marker.bindPopup(function(){ return lahPopupHtml(item, evs, generatedAt, asOf); }, POPUP_OPTS);
-      marker.on('popupopen', function(ev){
-        var el = popupEl(ev);
-        try{ wireOpen(el, item.ebird_code); }catch(e){}
-        try{ wireChips(el, item.ebird_code); }catch(e){}
-      });
-      predLayer.addLayer(marker);
+      var url = predAvatarUrl(item.avatar_url, item.species_et);
+      var lahPin = function(ev, small){
+        var r = small ? LAH_PIN_SM_R : LAH_PIN_R;
+        var d = r * 2;
+        var icon = L.divIcon({ className: '', iconSize: [d, d], iconAnchor: [r, r], popupAnchor: [0, -r], html: avatarPinHtml(url, LAH_LINE, '', small) });
+        var marker = L.marker([ev.lat, ev.lon], { icon: icon, zIndexOffset: small ? 500 : 1000 });
+        marker.bindTooltip(eventLabel(ev, item.species_et), { permanent: true, direction: 'right', offset: [r + 3, 0], className: 'bm-lah-tip' });
+        marker.bindPopup(function(){ return lahPopupHtml(item, evs, generatedAt, asOf); }, POPUP_OPTS);
+        marker.on('popupopen', function(pe){
+          var el = popupEl(pe);
+          try{ wireOpen(el, item.ebird_code); }catch(e){}
+          try{ wireChips(el, item.ebird_code); }catch(e){}
+        });
+        predLayer.addLayer(marker);
+      };
+      for(var i = 0; i < evs.length - 1; i++) lahPin(evs[i], true);
+      lahPin(evs[evs.length - 1], false);
       return 1;
     }catch(e){ console.warn('[bm_pred] addLahenemas failed', e); return 0; }
   }

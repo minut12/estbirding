@@ -116,6 +116,18 @@
 .bm-pin.is-approx .bm-pin-shape{background:var(--eb-moss-60);border-style:dashed;border-color:var(--eb-moss-400)}
 .bm-pin.is-approx .bm-pin-head{filter:saturate(.35);opacity:.85}
 .bm-pin-src{position:absolute;left:50%;top:57px;transform:translateX(-50%);z-index:2;height:15px;padding:0 5px;border-radius:5px;background:var(--eb-cyan-700);color:var(--eb-white);font:800 8.5px/15px system-ui,Arial,sans-serif;letter-spacing:.02em;box-shadow:0 0 0 1.5px var(--eb-white);pointer-events:none;white-space:nowrap}
+/* --- P185 pin freshness (d0 today, d1 yesterday, d23 2-3 d, old 4+ d; Europe/Tallinn days) --- */
+.bm-pin-halo{position:absolute;left:1px;top:7px;width:42px;height:42px;border-radius:50%;box-sizing:border-box;pointer-events:none}
+.bm-pin.is-d0 .bm-pin-halo{border:3px solid #27ae60;animation:bmPinPulse 1.8s ease-out infinite}
+.bm-pin.is-d0 .bm-pin-shape{border-color:#27ae60}
+.bm-pin.is-d1 .bm-pin-halo{border:2.5px solid #7cc48f}
+.bm-pin.is-d1 .bm-pin-shape{border-color:#7cc48f}
+.bm-pin.is-d23{opacity:.72}
+.bm-pin.is-d23 .bm-pin-head{filter:saturate(.6)}
+.bm-pin.is-old{opacity:.5}
+.bm-pin.is-old .bm-pin-head{filter:saturate(.35)}
+@keyframes bmPinPulse{0%{box-shadow:0 0 0 0 rgba(39,174,96,.55)}100%{box-shadow:0 0 0 10px rgba(39,174,96,0)}}
+@media (prefers-reduced-motion:reduce){.bm-pin.is-d0 .bm-pin-halo{animation:none}}
 
 /* --- P58c Card v2 (species observation popup) --- */
 .leaflet-popup-content-wrapper:has(.bm-card){border-radius:16px;padding:0;overflow:hidden}
@@ -5867,6 +5879,29 @@ function _borderColorByDate(isoDate){
     return (Date.now() - ms) <= 7 * 24 * 60 * 60 * 1000 ? '#27ae60' : '#e67e22';
   }catch(e){ return '#e67e22'; }
 }
+// P185: freshness tier from a day-only date ("YYYY-MM-DD..." or "DD.MM.YYYY"), compared on
+// Europe/Tallinn calendar days. '' = unknown -> pin renders unchanged.
+function _bmFreshTier(dateStr){
+  try{
+    var s = String(dateStr || '').trim();
+    var y, mo, d, m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(m){ y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else { m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/); if(!m) return ''; d = +m[1]; mo = +m[2]; y = +m[3]; }
+    var parts = {};
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Tallinn', year: 'numeric', month: '2-digit', day: '2-digit' })
+      .formatToParts(new Date()).forEach(function(x){ parts[x.type] = x.value; });
+    var today = Date.UTC(+parts.year, +parts.month - 1, +parts.day);
+    var diff = Math.round((today - Date.UTC(y, mo - 1, d)) / 86400000);
+    if(!Number.isFinite(diff)) return '';
+    if(diff <= 0) return 'd0';
+    if(diff === 1) return 'd1';
+    if(diff <= 3) return 'd23';
+    return 'old';
+  }catch(e){ return ''; }
+}
+function _bmFreshZ(tier){
+  return tier === 'd0' ? 1300 : tier === 'd1' ? 1200 : tier === 'd23' ? 1100 : 1000;
+}
 
 // =========================================
 // === SNAPSHOT-BASED FETCHING ===
@@ -10538,6 +10573,7 @@ window.__toggleGbifPin = function(gbifId){
 function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel, opts){
   const o = opts || {};
   const approx = o.approx === true;
+  const fresh = (o.fresh === 'd0' || o.fresh === 'd1' || o.fresh === 'd23' || o.fresh === 'old') ? o.fresh : '';
   const color = rarityToBorder(rarityLevel, borderColor || '#222');
   const badge = rarityToBadge(rarityLevel);
   const shapeStyle = (!approx && badge) ? ' style="background:' + color + ';border-color:' + color + '"' : '';
@@ -10549,7 +10585,8 @@ function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel, opts){
     : '';
   const bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#29c";
   const srcTag = (o.srcTag === 'ebird') ? '<div class="bm-pin-src">eBird</div>' : '';
-  const html = '<div class="bm-pin' + (approx ? ' is-approx' : '') + '">'
+  const html = '<div class="bm-pin' + (approx ? ' is-approx' : '') + (fresh ? ' is-' + fresh : '') + '">'
+    + ((fresh === 'd0' || fresh === 'd1') ? '<div class="bm-pin-halo"></div>' : '')
     + '<div class="bm-pin-shape"' + shapeStyle + '></div>'
     + '<div class="bm-pin-head" style="' + bg + '"></div>'
     + srcTag
@@ -11006,6 +11043,7 @@ function updateMarker(key) {
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const c7 = Number.isFinite(markerCount) && markerCount >= 1 ? markerCount : null;
   let _pinOpts; try { _pinOpts = { approx: _isCoordsApprox(p) }; } catch (_e) { _pinOpts = {}; }
+  var _fr = _bmFreshTier(getEffectiveRecentDate(p)); _pinOpts.fresh = _fr;
   const icon = avatarIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none', _pinOpts);
   const popupHtml = buildPopupHtml(key, p);
   const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;
@@ -11020,7 +11058,7 @@ function updateMarker(key) {
     }catch(_e){}
   }
   console.log('[fix] updateMarker: placing', key, 'at lat=', p.lat, 'lon=', p.lon);
-  const m = L.marker([p.lat,p.lon], {icon, zIndexOffset: 1000});
+  const m = L.marker([p.lat,p.lon], {icon, zIndexOffset: _bmFreshZ(_fr)});
   if(clusterGroup && typeof clusterGroup.addLayer === 'function' && map.hasLayer(clusterGroup)){
     try{ clusterGroup.addLayer(m); }catch(e){ m.addTo(map); }
   } else {
@@ -16557,9 +16595,10 @@ var __sharedDefaults = {};
       var metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
       // P64c: ep.occ7 comes from the bulk feed, which only ever reports the newest
       // obs per species, so it is 0 or 1 and says nothing useful. null = no badge.
-      var icon = _markerIcon(avatar, _borderColorByDate(ep.t), null, metaCfg.rarityLevel || 'none', { srcTag: 'ebird' });
+      var _frE = _bmFreshTier(ep.t);
+      var icon = _markerIcon(avatar, _borderColorByDate(ep.t), null, metaCfg.rarityLevel || 'none', { srcTag: 'ebird', fresh: _frE });
 
-      var m = L.marker([finalLat, finalLon], { icon: icon });
+      var m = L.marker([finalLat, finalLon], { icon: icon, zIndexOffset: _bmFreshZ(_frE) });
       m.bindPopup(ebirdEEPopupHtml(key, ep), { autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) });
       var spCode = (typeof SPECIES_EBIRD_CODES !== 'undefined' && SPECIES_EBIRD_CODES[key]) || '';
       if(ep.subId || spCode) _bindEbirdCard(m, ep.subId ? String(ep.subId) : '', spCode);

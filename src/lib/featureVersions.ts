@@ -449,6 +449,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-19', ref: 'P184h5', kind: 'patch', text: 'Leitavuse t\u00f5en\u00e4osus arvestab viimase vaatluse kuup\u00e4eva' },
       { date: '2026-11-19', ref: 'P184h7', kind: 'patch', text: 'T\u00f5en\u00e4osuse periood kuup\u00e4evadena' },
       { date: '2026-11-20', ref: 'P184h8', kind: 'patch', text: 'R\u00e4ndesuund kehtib ka vaatluste reale' },
+      { date: '2026-11-21', ref: 'P184h12', kind: 'patch', text: 'L\u00e4henemas kaardil ainult viimane vaatlus ja kaugus' },
     ],
   },
   {

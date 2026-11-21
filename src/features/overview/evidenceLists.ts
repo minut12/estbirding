@@ -11,7 +11,6 @@ export const TEXT = TEXT_JSON;
 // Typographic punctuation, built from char codes so this file stays ASCII.
 export const NDASH = String.fromCharCode(0x2013);
 export const MIDDOT = String.fromCharCode(0x00b7);
-export const ARROW = String.fromCharCode(0x2192);
 
 // ---------------------------------------------------------------------------
 // Contract (copied from lists.ts)
@@ -288,20 +287,24 @@ export function shortLocation(location: string): string {
   return location.split(',')[0].trim().slice(0, LOCATION_MAX).trim();
 }
 
-/** "{loc1} {d1} -> {locN} {dN}"; for one event "{loc} . {date}". */
+/** "{loc} . {date}" for the latest event only (P184h12: separate reports are often different birds). */
 export function trackLine(events: readonly SightingEvent[]): string {
   if (events.length === 0) return '';
-  const first = events[0];
-  if (events.length === 1) return `${shortLocation(first.location)} ${MIDDOT} ${formatDay(first.date)}`;
   const last = events[events.length - 1];
-  return `${shortLocation(first.location)} ${formatDay(first.date)} ${ARROW} ${shortLocation(last.location)} ${formatDay(last.date)}`;
+  return `${shortLocation(last.location)} ${MIDDOT} ${formatDay(last.date)}`;
 }
 
-export function moveLine(events: readonly SightingEvent[]): string {
+/** "Kaugus {km} km" for the latest event. */
+export function distanceLine(events: readonly SightingEvent[]): string {
   if (events.length === 0) return '';
-  const first = Math.round(events[0].km_to_turi);
-  if (events.length === 1) return fill(TEXT.distance, { km: first });
-  return fill(TEXT.move, { a: first, b: Math.round(events[events.length - 1].km_to_turi) });
+  return fill(TEXT.distance, { km: Math.round(events[events.length - 1].km_to_turi) });
+}
+
+/** Count of the earlier reports (no places or dates), or null when there is only one. */
+export function earlierLine(events: readonly SightingEvent[]): string | null {
+  const k = events.length - 1;
+  if (k <= 0) return null;
+  return k === 1 ? TEXT.more_one : fill(TEXT.more_many, { k });
 }
 
 /** "{n} isend/isendit" for the last event, or null when it has no count. */

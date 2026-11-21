@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ARROW,
   MIDDOT,
   NDASH,
   TEXT,
   chanceChip,
   chancePeriodLine,
   countLine,
+  distanceLine,
+  earlierLine,
   currentTallinnMonth,
   firstOccurrences,
   hkSentence,
@@ -17,7 +18,6 @@ import {
   jubaLine,
   monthBars,
   monthChartLabel,
-  moveLine,
   parseEvidenceLists,
   staySentence,
   trackLine,
@@ -129,17 +129,24 @@ describe('jubaLine', () => {
   });
 });
 
-describe('trackLine / moveLine', () => {
-  it('Manni-kabilind: 12 Nov 431 km Kristiinankaupunki -> 15 Nov 376 km Pomarkku', () => {
-    expect(trackLine(MANNI_EVENTS)).toBe(`Kristiinankaupunki 12. nov ${ARROW} Pomarkku 15. nov`);
-    expect(moveLine(MANNI_EVENTS)).toBe(TEXT.move.replace('{a}', '431').replace('{b}', '376'));
-    expect(countLine(MANNI_EVENTS)).toBe(`2 ${TEXT.ind_many}`);
+describe('trackLine / distanceLine / earlierLine', () => {
+  it('track item (2 events): latest place/date, distance and count, one earlier report', () => {
+    expect(trackLine(MANNI_EVENTS)).toBe(`Pomarkku ${MIDDOT} 15. nov`);
+    expect(`${distanceLine(MANNI_EVENTS)} ${MIDDOT} ${countLine(MANNI_EVENTS)}`)
+      .toBe(`Kaugus 376 km ${MIDDOT} 2 isendit`);
+    expect(earlierLine(MANNI_EVENTS)).toBe('Veel \u00fcks varasem vaatlus naabermaades');
   });
 
-  it('single event', () => {
+  it('three events: plural earlier line', () => {
+    const three = [MANNI_EVENTS[0], MANNI_EVENTS[0], MANNI_EVENTS[1]];
+    expect(earlierLine(three)).toBe('Veel 2 varasemat vaatlust naabermaades');
+  });
+
+  it('near item (single event): no earlier line', () => {
     const one = [MANNI_EVENTS[1]];
     expect(trackLine(one)).toBe(`Pomarkku ${MIDDOT} 15. nov`);
-    expect(moveLine(one)).toBe(TEXT.distance.replace('{km}', '376'));
+    expect(distanceLine(one)).toBe('Kaugus 376 km');
+    expect(earlierLine(one)).toBeNull();
   });
 });
 

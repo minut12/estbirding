@@ -17,6 +17,8 @@ import {
   chanceChip,
   chancePeriodLine,
   countLine,
+  distanceLine,
+  earlierLine,
   currentTallinnMonth,
   fill,
   firstOccurrences,
@@ -26,7 +28,6 @@ import {
   jubaLine,
   monthBars,
   monthChartLabel,
-  moveLine,
   staySentence,
   trackLine,
   type EvidenceLists,
@@ -208,6 +209,7 @@ function LahenemasCard({ item, isTarget, avatarUrl, asOf, rating }: {
   rating: ReactNode;
 }) {
   const count = countLine(item.events);
+  const earlier = earlierLine(item.events);
   const chance = chanceChip(item.chance_pct);
   return (
     <Card {...jumpAttrs(item.ebird_code, isTarget)} className="p-4 space-y-2">
@@ -220,9 +222,10 @@ function LahenemasCard({ item, isTarget, avatarUrl, asOf, rating }: {
       />
       <p className="text-sm">{trackLine(item.events)}</p>
       <p className="text-xs text-muted-foreground">
-        {moveLine(item.events)}
+        {distanceLine(item.events)}
         {count && <> &middot; {count}</>}
       </p>
+      {earlier && <p className="text-xs text-muted-foreground">{earlier}</p>}
       {chance && (
         <>
           <p className="text-xs text-muted-foreground">{chancePeriodLine(asOf)}</p>

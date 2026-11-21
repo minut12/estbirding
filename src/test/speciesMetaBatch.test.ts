@@ -87,6 +87,30 @@ describe('saveSpeciesMetaBatchToCloud', () => {
     expect(localStorage.getItem(USA_CO_SCOPE.speciesMetaLastSyncAtKey)).toBeTruthy();
   });
 
+  it('P184h11: keeps sedentary: true through a batch patch; non-flagged items get no sedentary key', async () => {
+    h.store.text = JSON.stringify({
+      version: 1,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      items: {
+        Alpha: { rarityLevel: 'none', avatarUrl: 'urlA', sedentary: true },
+        Beta: { rarityLevel: 'none', avatarUrl: 'urlB', sedentary: true },
+        Gamma: { rarityLevel: 'none', avatarUrl: 'urlG' },
+      },
+    });
+
+    // Alpha is patched itself; Beta is untouched (a different item is patched); Gamma has no flag.
+    await saveSpeciesMetaBatchToCloud({ Alpha: { rarityLevel: 'rare' }, Gamma: { rarityLevel: 'super' } }, USA_CO_SCOPE);
+
+    const uploaded = JSON.parse(h.store.text);
+    const items = Object.values(uploaded.items) as Array<Record<string, unknown>>;
+    const byAvatar = (u: string) => items.find((i) => i.avatarUrl === u)!;
+
+    expect(byAvatar('urlA')).toMatchObject({ rarityLevel: 'rare', sedentary: true });
+    expect(byAvatar('urlB')).toMatchObject({ sedentary: true });
+    expect(byAvatar('urlG')).toMatchObject({ rarityLevel: 'super' });
+    expect(Object.prototype.hasOwnProperty.call(byAvatar('urlG'), 'sedentary')).toBe(false);
+  });
+
   it('no-ops (no upload) when given an empty patch set', async () => {
     await saveSpeciesMetaBatchToCloud({}, USA_CO_SCOPE);
     expect(h.upload).not.toHaveBeenCalled();

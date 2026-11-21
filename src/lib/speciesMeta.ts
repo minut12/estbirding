@@ -14,6 +14,7 @@ export type SpeciesMeta = {
   rariliinCode?: string;
   notificationNote?: string;
   notify?: boolean;
+  sedentary?: boolean;
 };
 
 export type SpeciesMetaMap = Record<string, SpeciesMeta>;

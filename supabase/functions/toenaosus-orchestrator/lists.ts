@@ -90,6 +90,7 @@ export interface SpeciesMetaInput {
   ebirdCode?: string;
   avatarUrl?: string | null;
   predictionExclude?: boolean;
+  sedentary?: boolean;
 }
 
 export interface RaritySpecies {
@@ -233,6 +234,17 @@ function chunk<T>(xs: T[], n: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
   return out;
+}
+
+// P184h11: resident (sedentary) species never "approach", so they are kept
+// out of the Lahenemas candidates only. Names without a meta entry pass through.
+export function lahenemasNames(meta: SpeciesMetaInput[], names: string[]): string[] {
+  const sedentary = new Set<string>();
+  for (const sp of meta) {
+    const name = sp?.name || sp?.estonianName;
+    if (name && sp.sedentary === true) sedentary.add(name);
+  }
+  return names.filter((n) => !sedentary.has(n));
 }
 
 export function raritySet(meta: SpeciesMetaInput[]): RaritySpecies[] {
@@ -968,9 +980,10 @@ export async function buildEvidenceLists(
   const t0 = Date.now();
   const asOf = tallinnDate(now);
   const errors: string[] = [];
+  const metaArr = Array.isArray(meta) ? meta : [];
   let R: RaritySpecies[] = [];
   try {
-    R = raritySet(Array.isArray(meta) ? meta : []);
+    R = raritySet(metaArr);
   } catch (e) {
     errors.push(`rarity_set: ${errText(e)}`);
   }
@@ -985,7 +998,7 @@ export async function buildEvidenceLists(
     juba = [];
   }
   const jubaNames = new Set(juba.map((j) => j.species_et));
-  const restNames = names.filter((n) => !jubaNames.has(n));
+  const restNames = lahenemasNames(metaArr, names.filter((n) => !jubaNames.has(n)));
 
   const [hooaegRes, lahenemasRes] = await Promise.all([
     buildHooaeg(sb, bySpecies, names, jubaNames, asOf).then(

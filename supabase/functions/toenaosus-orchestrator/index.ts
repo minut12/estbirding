@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-21 - P184h11 sedentary species skip Lahenemas
 // redeploy-marker: 2026-11-20 - P184h8 Lahenemas tracks obey season direction
 // redeploy-marker: 2026-11-19 - P184h5 Juba Eestis chance by days since last report
 // redeploy-marker: 2026-11-18 - P184h1 evidence_lists chance_pct (calibrated, server only)

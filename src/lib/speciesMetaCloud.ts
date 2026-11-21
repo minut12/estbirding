@@ -22,6 +22,7 @@ export type SpeciesMetaCloudItem = {
   notificationNote?: string;
   notify?: boolean;
   is_migrant?: boolean | null;
+  sedentary?: boolean;
 };
 
 export type SpeciesMetaCloudJson = {
@@ -93,6 +94,7 @@ function normalizeCloudItem(raw: unknown): SpeciesMetaCloudItem {
     notificationNote: normalizeUiText(String(x.notificationNote || '')) || undefined,
     notify: x.notify === true ? true : undefined,
     is_migrant: typeof x.is_migrant === 'boolean' ? x.is_migrant : undefined,
+    sedentary: x.sedentary === true ? true : undefined,
   };
 }
 
@@ -122,6 +124,7 @@ function mergeCloudOverLocal(localMap: Record<string, SpeciesMeta>, cloud: Speci
       ...(item.rariliinCode ? { rariliinCode: item.rariliinCode } : {}),
       ...(item.notificationNote ? { notificationNote: item.notificationNote } : {}),
       ...(item.notify === true ? { notify: true } : { notify: undefined }),
+      ...(item.sedentary === true ? { sedentary: true } : { sedentary: undefined }),
     };
   }
   return merged;

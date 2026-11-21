@@ -11,16 +11,19 @@ import {
   isSeasonal,
   jubaChance,
   lahenemasChance,
+  lahenemasNames,
   type LahenemasPick,
   nearAllowed,
   nearEvent,
   pickLahenemas,
   type RareObsRow,
+  raritySet,
   type RaritySpecies,
   seasonChance,
   type SightingEvent,
   type SiteCellRow,
   type SpeciesEvent,
+  type SpeciesMetaInput,
   sortHooaeg,
   tallinnDate,
   toLahenemasItems,
@@ -385,4 +388,35 @@ Deno.test("cleanSites: drops kaardilt / zero-season / unlabeled cells", () => {
   assertEquals(out.length, 1);
   assertEquals(out[0].label, "Sorve");
   assertEquals(out[0].n_days, 77);
+});
+
+// P184h11: sedentary species are dropped from the Lahenemas candidates only.
+const P184H11_META: SpeciesMetaInput[] = [
+  { name: "Paigalind", scientificName: "Sedens sedens", rarityLevel: "rare", sedentary: true },
+  { name: "Randlind", scientificName: "Migrans migrans", rarityLevel: "rare" },
+];
+
+Deno.test("lahenemasNames: sedentary species with a near sighting is not in Lahenemas", () => {
+  const near = ev("2026-11-18", "FI", 59.8, 24.0, 137);
+  const events = ["Paigalind", "Randlind"].map((n) => sev(n, near));
+  // Without the flag the near sighting IS picked.
+  const all = pickLahenemas(events, "2026-11-19");
+  assertEquals(all.some((p) => p.species_et === "Paigalind"), true);
+
+  const allowed = new Set(lahenemasNames(P184H11_META, ["Paigalind", "Randlind"]));
+  const out = pickLahenemas(events.filter((e) => allowed.has(e.species_et)), "2026-11-19");
+  assertEquals(out.find((p) => p.species_et === "Paigalind"), undefined);
+  assertEquals(out.some((p) => p.species_et === "Randlind"), true);
+});
+
+Deno.test("lahenemasNames: sedentary species stays in raritySet (Juba Eestis / Hooaeg inputs)", () => {
+  assertEquals(raritySet(P184H11_META).map((r) => r.name_et), ["Paigalind", "Randlind"]);
+});
+
+Deno.test("lahenemasNames: non-flagged and unknown names pass through unchanged", () => {
+  assertEquals(
+    lahenemasNames(P184H11_META, ["Randlind", "Tundmatu", "Paigalind"]),
+    ["Randlind", "Tundmatu"],
+  );
+  assertEquals(lahenemasNames([], ["Randlind"]), ["Randlind"]);
 });

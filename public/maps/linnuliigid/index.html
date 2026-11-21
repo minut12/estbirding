@@ -128,6 +128,12 @@
 .bm-pin.is-old .bm-pin-head{filter:saturate(.35)}
 @keyframes bmPinPulse{0%{box-shadow:0 0 0 0 rgba(39,174,96,.55)}100%{box-shadow:0 0 0 10px rgba(39,174,96,0)}}
 @media (prefers-reduced-motion:reduce){.bm-pin.is-d0 .bm-pin-halo{animation:none}}
+.bm-eobs-dot{width:26px;height:26px;border-radius:50%;border:1.5px solid #2c7fb8;opacity:.75;background-size:cover;background-position:center;box-sizing:border-box}
+.bm-eobs-halo{position:absolute;inset:-3px;border-radius:50%;border:2px solid #27ae60;pointer-events:none;animation:bmPinPulse 1.8s ease-out infinite}
+.bm-eobs.is-d0 .bm-eobs-dot{opacity:1;border:2.5px solid #27ae60}
+.bm-eobs.is-d1 .bm-eobs-dot{opacity:1;border:2px solid #7cc48f}
+.bm-eobs.is-old .bm-eobs-dot{opacity:.45}
+@media (prefers-reduced-motion:reduce){.bm-eobs-halo{animation:none}}
 
 /* --- P58c Card v2 (species observation popup) --- */
 .leaflet-popup-content-wrapper:has(.bm-card){border-radius:16px;padding:0;overflow:hidden}
@@ -10603,11 +10609,12 @@ function avatarIcon(url, borderColor, count7d, rarityLevel, opts) { return _mark
 // one-marker-per-species. Mirrors the GBIF multi-marker layer (gbifMarkers):
 // species key -> array of L.marker on the base map pane (NOT the cluster group).
 // Fetch-time only; never persisted to any snapshot / localStorage.
-function _eluObsIcon(avatarUrl, rarityLevel){
+function _eluObsIcon(avatarUrl, rarityLevel, fresh){
   var bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#29c";
-  var html = '<div style="position:relative;width:26px;height:26px">'
-    + '<div style="width:26px;height:26px;border-radius:50%;border:1.5px solid #2c7fb8;opacity:0.75;'
-    + 'background-size:cover;background-position:center;box-sizing:border-box;' + bg + '"></div>'
+  var fr = (fresh === 'd0' || fresh === 'd1' || fresh === 'd23' || fresh === 'old') ? fresh : '';
+  var html = '<div class="bm-eobs' + (fr ? ' is-' + fr : '') + '" style="position:relative;width:26px;height:26px">'
+    + (fr === 'd0' ? '<div class="bm-eobs-halo"></div>' : '')
+    + '<div class="bm-eobs-dot" style="' + bg + '"></div>'
     + _bmMkRar(rarityLevel)
     + '</div>';
   return L.divIcon({ html: html, className: '', iconSize: [26,26], iconAnchor: [13,13], popupAnchor: [0,-13] });
@@ -10776,7 +10783,8 @@ function _renderEluObsMarkers(){
         if(co.bhv) __d.bhv = co.bhv;
         if(co.sid) __d.sid = co.sid;
         __gbifOccById[__sid] = { species: key, lat: Number(co.lat), lon: Number(co.lon), date: co.d ? String(co.d).slice(0,10) : null, details: (Object.keys(__d).length ? __d : null) };
-        var m = L.marker([Number(co.lat), Number(co.lon)], { icon: _eluObsIcon(avatarUrl, (window.getSpeciesMetaShared ? ((getSpeciesMetaShared(key)||{}).rarityLevel || 'none') : 'none')) });
+        var _frO = _bmFreshTier(co.d);
+        var m = L.marker([Number(co.lat), Number(co.lon)], { icon: _eluObsIcon(avatarUrl, (window.getSpeciesMetaShared ? ((getSpeciesMetaShared(key)||{}).rarityLevel || 'none') : 'none'), _frO), zIndexOffset: _bmFreshZ(_frO) });
         m.bindPopup(_eluObsPopupHtml(key, co, __sid), { autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) });
         m.addTo(map); // base map pane, like GBIF markers — NOT the cluster group
         markerList.push(m);

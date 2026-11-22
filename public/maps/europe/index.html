@@ -412,8 +412,20 @@ html:not(.sb-classic) .bm-pin-src .euf-lt{background-image:url("data:image/svg+x
 html:not(.sb-classic) .bm-pin-src .euf-pl{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'><rect width='18' height='11' fill='%23ffffff'/><rect y='5.5' width='18' height='5.5' fill='%23dc143c'/></svg>")}
 html:not(.sb-classic) .bm-pin-src .euf-by{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'><rect width='18' height='11' fill='%23c8313e'/><rect y='7.333' width='18' height='3.667' fill='%234aa657'/><rect width='2' height='11' fill='%23ffffff'/></svg>")}
 html:not(.sb-classic) .bm-pin-src .euf-ru{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'><rect width='18' height='11' fill='%23d52b1e'/><rect width='18' height='7.333' fill='%230039a6'/><rect width='18' height='3.667' fill='%23ffffff'/></svg>")}
-html:not(.sb-classic) .bm-pin.is-old .bm-pin-shape{background:#eef1ef;border-color:#b9c4bd}
-html:not(.sb-classic) .bm-pin.is-old .bm-pin-head{opacity:.8;background-color:#b9c4bd}
+/* --- P186 pin freshness (port of linnuliigid P185: d0 today, d1 yesterday, d23 2-3 d, old 4+ d; Europe/Tallinn days) --- */
+html:not(.sb-classic) .bm-pin-halo{position:absolute;left:1px;top:7px;width:42px;height:42px;border-radius:50%;box-sizing:border-box;pointer-events:none}
+html:not(.sb-classic) .bm-pin.is-d0 .bm-pin-halo{border:3px solid #27ae60;animation:bmPinPulse 1.8s ease-out infinite}
+html:not(.sb-classic) .bm-pin.is-d0 .bm-pin-shape{border-color:#27ae60}
+html:not(.sb-classic) .bm-pin.is-d1 .bm-pin-halo{border:2.5px solid #7cc48f}
+html:not(.sb-classic) .bm-pin.is-d1 .bm-pin-shape{border-color:#7cc48f}
+html:not(.sb-classic) .bm-pin.is-d23{opacity:.72}
+html:not(.sb-classic) .bm-pin.is-d23 .bm-pin-head{filter:saturate(.6)}
+html:not(.sb-classic) .bm-pin.is-old{opacity:.5}
+html:not(.sb-classic) .bm-pin.is-old .bm-pin-head{filter:saturate(.35)}
+@keyframes bmPinPulse{0%{box-shadow:0 0 0 0 rgba(39,174,96,.55)}100%{box-shadow:0 0 0 10px rgba(39,174,96,0)}}
+.bm-mk-halo{position:absolute;inset:-3px;border-radius:50%;border:2px solid #27ae60;pointer-events:none;animation:bmPinPulse 1.8s ease-out infinite}
+.bm-mk-halo.is-d1{border-color:#7cc48f;animation:none}
+@media (prefers-reduced-motion:reduce){.bm-mk-halo,.bm-pin.is-d0 .bm-pin-halo{animation:none}}
 /* P74c eBird source card (linnuliigid .bm-sc) */
 html:not(.sb-classic) .leaflet-popup-content-wrapper:has(.bm-sc){border-radius:16px;padding:0;overflow:hidden}
 @media(max-width:900px){html:not(.sb-classic) .leaflet-popup-content:has(.bm-sc){zoom:.85}}
@@ -459,6 +471,7 @@ html:not(.sb-classic) .bm-sc.bm-sc--ext{--sc:var(--eb-amber-700);--sc-soft:var(-
 html:not(.sb-classic) .bm-ext-mk{position:relative;width:30px;height:30px;border-radius:50%;background:var(--eb-white)}
 html:not(.sb-classic) .bm-ext-av{width:30px;height:30px;border-radius:50%;border:2px solid var(--eb-amber-700);box-sizing:border-box;background:var(--eb-slate-400) center/cover no-repeat;background-clip:padding-box;box-shadow:0 1px 4px rgba(0,0,0,.25)}
 html:not(.sb-classic) .bm-ext-mk.is-approx .bm-ext-av{border-style:dashed}
+html:not(.sb-classic) .bm-ext-mk.is-old .bm-ext-av{opacity:.45}
 html:not(.sb-classic) .bm-ext-nth{position:absolute;top:-5px;right:-10px;min-width:14px;height:14px;padding:0 3px;box-sizing:border-box;border-radius:999px;background:var(--eb-white);border:1.5px solid var(--eb-amber-700);color:var(--eb-amber-860);font:800 9px/11px system-ui,Arial,sans-serif;text-align:center}
 html:not(.sb-classic) .bm-ext-chip{display:inline-flex;margin-top:9px;padding:5px 9px;border-radius:999px;background:#7c2d12;color:var(--eb-white);font:700 12px/1 system-ui,Arial,sans-serif}
 html:not(.sb-classic) .bm-ext-approx{display:flex;gap:8px;margin-top:10px;background:var(--eb-amber-75);border:1px solid var(--eb-amber-250);color:var(--eb-amber-950);border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.4}
@@ -482,6 +495,9 @@ html:not(.sb-classic) .bm-sc-media.is-off{display:none}
 /* P107c: eBird single-observation marker (26px avatar, eBird teal ring) + its card's row icons */
 .bm-eo-mk{position:relative;width:26px;height:26px}
 .bm-eo-av{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--eb-cyan-700);box-sizing:border-box;background:var(--eb-slate-400) center/cover no-repeat;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.bm-eo-mk.is-d0 .bm-eo-av{border:2.5px solid #27ae60}
+.bm-eo-mk.is-d1 .bm-eo-av{border:2px solid #7cc48f}
+.bm-eo-mk.is-old .bm-eo-av{opacity:.45}
 .bm-eo-rar{position:absolute;top:-5px;right:-10px;min-width:14px;height:14px;padding:0 3px;box-sizing:border-box;border-radius:999px;background:var(--eb-white);border:1.5px solid var(--eb-grey-222);font:800 9px/11px system-ui,Arial,sans-serif;text-align:center}
 /* P105d: GPS-tracked birds layer (Movebank) - marker, legend, card accent, Filtrid row */
 .eu-gps-mk{position:relative;width:34px;height:34px}
@@ -1848,6 +1864,33 @@ function buildMarkerElement({ M, TOP, BOTTOM, countHeight, rarityHeight, countFo
   return root;
 }
 
+// P186: freshness tier (same rule as Linnuliigid P185). From a day count (0 = today, Europe/Tallinn days)...
+function _bmTierFromDays(n){
+  if(typeof n !== 'number' || !isFinite(n)) return '';
+  if(n <= 0) return 'd0';
+  if(n === 1) return 'd1';
+  if(n <= 3) return 'd23';
+  return 'old';
+}
+// ...or from a date string ("YYYY-MM-DD..." or "DD.MM.YYYY").
+function _bmFreshTier(dateStr){
+  try{
+    var s = String(dateStr || '').trim();
+    var y, mo, d, m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(m){ y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else { m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/); if(!m) return ''; d = +m[1]; mo = +m[2]; y = +m[3]; }
+    var parts = {};
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Tallinn', year: 'numeric', month: '2-digit', day: '2-digit' })
+      .formatToParts(new Date()).forEach(function(x){ parts[x.type] = x.value; });
+    var today = Date.UTC(+parts.year, +parts.month - 1, +parts.day);
+    return _bmTierFromDays(Math.round((today - Date.UTC(y, mo - 1, d)) / 86400000));
+  }catch(e){ return ''; }
+}
+function _bmFreshZ(tier, base){
+  var b = Number(base) || 0;
+  return b + (tier === 'd0' ? 300 : tier === 'd1' ? 200 : tier === 'd23' ? 100 : 0);
+}
+
 function makeIcon(url, border, rarityLevel, occ7, isMigr){
   const { M, TOP, BOTTOM, W, H, countHeight, rarityHeight, countFont, rarityFont, countPadX, rarityPadX } = markerLayoutForZoom(map.getZoom());
   const rarityStyle = window.getRarityStyle ? window.getRarityStyle(rarityLevel || "none") : null;
@@ -2140,7 +2183,7 @@ function rowHTML(name){
             out += '<circle cx="0" cy="0" r="3"/>';
             if (svg.__p168html !== out) { svg.innerHTML = out; svg.__p168html = out; }
           } else if (svg) svg.remove();
-          try { it.m.setZIndexOffset(spread ? 2000 : (badge ? 500 : 0)); } catch(e){}
+          try { it.m.setZIndexOffset((spread ? 2000 : (badge ? 500 : 0)) + (it.m.__bmZ || 0)); } catch(e){}
           setPopupOffset(it.m, pos[i].x, pos[i].y);
         });
       });
@@ -3066,10 +3109,10 @@ if (!DEV_DEBUG) {
     if (euLoc.layer) { try { map.removeLayer(euLoc.layer); } catch(e){} }
     euLoc.layer = null;
   }
-  function euObsIcon(species){
+  function euObsIcon(species, fr){
     var av = euAvatar(species);
     var rar = euRarity(species);
-    var html = '<div class="bm-eo-mk"><div class="bm-eo-av"' + (av ? ' style="background-image:url(\'' + esc(av) + '\')"' : '') + '></div>' +
+    var html = '<div class="bm-eo-mk' + (fr ? ' is-' + fr : '') + '">' + (fr === 'd0' ? '<div class="bm-mk-halo"></div>' : '') + '<div class="bm-eo-av"' + (av ? ' style="background-image:url(\'' + esc(av) + '\')"' : '') + '></div>' +
       (rar.text ? '<b class="bm-eo-rar" style="border-color:' + rar.color + ';color:' + rar.color + '">' + esc(rar.text) + '</b>' : '') + '</div>';
     return L.divIcon({ html: html, className: "", iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -13] });
   }
@@ -3142,7 +3185,8 @@ if (!DEV_DEBUG) {
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
       if (pinSub && o.subId === pinSub) return;
       if (Number.isFinite(pLat) && Number.isFinite(pLon) && Math.abs(lat - pLat) < 0.0002 && Math.abs(lng - pLon) < 0.0002) return;
-      var mk = L.marker([lat, lng], { icon: euObsIcon(species), keyboard: false });
+      var fr = _bmTierFromDays(euDaysAgo(String(o.dt || '').slice(0, 10)));   // P186
+      var mk = L.marker([lat, lng], { icon: euObsIcon(species, fr), keyboard: false, zIndexOffset: _bmFreshZ(fr, 0) });
       mk.bindPopup(function(){ return euObsCardHtml(species, o, o.cc || cc); }, EU_POPUP_OPTS);
       lg.addLayer(mk);
     });
@@ -3365,7 +3409,6 @@ if (!DEV_DEBUG) {
   var EU_STUB_ICON = L.divIcon(Object.assign({ html: "" }, EU_PIN_OPTS));
   var EU_POPUP_OPTS = { maxWidth: 340, closeButton: true, autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) };
   window.__euPopupOpts = EU_POPUP_OPTS; // P105d: shared with the euGps layer cards
-  var EU_OLD_DAYS = 3;
   var EU_POPUP_REPAN_MS = 1500;
   var EU_SWEEP_MS = 1500;
   var euSweepUntil = 0;
@@ -3388,11 +3431,11 @@ if (!DEV_DEBUG) {
     var meta = getSpeciesMeta(name) || {};
     return String(meta.avatarUrl || avatars[name] || "").replace(/['"()\\]/g, "");
   }
-  function euPinIcon(species, count, srcText){
+  function euPinIcon(species, count, srcText, dateStr){
     var p = points[species] || {};
     var rar = euRarity(species);
     var av = euAvatar(species);
-    var isOld = euDaysAgo(p.t) > EU_OLD_DAYS;
+    var fr = _bmTierFromDays(euDaysAgo(String((dateStr != null ? dateStr : p.t) || '').slice(0, 10)));   // P186
     var shapeStyle = rar.color ? ' style="background:' + rar.color + ';border-color:' + rar.color + '"' : '';
     var migCls = euMigKind(species) ? ' mig' : '';
     // P77b: a country code tag renders as a flag; anything else (e.g. "N RIIKI") stays a text tag.
@@ -3400,7 +3443,8 @@ if (!DEV_DEBUG) {
     var srcTag = REGIONS.indexOf(cc) !== -1
       ? '<div class="bm-pin-src flag' + migCls + '" title="' + esc((STR[cc.toLowerCase()] || cc) + ' (' + cc + ')') + '"><i class="euf euf-' + cc.toLowerCase() + '"></i></div>'
       : '<div class="bm-pin-src' + migCls + '">' + esc(srcText) + '</div>';
-    var html = '<div class="bm-pin' + (isOld ? ' is-old' : '') + '">' +
+    var html = '<div class="bm-pin' + (fr ? ' is-' + fr : '') + '">' +
+      ((fr === 'd0' || fr === 'd1') ? '<div class="bm-pin-halo"></div>' : '') +
       '<div class="bm-pin-shape"' + shapeStyle + '></div>' +
       '<div class="bm-pin-head"' + (av ? ' style="background-image:url(\'' + esc(av) + '\')"' : '') + '></div>' +
       srcTag +
@@ -3615,9 +3659,12 @@ if (!DEV_DEBUG) {
       var cardD = Object.assign({ rg: rg }, regionsObj[rg] || {});
       // Riigiti, or Uusim riik under a country chip (the chip-gated original only drew the chip's
       // region): that country's occ7 + CC. Uusim riik without a chip: total7 + "N RIIKI".
+      var dStr = (mode === "country" || euCountryFilter) ? cardD.t : p.t;   // P186: freshness date for this pin
+      var fr = _bmTierFromDays(euDaysAgo(String(dStr || '').slice(0, 10)));
       m.setIcon((mode === "country" || euCountryFilter)
-        ? euPinIcon(species, Number(cardD.occ7 || 0), rg)
-        : euPinIcon(species, total7, nActive === 1 ? "1 RIIK" : nActive + " " + String(STR.countries || "").toUpperCase()));
+        ? euPinIcon(species, Number(cardD.occ7 || 0), rg, dStr)
+        : euPinIcon(species, total7, nActive === 1 ? "1 RIIK" : nActive + " " + String(STR.countries || "").toUpperCase(), dStr));
+      m.__bmZ = _bmFreshZ(fr, 0); try{ m.setZIndexOffset(m.__bmZ); }catch(e){}   // P186: fresher on top
       // Under a country chip the card is the per-country card for that country in both modes (matches the pin).
       var cardMode = (mode === "country" || euCountryFilter) ? "country" : "agg";
       m.bindPopup(function(){ return euCardHtml(species, cardMode, cardD, total7, regionsObj); }, EU_POPUP_OPTS);
@@ -4538,10 +4585,12 @@ if (!DEV_DEBUG) {
         '<div class="bm-sc-ft"><span>' + esc((STR.extData || "") + " " + sources.join(", ")) + '</span></div>' +
       '</div></div>';
   }
-  function markerIcon(name, main, precision){
+  function markerIcon(name, main, precision, days){
     var av = avatarOf(name);
     var approx = precision !== "exact";
-    var html = '<div class="bm-ext-mk' + (approx ? ' is-approx' : '') + '">' +
+    var fr = _bmTierFromDays(days);   // P186
+    var html = '<div class="bm-ext-mk' + (approx ? ' is-approx' : '') + (fr ? ' is-' + fr : '') + '">' +
+      ((fr === 'd0' || fr === 'd1') ? '<div class="bm-mk-halo' + (fr === 'd1' ? ' is-d1' : '') + '"></div>' : '') +
       '<div class="bm-ext-av"' + (av ? ' style="background-image:url(\'' + esc(av) + '\')"' : '') + '></div>' +
       (main.nth_record ? '<div class="bm-ext-nth">' + esc(String(main.nth_record)) + '.</div>' : '') +
       '</div>';
@@ -4579,7 +4628,7 @@ if (!DEV_DEBUG) {
           if (co.precision === "municipality") {
             L.circle(ll, { radius: APPROX_RADIUS_M, color: EXT_AMBER, weight: 1.5, dashArray: "5 4", fillColor: EXT_AMBER, fillOpacity: 0.08, interactive: false }).addTo(layer);
           }
-          var m = L.marker(ll, { icon: markerIcon(name, r, co.precision), zIndexOffset: 200 });
+          var m = L.marker(ll, { icon: markerIcon(name, r, co.precision, days), zIndexOffset: _bmFreshZ(_bmTierFromDays(days), 200) });
           m.bindPopup(function(){ return extCardHtml(name, r, bucket, days); }, popupOpts);
           m.addTo(layer);
         });

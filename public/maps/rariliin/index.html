@@ -287,6 +287,20 @@
 .bm-pin.is-approx .bm-pin-head{filter:saturate(.35);opacity:.85}
 .bm-pin-src{position:absolute;left:50%;top:57px;transform:translateX(-50%);z-index:2;height:15px;padding:0 5px;border-radius:5px;color:var(--eb-white);font:800 8.5px/15px system-ui,Arial,sans-serif;letter-spacing:.02em;box-shadow:0 0 0 1.5px var(--eb-white);pointer-events:none;white-space:nowrap}
 .bm-pin-src.eb{background:var(--eb-cyan-700)}
+/* --- P186 pin freshness (port of linnuliigid P185: d0 today, d1 yesterday, d23 2-3 d, old 4+ d; Europe/Tallinn days) --- */
+.bm-pin-halo{position:absolute;left:1px;top:7px;width:42px;height:42px;border-radius:50%;box-sizing:border-box;pointer-events:none}
+.bm-pin.is-d0 .bm-pin-halo{border:3px solid #27ae60;animation:bmPinPulse 1.8s ease-out infinite}
+.bm-pin.is-d0 .bm-pin-shape{border-color:#27ae60}
+.bm-pin.is-d1 .bm-pin-halo{border:2.5px solid #7cc48f}
+.bm-pin.is-d1 .bm-pin-shape{border-color:#7cc48f}
+.bm-pin.is-d23{opacity:.72}
+.bm-pin.is-d23 .bm-pin-head{filter:saturate(.6)}
+.bm-pin.is-old{opacity:.5}
+.bm-pin.is-old .bm-pin-head{filter:saturate(.35)}
+@keyframes bmPinPulse{0%{box-shadow:0 0 0 0 rgba(39,174,96,.55)}100%{box-shadow:0 0 0 10px rgba(39,174,96,0)}}
+.bm-mk-halo{position:absolute;inset:-3px;border-radius:50%;border:2px solid #27ae60;pointer-events:none;animation:bmPinPulse 1.8s ease-out infinite}
+.bm-mk-halo.is-d1{border-color:#7cc48f;animation:none}
+@media (prefers-reduced-motion:reduce){.bm-mk-halo,.bm-pin.is-d0 .bm-pin-halo{animation:none}}
 .bm-pin.is-sel{transform:scale(1.2);transform-origin:50% 100%}
 .bm-pin.is-sel .bm-pin-shape{box-shadow:0 0 0 3px rgba(45,122,75,.55),0 2px 8px rgba(20,40,30,.35)}
 /* --- P84c Card (port of linnuliigid P58c/P64/P80/P82 .bm-card*, one builder for Elurikkus + eBird EE) --- */
@@ -4390,6 +4404,33 @@ function _borderColorByDate(isoDate){
   }catch(e){ return '#e67e22'; }
 }
 
+// P186: freshness tier (same rule as Linnuliigid P185). From a day count (0 = today, Europe/Tallinn days)...
+function _bmTierFromDays(n){
+  if(typeof n !== 'number' || !isFinite(n)) return '';
+  if(n <= 0) return 'd0';
+  if(n === 1) return 'd1';
+  if(n <= 3) return 'd23';
+  return 'old';
+}
+// ...or from a date string ("YYYY-MM-DD..." or "DD.MM.YYYY").
+function _bmFreshTier(dateStr){
+  try{
+    var s = String(dateStr || '').trim();
+    var y, mo, d, m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(m){ y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else { m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/); if(!m) return ''; d = +m[1]; mo = +m[2]; y = +m[3]; }
+    var parts = {};
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Tallinn', year: 'numeric', month: '2-digit', day: '2-digit' })
+      .formatToParts(new Date()).forEach(function(x){ parts[x.type] = x.value; });
+    var today = Date.UTC(+parts.year, +parts.month - 1, +parts.day);
+    return _bmTierFromDays(Math.round((today - Date.UTC(y, mo - 1, d)) / 86400000));
+  }catch(e){ return ''; }
+}
+function _bmFreshZ(tier, base){
+  var b = Number(base) || 0;
+  return b + (tier === 'd0' ? 300 : tier === 'd1' ? 200 : tier === 'd23' ? 100 : 0);
+}
+
 // =========================================
 // === SNAPSHOT-BASED FETCHING ===
 // =========================================
@@ -8028,6 +8069,7 @@ function rarityToBorder(level, fallback){
 function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel, opts){
   const o = opts || {};
   const approx = o.approx === true;
+  const fresh = (o.fresh === 'd0' || o.fresh === 'd1' || o.fresh === 'd23' || o.fresh === 'old') ? o.fresh : '';
   const color = rarityToBorder(rarityLevel, borderColor || '#222');
   const badge = rarityToBadge(rarityLevel);
   const shapeStyle = (!approx && badge) ? ' style="background:' + color + ';border-color:' + color + '"' : '';
@@ -8039,7 +8081,8 @@ function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel, opts){
     : '';
   const bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#29c";
   const srcTag = (o.srcTag === 'ebird') ? '<div class="bm-pin-src eb">eBird</div>' : '';
-  const html = '<div class="bm-pin' + (approx ? ' is-approx' : '') + '">'
+  const html = '<div class="bm-pin' + (approx ? ' is-approx' : '') + (fresh ? ' is-' + fresh : '') + '">'
+    + ((fresh === 'd0' || fresh === 'd1') ? '<div class="bm-pin-halo"></div>' : '')
     + '<div class="bm-pin-shape"' + shapeStyle + '></div>'
     + '<div class="bm-pin-head" style="' + bg + '"></div>'
     + srcTag
@@ -8060,9 +8103,9 @@ try { ebirdEEPoints = JSON.parse(localStorage.getItem(LS_EBIRD_EE_POINTS) || '{}
 function _saveEbirdEE(){ try { localStorage.setItem(LS_EBIRD_EE_POINTS, JSON.stringify(ebirdEEPoints)); } catch(e){} }
 var ebirdEEMarkers = new Map();
 
-function _ebirdMarkerIcon(avatarUrl, count7d, rarityLevel){
-  /* P84c: same pin v2 as the Elurikkus pins, eBird source tag under the tip. */
-  return _markerIcon(avatarUrl, '#2e7d32', count7d, rarityLevel, { srcTag: 'ebird' });
+function _ebirdMarkerIcon(avatarUrl, count7d, rarityLevel, fresh){
+  /* P84c: same pin v2 as the Elurikkus pins, eBird source tag under the tip. P186: + freshness tier. */
+  return _markerIcon(avatarUrl, '#2e7d32', count7d, rarityLevel, { srcTag: 'ebird', fresh: fresh });
 }
 
 /* P84c: thin wrapper; the eBird EE card is the same species card (buildPopupHtml) with source 'ebird'. */
@@ -8163,16 +8206,20 @@ function refreshEbirdEEMarkers(){
     if(mainP.visible === false) continue;   // respect species visibility toggle
     var avatar = (typeof getDisplayAvatar === 'function') ? getDisplayAvatar(key) : ((typeof avatars !== 'undefined' && avatars[key]) || '');
     var metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel:'none' };
-    var icon = _ebirdMarkerIcon(avatar, Number(ep.occ7 || 0), metaCfg.rarityLevel || 'none');
+    var _frE = _bmFreshTier(ep.t);   // P186
+    var icon = _ebirdMarkerIcon(avatar, Number(ep.occ7 || 0), metaCfg.rarityLevel || 'none', _frE);
     var html = ebirdEEPopupHtml(key, ep);
     var m = ebirdEEMarkers.get(key);
     keep[key] = true;
     if(m){
       var ll = m.getLatLng ? m.getLatLng() : null;
       if(!ll || Math.abs(ll.lat - ep.lat) > 1e-6 || Math.abs(ll.lng - ep.lon) > 1e-6){ try{ m.setLatLng([ep.lat, ep.lon]); }catch(e){} }
+      m.__bmZ = _bmFreshZ(_frE, 0); try{ m.setZIndexOffset(m.__bmZ); }catch(e){}   // P186: fresher on top
       rlRefreshMarker(m, icon, html);
     } else {
-      m = L.marker([ep.lat, ep.lon], { icon: icon });
+      var _zE = _bmFreshZ(_frE, 0);   // P186
+      m = L.marker([ep.lat, ep.lon], { icon: icon, zIndexOffset: _zE });
+      m.__bmZ = _zE;
       m.bindPopup(html, { closeButton:true, autoPan:true, autoPanPaddingTopLeft: L.point(12, 96), autoPanPaddingBottomRight: L.point(12, 120) });   // P84c/P83
       rlWireSel(m);
       rlWireHist(m, 'eb', key);   // P84g
@@ -8198,7 +8245,7 @@ function rlPinEl(m){
 function rlSetSel(m, on){
   var pin = rlPinEl(m);
   if (pin) pin.classList.toggle('is-sel', !!on);
-  try{ if (m && m.setZIndexOffset) m.setZIndexOffset(on ? 1000 : 0); }catch(e){}
+  try{ if (m && m.setZIndexOffset) m.setZIndexOffset(on ? 1000 : (m.__bmZ || 0)); }catch(e){}
 }
 /* P84e: update a reused pin in place (icon + card HTML); an open card stays open and the selected pin keeps .is-sel. */
 function rlRefreshMarker(m, icon, html){
@@ -8447,7 +8494,8 @@ function updateMarker(key) {
   const bcol = _borderColorByDate(p.t);
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const c7 = Number.isFinite(markerCount) && markerCount >= 1 ? markerCount : null;
-  const icon = _markerIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none', { approx: rlIsApprox(p) });   // P84c: pin v2 + approx (avatarIcon untouched)
+  var _fr = _bmFreshTier(p.t);   // P186
+  const icon = _markerIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none', { approx: rlIsApprox(p), fresh: _fr });   // P84c: pin v2 + approx (avatarIcon untouched)
   const popupHtml = buildPopupHtml(key, p);
   const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;
   const moved = !old || Math.abs(Number(old.lat) - Number(p.lat)) > 1e-6 || Math.abs(Number(old.lng) - Number(p.lon)) > 1e-6;
@@ -8456,10 +8504,12 @@ function updateMarker(key) {
   let m = prevMarker;
   if(m){
     if(moved && typeof m.setLatLng === 'function'){ try{ m.setLatLng([p.lat, p.lon]); }catch(e){} }
+    m.__bmZ = _bmFreshZ(_fr, 0); try{ m.setZIndexOffset(m.__bmZ); }catch(e){}   // P186: fresher on top
     rlRefreshMarker(m, icon, popupHtml);
   } else {
     console.log('[fix] updateMarker: placing', key, 'at lat=', p.lat, 'lon=', p.lon);
-    m = L.marker([p.lat,p.lon], {icon});
+    m = L.marker([p.lat,p.lon], {icon, zIndexOffset: _bmFreshZ(_fr, 0)});
+    m.__bmZ = _bmFreshZ(_fr, 0);
     if(clusterGroup && typeof clusterGroup.addLayer === 'function'){
       try{ clusterGroup.addLayer(m); }catch(e){ m.addTo(map); }
     } else {

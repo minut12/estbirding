@@ -188,6 +188,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-29', ref: 'P177a', kind: 'patch', text: 'Liigikaart avaneb j\u00e4lle t\u00e4pselt m\u00e4rgi kohal' },
       { date: '2026-10-29', ref: 'P178e', kind: 'minor', text: 'Kaardil on ka LOFK (Leedu) ja Tarsigeri haruldused, sama lind ainult korra' },
       { date: '2026-11-13', ref: 'P182b', kind: 'patch', text: '\u00dchtsed v\u00e4rvid, tekst v\u00e4hemalt 12 px, klaviatuuriga liikudes on fookus n\u00e4htav' },
+      { date: '2026-11-22', ref: 'P186', kind: 'minor', text: 'Pinnid n\u00e4itavad vaatluse v\u00e4rskust: t\u00e4nased ja eilsed r\u00f5ngaga, vanemad tuhmimad; v\u00e4rskemad pinnid on pealmised' },
     ],
   },
   {
@@ -213,6 +214,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-26', ref: 'P165', kind: 'patch', text: 'M\u00e4rge \u201eFotoga vaatlus\u201c ainult kaardil oleva vaatluse foto korral' },
       { date: '2026-10-29', ref: 'P177b', kind: 'patch', text: 'Mobiilis nimekirja ja kaardi nupp nagu Linnuliigid kaardil' },
       { date: '2026-11-13', ref: 'P182b', kind: 'patch', text: '\u00dchtsed v\u00e4rvid, tekst v\u00e4hemalt 12 px' },
+      { date: '2026-11-22', ref: 'P186', kind: 'minor', text: 'Pinnid n\u00e4itavad vaatluse v\u00e4rskust: t\u00e4nased ja eilsed r\u00f5ngaga, vanemad tuhmimad; v\u00e4rskemad pinnid on pealmised' },
     ],
   },
   {

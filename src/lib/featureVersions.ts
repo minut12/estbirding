@@ -192,6 +192,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-22', ref: 'P186', kind: 'minor', text: 'Pinnid n\u00e4itavad vaatluse v\u00e4rskust: t\u00e4nased ja eilsed r\u00f5ngaga, vanemad tuhmimad; v\u00e4rskemad pinnid on pealmised' },
       { date: '2026-11-23', ref: 'P186b', kind: 'patch', text: 'Vanemad pinnid tuhmuvad ainult 7 p\u00e4eva filtriga' },
       { date: '2026-11-23', ref: 'P186f', kind: 'patch', text: 'V\u00e4hendatud liikumise seadega ei vilgu ka tavalised pinnid' },
+      { date: '2026-11-23', ref: 'P186g', kind: 'patch', text: 'Eilsetel pinnidel sama roheline r\u00f5ngas nagu t\u00e4nastel, kuid ilma vilkumiseta' },
     ],
   },
   {
@@ -219,6 +220,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-13', ref: 'P182b', kind: 'patch', text: '\u00dchtsed v\u00e4rvid, tekst v\u00e4hemalt 12 px' },
       { date: '2026-11-22', ref: 'P186', kind: 'minor', text: 'Pinnid n\u00e4itavad vaatluse v\u00e4rskust: t\u00e4nased ja eilsed r\u00f5ngaga, vanemad tuhmimad; v\u00e4rskemad pinnid on pealmised' },
       { date: '2026-11-23', ref: 'P186b', kind: 'patch', text: 'Vanemad pinnid tuhmuvad ainult 7 p\u00e4eva filtriga' },
+      { date: '2026-11-23', ref: 'P186g', kind: 'patch', text: 'Eilsetel pinnidel sama roheline r\u00f5ngas nagu t\u00e4nastel, kuid ilma vilkumiseta' },
     ],
   },
   {

@@ -288,16 +288,16 @@
 .bm-pin-src{position:absolute;left:50%;top:57px;transform:translateX(-50%);z-index:2;height:15px;padding:0 5px;border-radius:5px;color:var(--eb-white);font:800 8.5px/15px system-ui,Arial,sans-serif;letter-spacing:.02em;box-shadow:0 0 0 1.5px var(--eb-white);pointer-events:none;white-space:nowrap}
 .bm-pin-src.eb{background:var(--eb-cyan-700)}
 /* --- P186 pin freshness (port of linnuliigid P185: d0 today, d1 yesterday, d23 2-3 d, old 4+ d; Europe/Tallinn days) --- */
-.bm-pin-halo{position:absolute;left:1px;top:7px;width:42px;height:42px;border-radius:50%;box-sizing:border-box;pointer-events:none}
+.bm-pin-halo{position:absolute;left:-4px;top:2px;width:52px;height:52px;border-radius:50%;box-sizing:border-box;pointer-events:none;box-shadow:inset 0 0 0 2px #fff}
 .bm-pin.is-d0 .bm-pin-halo{border:3px solid #27ae60;animation:bmPinPulse 1.8s ease-out infinite}
 .bm-pin.is-d0 .bm-pin-shape{border-color:#27ae60}
-.bm-pin.is-d1 .bm-pin-halo{border:2.5px solid #7cc48f}
+.bm-pin.is-d1 .bm-pin-halo{border:3px solid #7cc48f}
 .bm-pin.is-d1 .bm-pin-shape{border-color:#7cc48f}
 html:has(#recentToggle.on) .bm-pin.is-d23{opacity:.72}
 html:has(#recentToggle.on) .bm-pin.is-d23 .bm-pin-head{filter:saturate(.6)}
 html:has(#recentToggle.on) .bm-pin.is-old{opacity:.5}
 html:has(#recentToggle.on) .bm-pin.is-old .bm-pin-head{filter:saturate(.35)}
-@keyframes bmPinPulse{0%{box-shadow:0 0 0 0 rgba(39,174,96,.55)}100%{box-shadow:0 0 0 10px rgba(39,174,96,0)}}
+@keyframes bmPinPulse{0%{box-shadow:inset 0 0 0 2px #fff,0 0 0 0 rgba(39,174,96,.6)}100%{box-shadow:inset 0 0 0 2px #fff,0 0 0 12px rgba(39,174,96,0)}}
 .bm-mk-halo{position:absolute;inset:-3px;border-radius:50%;border:2px solid #27ae60;pointer-events:none;animation:bmPinPulse 1.8s ease-out infinite}
 .bm-mk-halo.is-d1{border-color:#7cc48f;animation:none}
 @media (prefers-reduced-motion:reduce){.bm-mk-halo,.bm-pin.is-d0 .bm-pin-halo{animation:none}}

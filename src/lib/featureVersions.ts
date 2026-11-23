@@ -148,6 +148,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-21', ref: 'P185', kind: 'minor', text: 'Pinnid n\u00e4itavad vaatluse v\u00e4rskust: t\u00e4nased ja eilsed r\u00f5ngaga, vanemad tuhmimad; v\u00e4rskemad pinnid on pealmised' },
       { date: '2026-11-21', ref: 'P185b', kind: 'patch', text: 'Elurikkuse viimase 7 p\u00e4eva vaatluspunktid n\u00e4itavad samuti v\u00e4rskust' },
       { date: '2026-11-23', ref: 'P186b', kind: 'patch', text: 'Vanemad pinnid tuhmuvad ainult 7 p\u00e4eva filtriga' },
+      { date: '2026-11-23', ref: 'P186c', kind: 'patch', text: 'V\u00e4rske vaatluse r\u00f5ngas on pinni \u00fcmber ja paremini n\u00e4htav' },
     ],
   },
   {
@@ -191,6 +192,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-13', ref: 'P182b', kind: 'patch', text: '\u00dchtsed v\u00e4rvid, tekst v\u00e4hemalt 12 px, klaviatuuriga liikudes on fookus n\u00e4htav' },
       { date: '2026-11-22', ref: 'P186', kind: 'minor', text: 'Pinnid n\u00e4itavad vaatluse v\u00e4rskust: t\u00e4nased ja eilsed r\u00f5ngaga, vanemad tuhmimad; v\u00e4rskemad pinnid on pealmised' },
       { date: '2026-11-23', ref: 'P186b', kind: 'patch', text: 'Vanemad pinnid tuhmuvad ainult 7 p\u00e4eva filtriga' },
+      { date: '2026-11-23', ref: 'P186c', kind: 'patch', text: 'V\u00e4rske vaatluse r\u00f5ngas on pinni \u00fcmber ja paremini n\u00e4htav' },
     ],
   },
   {
@@ -218,6 +220,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-13', ref: 'P182b', kind: 'patch', text: '\u00dchtsed v\u00e4rvid, tekst v\u00e4hemalt 12 px' },
       { date: '2026-11-22', ref: 'P186', kind: 'minor', text: 'Pinnid n\u00e4itavad vaatluse v\u00e4rskust: t\u00e4nased ja eilsed r\u00f5ngaga, vanemad tuhmimad; v\u00e4rskemad pinnid on pealmised' },
       { date: '2026-11-23', ref: 'P186b', kind: 'patch', text: 'Vanemad pinnid tuhmuvad ainult 7 p\u00e4eva filtriga' },
+      { date: '2026-11-23', ref: 'P186c', kind: 'patch', text: 'V\u00e4rske vaatluse r\u00f5ngas on pinni \u00fcmber ja paremini n\u00e4htav' },
     ],
   },
   {
@@ -237,6 +240,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-10-11', ref: 'P123', kind: 'patch', text: 'Piilparti ei n\u00e4idata enam ameerika piilpardina' },
       { date: '2026-11-21', ref: 'P185', kind: 'minor', text: 'Pinnid n\u00e4itavad vaatluse v\u00e4rskust: t\u00e4nased ja eilsed r\u00f5ngaga, vanemad tuhmimad; v\u00e4rskemad pinnid on pealmised' },
       { date: '2026-11-23', ref: 'P186b', kind: 'patch', text: 'Vanemad pinnid tuhmuvad ainult 7 p\u00e4eva filtriga' },
+      { date: '2026-11-23', ref: 'P186c', kind: 'patch', text: 'V\u00e4rske vaatluse r\u00f5ngas on pinni \u00fcmber ja paremini n\u00e4htav' },
     ],
   },
   {

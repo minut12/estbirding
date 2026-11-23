@@ -413,16 +413,16 @@ html:not(.sb-classic) .bm-pin-src .euf-pl{background-image:url("data:image/svg+x
 html:not(.sb-classic) .bm-pin-src .euf-by{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'><rect width='18' height='11' fill='%23c8313e'/><rect y='7.333' width='18' height='3.667' fill='%234aa657'/><rect width='2' height='11' fill='%23ffffff'/></svg>")}
 html:not(.sb-classic) .bm-pin-src .euf-ru{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 11'><rect width='18' height='11' fill='%23d52b1e'/><rect width='18' height='7.333' fill='%230039a6'/><rect width='18' height='3.667' fill='%23ffffff'/></svg>")}
 /* --- P186 pin freshness (port of linnuliigid P185: d0 today, d1 yesterday, d23 2-3 d, old 4+ d; Europe/Tallinn days) --- */
-html:not(.sb-classic) .bm-pin-halo{position:absolute;left:1px;top:7px;width:42px;height:42px;border-radius:50%;box-sizing:border-box;pointer-events:none}
+html:not(.sb-classic) .bm-pin-halo{position:absolute;left:-4px;top:2px;width:52px;height:52px;border-radius:50%;box-sizing:border-box;pointer-events:none;box-shadow:inset 0 0 0 2px #fff}
 html:not(.sb-classic) .bm-pin.is-d0 .bm-pin-halo{border:3px solid #27ae60;animation:bmPinPulse 1.8s ease-out infinite}
 html:not(.sb-classic) .bm-pin.is-d0 .bm-pin-shape{border-color:#27ae60}
-html:not(.sb-classic) .bm-pin.is-d1 .bm-pin-halo{border:2.5px solid #7cc48f}
+html:not(.sb-classic) .bm-pin.is-d1 .bm-pin-halo{border:3px solid #7cc48f}
 html:not(.sb-classic) .bm-pin.is-d1 .bm-pin-shape{border-color:#7cc48f}
 html:not(.sb-classic):has(#toggle7days:checked) .bm-pin.is-d23{opacity:.72}
 html:not(.sb-classic):has(#toggle7days:checked) .bm-pin.is-d23 .bm-pin-head{filter:saturate(.6)}
 html:not(.sb-classic):has(#toggle7days:checked) .bm-pin.is-old{opacity:.5}
 html:not(.sb-classic):has(#toggle7days:checked) .bm-pin.is-old .bm-pin-head{filter:saturate(.35)}
-@keyframes bmPinPulse{0%{box-shadow:0 0 0 0 rgba(39,174,96,.55)}100%{box-shadow:0 0 0 10px rgba(39,174,96,0)}}
+@keyframes bmPinPulse{0%{box-shadow:inset 0 0 0 2px #fff,0 0 0 0 rgba(39,174,96,.6)}100%{box-shadow:inset 0 0 0 2px #fff,0 0 0 12px rgba(39,174,96,0)}}
 .bm-mk-halo{position:absolute;inset:-3px;border-radius:50%;border:2px solid #27ae60;pointer-events:none;animation:bmPinPulse 1.8s ease-out infinite}
 .bm-mk-halo.is-d1{border-color:#7cc48f;animation:none}
 @media (prefers-reduced-motion:reduce){.bm-mk-halo,.bm-pin.is-d0 .bm-pin-halo{animation:none}}

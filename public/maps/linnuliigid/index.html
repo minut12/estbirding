@@ -127,12 +127,7 @@ html:has(#recentToggle.on) .bm-pin.is-d23 .bm-pin-head{filter:saturate(.6)}
 html:has(#recentToggle.on) .bm-pin.is-old{opacity:.5}
 html:has(#recentToggle.on) .bm-pin.is-old .bm-pin-head{filter:saturate(.35)}
 @keyframes bmPinPulse{0%{box-shadow:0 0 0 0 rgba(39,174,96,.55)}100%{box-shadow:0 0 0 10px rgba(39,174,96,0)}}
-/* P186e: rarity-coloured pins: green glow hugging the pin (a drawn ring disappears on, or clashes with, the coloured edge) */
-.bm-pin:has(.bm-pin-rb) .bm-pin-halo{left:0;top:6px;width:44px;height:44px;border:0;box-shadow:none}
-.bm-pin.is-d1:has(.bm-pin-rb) .bm-pin-halo{border:0;box-shadow:0 0 0 2px #7cc48f}
-.bm-pin.is-d0:has(.bm-pin-rb) .bm-pin-halo{border:0;box-shadow:0 0 0 2px rgba(39,174,96,.95);animation-name:bmPinPulseOut}
-@keyframes bmPinPulseOut{0%{box-shadow:0 0 0 2px rgba(39,174,96,.95),0 0 0 2px rgba(39,174,96,.6)}100%{box-shadow:0 0 0 2px rgba(39,174,96,.95),0 0 0 14px rgba(39,174,96,0)}}
-@media (prefers-reduced-motion:reduce){.bm-pin.is-d0 .bm-pin-halo,.bm-pin.is-d0:has(.bm-pin-rb) .bm-pin-halo{animation:none}}
+@media (prefers-reduced-motion:reduce){.bm-pin.is-d0 .bm-pin-halo{animation:none}}
 .bm-eobs-dot{width:26px;height:26px;border-radius:50%;border:1.5px solid #2c7fb8;opacity:.75;background-size:cover;background-position:center;box-sizing:border-box}
 .bm-eobs-halo{position:absolute;inset:-3px;border-radius:50%;border:2px solid #27ae60;pointer-events:none;animation:bmPinPulse 1.8s ease-out infinite}
 .bm-eobs.is-d0 .bm-eobs-dot{opacity:1;border:2.5px solid #27ae60}

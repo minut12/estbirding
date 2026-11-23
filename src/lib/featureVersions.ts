@@ -150,6 +150,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-23', ref: 'P186b', kind: 'patch', text: 'Vanemad pinnid tuhmuvad ainult 7 p\u00e4eva filtriga' },
       { date: '2026-11-23', ref: 'P186c', kind: 'patch', text: 'V\u00e4rske vaatluse r\u00f5ngas on pinni \u00fcmber ja paremini n\u00e4htav' },
       { date: '2026-11-23', ref: 'P186d', kind: 'patch', text: 'Tavalistel pinnidel taas endine r\u00f5ngas, v\u00e4limine r\u00f5ngas ainult harulduse v\u00e4rviga pinnidel' },
+      { date: '2026-11-23', ref: 'P186e', kind: 'patch', text: 'Harulduse v\u00e4rviga pinnidel on v\u00e4rske vaatluse puhul roheline kuma, mitte eraldi r\u00f5ngas' },
     ],
   },
   {
@@ -195,6 +196,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-23', ref: 'P186b', kind: 'patch', text: 'Vanemad pinnid tuhmuvad ainult 7 p\u00e4eva filtriga' },
       { date: '2026-11-23', ref: 'P186c', kind: 'patch', text: 'V\u00e4rske vaatluse r\u00f5ngas on pinni \u00fcmber ja paremini n\u00e4htav' },
       { date: '2026-11-23', ref: 'P186d', kind: 'patch', text: 'Tavalistel pinnidel taas endine r\u00f5ngas, v\u00e4limine r\u00f5ngas ainult harulduse v\u00e4rviga pinnidel' },
+      { date: '2026-11-23', ref: 'P186e', kind: 'patch', text: 'Harulduse v\u00e4rviga pinnidel on v\u00e4rske vaatluse puhul roheline kuma, mitte eraldi r\u00f5ngas' },
     ],
   },
   {
@@ -224,6 +226,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-23', ref: 'P186b', kind: 'patch', text: 'Vanemad pinnid tuhmuvad ainult 7 p\u00e4eva filtriga' },
       { date: '2026-11-23', ref: 'P186c', kind: 'patch', text: 'V\u00e4rske vaatluse r\u00f5ngas on pinni \u00fcmber ja paremini n\u00e4htav' },
       { date: '2026-11-23', ref: 'P186d', kind: 'patch', text: 'Tavalistel pinnidel taas endine r\u00f5ngas, v\u00e4limine r\u00f5ngas ainult harulduse v\u00e4rviga pinnidel' },
+      { date: '2026-11-23', ref: 'P186e', kind: 'patch', text: 'Harulduse v\u00e4rviga pinnidel on v\u00e4rske vaatluse puhul roheline kuma, mitte eraldi r\u00f5ngas' },
     ],
   },
   {
@@ -245,6 +248,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-23', ref: 'P186b', kind: 'patch', text: 'Vanemad pinnid tuhmuvad ainult 7 p\u00e4eva filtriga' },
       { date: '2026-11-23', ref: 'P186c', kind: 'patch', text: 'V\u00e4rske vaatluse r\u00f5ngas on pinni \u00fcmber ja paremini n\u00e4htav' },
       { date: '2026-11-23', ref: 'P186d', kind: 'patch', text: 'Tavalistel pinnidel taas endine r\u00f5ngas, v\u00e4limine r\u00f5ngas ainult harulduse v\u00e4rviga pinnidel' },
+      { date: '2026-11-23', ref: 'P186e', kind: 'patch', text: 'Harulduse v\u00e4rviga pinnidel on v\u00e4rske vaatluse puhul roheline kuma, mitte eraldi r\u00f5ngas' },
     ],
   },
   {

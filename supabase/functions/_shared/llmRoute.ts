@@ -131,3 +131,11 @@ export function orderCandidates(
 export function modelsOf(list: RouteCandidate[], provider: RouteProvider): string[] {
   return list.filter((c) => c.provider === provider).map((c) => c.model);
 }
+
+/** P188: the candidates minus every excluded provider, order kept (always a new array). */
+export function withoutProviders(
+  cands: RouteCandidate[],
+  exclude: readonly RouteProvider[],
+): RouteCandidate[] {
+  return cands.filter((c) => !exclude.includes(c.provider));
+}

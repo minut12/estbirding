@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-23 - P188 no Mistral in news translation (excludeProviders) + translation_engine = real provider (sonnet|gemini|mistral)
 // redeploy-marker: 2026-11-09 - P180 leftover-language guard (copied source sentences -> error + retry, not done)
 // redeploy-marker: 2026-10-26 - P161b Gemini per-model cap = 40% of the call timeout (translation 32 s, glossary 18 s)
 // redeploy-marker: 2026-10-20 - P155b glossary pass also after a slow translation (45 s, while it ends by 140 s)
@@ -50,6 +51,7 @@ import {
   buildGlossaryUserMsg,
 } from "../_shared/news-glossary.ts";
 import { withRetryPrefix } from "../_shared/retry-prefix.ts";
+import { type EngineLabel, engineLabel } from "../_shared/engine-label.ts";
 import { leftoverError, leftoverSentences } from "./leftover.ts";
 import { anthropicMessages, llmConfigured } from "../_shared/llm.ts";
 
@@ -239,6 +241,8 @@ interface AnthropicResponse {
     cache_read_input_tokens?: number;
     output_tokens?: number;
   };
+  // P188: set by _shared/llm.ts when a backup answered; absent = Claude.
+  llm_provider?: "gemini" | "mistral";
 }
 
 // Sonnet 5.5 does not always echo the ###TITLE###/###BODY### delimiters
@@ -311,6 +315,7 @@ function parseSonnet(src: PendingItem, resp: AnthropicResponse): ParsedItem {
     body: src.body,
     prev_error: src.translation_v2_error ?? null,
   };
+  const label = engineLabel(resp); // P188: real provider, not always "sonnet"
   try {
     if (resp && resp.error) {
       throw new Error(
@@ -335,15 +340,15 @@ function parseSonnet(src: PendingItem, resp: AnthropicResponse): ParsedItem {
       // slice in the catch below.
       const blocks = (resp && resp.content) ? resp.content : [];
       const types = blocks.map((b) => (b && b.type) ? b.type : "?").join(",");
-      out._error = "sonnet: missing delimiters; types=[" + types + "]; head=" +
+      out._error = label + ": missing delimiters; types=[" + types + "]; head=" +
         JSON.stringify(txt.slice(0, 400));
       return out;
     }
     out.title_raw = split.title;
     out.body_raw = split.body;
-    out.translation_engine = "sonnet";
+    out.translation_engine = label;
   } catch (e) {
-    out._error = "sonnet: " + errMsg(e).slice(0, 300);
+    out._error = label + ": " + errMsg(e).slice(0, 300);
   }
   return out;
 }
@@ -382,7 +387,7 @@ function buildErrorPatch(it: ParsedItem): Patch {
 
 function buildDonePatch(
   final: ItemText,
-  engine: "sonnet" | "sonnet+glossary",
+  engine: EngineLabel | `${EngineLabel}+glossary`,
   glossary: readonly GlossaryEntry[] | null,
 ): Patch {
   const patch: Patch = {
@@ -597,8 +602,10 @@ async function callAnthropic(
   try {
     // P161b: when Claude is out and Gemini serves, one slow Gemini model may use at
     // most 40% of this call's time, so the next (lite) model still gets a turn.
+    // P188: Mistral never translates news (translate + glossary both come here).
     const res = await anthropicMessages(areq, ctrl.signal, {
       geminiModelTimeoutMs: Math.max(10_000, Math.floor(timeoutMs * 0.4)),
+      excludeProviders: ["mistral"],
     });
     const text = await res.text();
     if (!res.ok) {
@@ -857,7 +864,7 @@ Deno.serve(async (req) => {
         } else {
           patch = buildDonePatch(
             final,
-            accepted ? "sonnet+glossary" : "sonnet",
+            accepted ? `${engineLabel(resp)}+glossary` : engineLabel(resp),
             outcome.kind === "skipped" ? null : outcome.glossary,
           );
         }

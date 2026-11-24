@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-23 - P188 anthropicMessages opts.excludeProviders keeps a provider out of the backup chain (news translation: no Mistral)
 // redeploy-marker: 2026-11-12 - P181d circuit breaker: skip a model 6 h after credit/auth/429/503/time-cap, Gemini ordered by 48 h success rate (llm_route_state, _shared/llmRoute.ts)
 // redeploy-marker: 2026-10-26 - P161b per-call Gemini model cap (anthropicMessages opts.geminiModelTimeoutMs) for callers with a short own timeout
 // redeploy-marker: 2026-10-25 - P161 Gemini thinkingLevel (non-lite: GEMINI_THINKING, default low) + per-model time cap, a capped model steps to the next
@@ -47,6 +48,7 @@ import {
   parseRouteState,
   type RouteCandidate,
   type RouteStateRow,
+  withoutProviders,
 } from "./llmRoute.ts";
 
 export type LlmProvider = "anthropic" | "gemini" | "mistral";
@@ -356,7 +358,12 @@ const GEMINI_THINKING_DEFAULT = "low";
 const GEMINI_MODEL_TIMEOUT_DEFAULT_MS = 150_000;
 // P161b: a caller whose own timeout is shorter than the cap (news: 80 s) passes its
 // own per-model cap, so a slow first model still leaves time for the next one.
-export type LlmCallOptions = { geminiModelTimeoutMs?: number };
+// P188: excludeProviders keeps those providers out of the backup chain for this call
+// (news translation: no Mistral). A forced provider that is excluded gets a 503.
+export type LlmCallOptions = {
+  geminiModelTimeoutMs?: number;
+  excludeProviders?: readonly LlmProvider[];
+};
 
 type AnthropicTextBlock = { type?: string; text?: string };
 type AnthropicMessage = { role: string; content: string | AnthropicTextBlock[] };
@@ -804,7 +811,11 @@ export function freeMessages(req: AnthropicMessagesRequest, signal?: AbortSignal
 
 type BackupPick = { gemini: string[]; mistral: string[] };
 
-function backupCandidates(geminiModelList?: string[]): RouteCandidate[] {
+function backupCandidates(geminiModelList?: string[], exclude: readonly LlmProvider[] = []): RouteCandidate[] {
+  return withoutProviders(configuredBackupCandidates(geminiModelList), exclude);
+}
+
+function configuredBackupCandidates(geminiModelList?: string[]): RouteCandidate[] {
   const out: RouteCandidate[] = [];
   if (geminiConfigured()) {
     for (const model of (geminiModelList && geminiModelList.length ? geminiModelList : geminiModels())) {
@@ -828,14 +839,17 @@ async function callBackupsRouted(
   signal?: AbortSignal,
   geminiModelList?: string[],
   geminiModelTimeoutMs?: number,
+  exclude: readonly LlmProvider[] = [],
 ): Promise<Response> {
   const state = await loadRouteState();
-  if (!state || state.length === 0) return callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs);
-  const plan = orderCandidates(backupCandidates(geminiModelList), state, Date.now(), {
+  if (!state || state.length === 0) {
+    return callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs, undefined, exclude);
+  }
+  const plan = orderCandidates(backupCandidates(geminiModelList, exclude), state, Date.now(), {
     keepGeminiOrder: !!(geminiModelList && geminiModelList.length),
   });
   if (plan.allSkipped || plan.primary.length === 0) {
-    return callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs);
+    return callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs, undefined, exclude);
   }
   const first: BackupPick = { gemini: modelsOf(plan.primary, "gemini"), mistral: modelsOf(plan.primary, "mistral") };
   const rest: BackupPick = { gemini: modelsOf(plan.lastResort, "gemini"), mistral: modelsOf(plan.lastResort, "mistral") };
@@ -844,12 +858,12 @@ async function callBackupsRouted(
       " skipped=" + (plan.lastResort.map((c) => c.model).join(",") || "-"),
   );
   if (rest.gemini.length + rest.mistral.length === 0) {
-    return callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs, first);
+    return callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs, first, exclude);
   }
   let last: Response | null = null;
   let lastError: unknown = null;
   try {
-    const res = await callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs, first);
+    const res = await callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs, first, exclude);
     if (res.ok) return res;
     last = res;
   } catch (e) {
@@ -861,7 +875,7 @@ async function callBackupsRouted(
     throw lastError;
   }
   console.log("[llm] route last_resort reason=healthy_models_failed");
-  return callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs, rest);
+  return callBackups(req, fallback, signal, geminiModelList, geminiModelTimeoutMs, rest, exclude);
 }
 
 async function callBackups(
@@ -871,10 +885,12 @@ async function callBackups(
   geminiModelList?: string[],
   geminiModelTimeoutMs?: number,
   pick?: BackupPick,
+  exclude: readonly LlmProvider[] = [],
 ): Promise<Response> {
   // P181d: `pick` narrows / reorders the models of this pass; without it, as before.
-  const useGemini = geminiConfigured() && (!pick || pick.gemini.length > 0);
-  const useMistral = mistralConfigured() && (!pick || pick.mistral.length > 0);
+  // P188: an excluded provider is never called, whichever path got here.
+  const useGemini = geminiConfigured() && !exclude.includes("gemini") && (!pick || pick.gemini.length > 0);
+  const useMistral = mistralConfigured() && !exclude.includes("mistral") && (!pick || pick.mistral.length > 0);
   let last: Response | null = null;
   let lastError: unknown = null;
   if (useGemini) {
@@ -909,7 +925,12 @@ export async function anthropicMessages(
   opts: LlmCallOptions = {},
 ): Promise<Response> {
   const gcap = opts.geminiModelTimeoutMs;
+  const ex = opts.excludeProviders ?? [];
   const forced = forcedProvider();
+  if (forced && ex.includes(forced)) {
+    console.log("[llm] provider_excluded:" + forced + " reason=LLM_FORCE_PROVIDER");
+    return new Response(JSON.stringify({ error: { message: "provider_excluded:" + forced } }), { status: 503 });
+  }
   if (forced === "gemini") {
     console.log("[llm] provider=gemini reason=LLM_FORCE_PROVIDER");
     return callGemini(req, false, signal, undefined, gcap);
@@ -923,7 +944,7 @@ export async function anthropicMessages(
   if (!apiKey) {
     if (forced !== "anthropic" && backupConfigured()) {
       console.log("[llm] provider=backup reason=missing_env:ANTHROPIC_API_KEY");
-      return callBackupsRouted(req, true, signal, undefined, gcap);
+      return callBackupsRouted(req, true, signal, undefined, gcap, ex);
     }
     throw new Error("missing_env:ANTHROPIC_API_KEY");
   }
@@ -938,11 +959,11 @@ export async function anthropicMessages(
     const now = Date.now();
     if (
       state && isSkipped({ provider: "anthropic", model: req.model }, state, now) &&
-      backupCandidates().some((c) => !isSkipped(c, state, now))
+      backupCandidates(undefined, ex).some((c) => !isSkipped(c, state, now))
     ) {
       console.log("[llm] provider=backup reason=anthropic_skip_window");
       try {
-        const r = await callBackupsRouted(req, true, signal, undefined, gcap);
+        const r = await callBackupsRouted(req, true, signal, undefined, gcap, ex);
         if (r.ok) return r;
         tried = { res: r, error: null };
       } catch (e) {
@@ -976,7 +997,7 @@ export async function anthropicMessages(
     if (tried && tried.res && !aborted) return tried.res;
     if (aborted || forced === "anthropic" || !backupConfigured() || tried) throw e;
     console.log("[llm] provider=backup reason=anthropic_network:" + String(e).slice(0, 120));
-    return callBackupsRouted(req, true, signal, undefined, gcap);
+    return callBackupsRouted(req, true, signal, undefined, gcap, ex);
   }
   const latency = Date.now() - t0;
 
@@ -1001,5 +1022,5 @@ export async function anthropicMessages(
     return new Response(body, { status: res.status, headers: res.headers });
   }
   console.log("[llm] provider=backup reason=anthropic_http_" + res.status + " " + body.slice(0, 160).replace(/\s+/g, " "));
-  return callBackupsRouted(req, true, signal, undefined, gcap);
+  return callBackupsRouted(req, true, signal, undefined, gcap, ex);
 }

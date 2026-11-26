@@ -42,6 +42,7 @@ const PRECACHE_URLS = [
   '/maps/shared/gps-locate.js',
   '/maps/shared/map-hamburger-control.js',
   '/maps/shared/randeajad.js',
+  '/maps/shared/prob-rate.js',
   '/maps/shared/rarity-style.js',
   '/maps/shared/species-meta.js',
   '/maps/shared/species-prediction-panel.js',

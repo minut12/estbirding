@@ -1049,6 +1049,7 @@ html:not(.sb-classic) #allSpeciesBtn{--sb-ico:url("data:image/svg+xml;utf8,<svg 
 <script src="/maps/shared/et-strings.js"></script>
 <script src="/maps/shared/gps-locate.js"></script>
 <script src="/maps/shared/randeajad.js"></script>
+<script src="/maps/shared/prob-rate.js"></script>
 
 <script>
 // Define the prediction selector EARLY so popup onclick handlers can find it
@@ -16744,7 +16745,7 @@ var __sharedDefaults = {};
       '<button id="probCloseBtn" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:16px;color:#94a3b8" title="Sulge">\u2715</button>' +
     '</div>' +
     '<div style="font-size:12px;color:#64748b;margin-bottom:10px">T\u00f5en\u00e4osus asukoha j\u00e4rgi</div>' +
-    '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">' +
+    '<div id="probLegend" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">' +
       '<div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:rgba(226,75,74,0.7)"></div><span style="font-size:12px;color:#64748b">kõrge (&gt;60%)</span></div>' +
       '<div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:rgba(232,141,42,0.65)"></div><span style="font-size:12px;color:#64748b">keskmine (25\u201360%)</span></div>' +
       '<div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:rgba(127,119,221,0.55)"></div><span style="font-size:12px;color:#64748b">madal (&lt;25%)</span></div>' +
@@ -17534,6 +17535,7 @@ var __sharedDefaults = {};
   // --- Layer rendering ---
   function clearProbabilityLayer() {
     if (probLayerGroup) { map.removeLayer(probLayerGroup); probLayerGroup = null; }
+    if (window.__bmProbRate) window.__bmProbRate.forget();
   }
 
   // English month tokens -> Estonian; reformats "DD Mon" / "Mon DD" -> "DD. kuu". Idempotent on ET text.
@@ -18222,6 +18224,21 @@ var __sharedDefaults = {};
       return;
     }
     _probHideCachePlaceholder();
+    // P189: new rate layer (Silutud + Hooaeg, popup A) when the cache row carries meta (compute-ennustus v11).
+    var _lg = document.getElementById('probLegend');
+    if (_lg && _lg.__orig == null) _lg.__orig = _lg.innerHTML;
+    if (window.__bmProbRate && window.__bmProbRate.hasMeta(fetched.meta)) {
+      clearProbabilityLayer();
+      probLayerGroup = L.layerGroup().addTo(map);
+      var _st = window.__bmProbRate.render({ L: L, group: probLayerGroup, meta: fetched.meta, species: speciesName, oldCells: cells, legendEl: _lg });
+      if (typeof render === 'function') render();
+      var _g = 0, _e = 0;
+      cells.forEach(function(c){ _g += (c.gbifCount || 0); _e += (c.eluCount || 0); });
+      var _upd = (typeof window.__ennFmtLastUpdated === 'function') ? window.__ennFmtLastUpdated(fetched.computedAt) : '';
+      setProbStatus({ gbif: _g, elu: _e, cells: _st.count, updated: _upd, partial: true });
+      return;
+    }
+    if (_lg && _lg.__orig != null) _lg.innerHTML = _lg.__orig;
     var grid = cells.map(function(c){
       var o = {}; for (var k in c) { if (Object.prototype.hasOwnProperty.call(c,k)) o[k] = c[k]; }
       if (Array.isArray(c.periods)) o.periods = c.periods.map(function(p){ return { label: p.label, probability: p.pct, obsCount: p.obsCount, isCurrent: p.isCurrent }; });
@@ -18259,7 +18276,7 @@ var __sharedDefaults = {};
 
     try {
       // Fix 2c v2 · non-admin → server grid cache (zero client compute). Admin → full compute below.
-      if (!(window.__bmAdmin && window.__bmAdmin.isOn())) {
+      if (!(window.__bmAdmin && window.__bmAdmin.isOn()) || !window.__bmProbLegacyAdmin) {
         await _probRenderFromCache(speciesName);
         return;
       }
@@ -18626,12 +18643,12 @@ window.__fetchEnnCellsForSpecies = async function(speciesName){
   if(!sbUrl||!anonKey) return {failed:true, reason:'no-config'};
   try {
     var key = String(speciesName||'').normalize('NFC');
-    var url = sbUrl + '/rest/v1/ennustus_cells_cache?species_name=eq.' + encodeURIComponent(key) + '&select=cells,computed_at';
+    var url = sbUrl + '/rest/v1/ennustus_cells_cache?species_name=eq.' + encodeURIComponent(key) + '&select=cells,computed_at,meta';
     var res = await fetch(url, { headers:{ 'apikey':anonKey, 'Authorization':'Bearer '+anonKey } });
     if(!res.ok) return {failed:true, reason:'http-'+res.status};
     var rows = await res.json();
     if(!rows || !rows.length) return {miss:true};
-    var out = { cells: (rows[0].cells || []), computedAt: rows[0].computed_at };
+    var out = { cells: (rows[0].cells || []), computedAt: rows[0].computed_at, meta: rows[0].meta || null };
     window.__ennCellsBySpecies[speciesName] = out;
     return out;
   } catch(err){

@@ -301,6 +301,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-07-08', ref: 'a3612b7', kind: 'minor', text: 'Trendi silt, \u201eParim aeg\u201c ja p\u00f5hjuste sildid' },
       { date: '2026-07-09', ref: '4cfa42a', kind: 'patch', text: 'Elurikkuse hiljutised vaatlused ajaloos' },
       { date: '2026-09-19', ref: 'P42', kind: 'major', text: 'Uus h\u00fcpikaken: statistika, parim aeg ja 12 kuu graafik' },
+      { date: '2026-11-26', ref: 'P189', kind: 'major', text: 'Uus arvutus: vaatlusp\u00e4evade osakaal ruudus, silutud ja hooaja vaade, \u00f5ige hooaeg' },
     ],
   },
   {
@@ -465,6 +466,7 @@ export const FEATURES: readonly Feature[] = [
       { date: '2026-11-20', ref: 'P184h8', kind: 'patch', text: 'R\u00e4ndesuund kehtib ka vaatluste reale' },
       { date: '2026-11-21', ref: 'P184h12', kind: 'patch', text: 'L\u00e4henemas kaardil ainult viimane vaatlus ja kaugus' },
       { date: '2026-11-21', ref: 'P184h11', kind: 'patch', text: 'Paigalinnud ei ilmu L\u00e4henemas nimekirja' },
+      { date: '2026-11-26', ref: 'P184i', kind: 'patch', text: 'Eksik\u00fclalised arvestatakse igast suunast' },
     ],
   },
   {

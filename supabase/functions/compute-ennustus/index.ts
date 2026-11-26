@@ -1,4 +1,5 @@
 // compute-ennustus
+// redeploy-marker: v11 - 2026-11-25 - P189 rate layer (prob_grid_effort, Silutud + Hooaeg) into ennustus_cells_cache.meta; circular season label
 // redeploy-marker: v10 · 2026-09-20 · fetchAllGbif filters country_code='EE' (Tõenäosus is Estonia-only; P3 widened gbif_occurrences)
 // redeploy-marker: v9 · 2026-07-15 · full-year 26-period template; source-gated Jan-1 (drop GBIF only, keep real elurikkus); grid from allOccs
 // redeploy-marker: v8 · 2026-07-13 · HISTORY folds ALL coord-bearing elurikkus (not just post-gbifMax tail); cross-source dedup now load-bearing
@@ -32,6 +33,7 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { buildRateMeta, tallinnToday, type EffortRow, type RateMeta } from './rateLayer.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -623,6 +625,40 @@ async function fetchEluHistory(supabase: any, speciesName: string): Promise<any[
 // Per-species orchestration (port of computeProbForSpecies head, 12661-12928)
 // ============================================================================
 
+// P189: observation-day effort per cell size (public.prob_grid_effort), cached per invocation
+// so one chunk of species reads each size once. PostgREST caps pages at 1000 rows.
+const effortCache = new Map<number, Promise<EffortRow[]>>();
+async function fetchEffort(supabase: any, cellSize: number): Promise<EffortRow[]> {
+  const out: EffortRow[] = [];
+  const pageSize = 1000;
+  for (let from = 0, guard = 0; guard < 60; guard++, from += pageSize) {
+    const { data, error } = await supabase
+      .from('prob_grid_effort')
+      .select('gi,gj,period,days_any')
+      .eq('cell_size', cellSize)
+      .order('gi', { ascending: true })
+      .order('gj', { ascending: true })
+      .order('period', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error('prob_grid_effort read failed: ' + error.message);
+    if (!data || data.length === 0) break;
+    for (const r of data) {
+      out.push({ gi: Number(r.gi), gj: Number(r.gj), period: Number(r.period), days_any: Number(r.days_any) });
+    }
+    if (data.length < pageSize) break;
+  }
+  return out;
+}
+function loadEffort(supabase: any, cellSize: number): Promise<EffortRow[]> {
+  let p = effortCache.get(cellSize);
+  if (!p) {
+    p = fetchEffort(supabase, cellSize);
+    effortCache.set(cellSize, p);
+    p.catch(() => effortCache.delete(cellSize));
+  }
+  return p;
+}
+
 function exitRow(speciesName: string, reason: 'A' | 'B' | 'C'): any {
   return {
     species_name: speciesName,
@@ -728,6 +764,16 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
     }
   }
 
+  // 13b. P189 reporting-rate layer -> ennustus_cells_cache.meta. Best-effort: on any
+  //      failure the old fields are written unchanged and meta stays null.
+  let rateMeta: RateMeta | null = null;
+  try {
+    const effortRows = await loadEffort(supabase, probCellSize);
+    rateMeta = buildRateMeta({ cellSize: probCellSize, effortRows, obs: eluHistory, today: tallinnToday() });
+  } catch (e) {
+    console.error('[rate-layer]', speciesName, e);
+  }
+
   // 14. Result row (raw score only -- boosts stay render-side, gotcha #3).
   const summaryRow = {
     species_name: speciesName,
@@ -736,7 +782,7 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
     current_pct,
     cell_lat,
     cell_lon,
-    season: (seasonInfo && seasonInfo.label) || null,
+    season: (rateMeta && rateMeta.seasonLabel) || (seasonInfo && seasonInfo.label) || null,
     no_data: false,
     exit_reason: null,
     best_period_pct,
@@ -772,6 +818,7 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
   const cellsRow = {
     species_name: speciesName,
     cells: cellsSerialized,
+    meta: rateMeta,
     computed_at: computedAt,          // MUST equal summaryRow.computed_at
     updated_at: new Date().toISOString(),
   };

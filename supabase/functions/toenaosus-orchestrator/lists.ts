@@ -165,6 +165,8 @@ const JUBA_WINDOW_DAYS = 14;
 const LAHENEMAS_WINDOW_DAYS = 14;
 const NEAR_KM = 300;
 const NEAR_MAX_AGE_DAYS = 5;
+// P184i: vagrants (last10 === 0) skip the direction gate and stay 10 days.
+const NEAR_MAX_AGE_DAYS_VAGRANT = 10;
 const TURI_LAT = 58.81;
 const TRACK_MAX_AGE_DAYS = 7;
 const TRACK_STEP_DAYS = 7;
@@ -388,11 +390,14 @@ export function nearAllowed(e: SightingEvent, asOf: string): boolean {
 export function nearEvent(
   events: SightingEvent[],
   asOf: string,
+  vagrant = false,
 ): SightingEvent | null {
-  const since = addDays(asOf, -NEAR_MAX_AGE_DAYS);
+  const maxAge = vagrant ? NEAR_MAX_AGE_DAYS_VAGRANT : NEAR_MAX_AGE_DAYS;
+  const since = addDays(asOf, -maxAge);
   const hits = events
     .filter((e) =>
-      e.km_to_turi <= NEAR_KM && e.date >= since && nearAllowed(e, asOf)
+      e.km_to_turi <= NEAR_KM && e.date >= since &&
+      (vagrant || nearAllowed(e, asOf))
     )
     .sort(byRecency);
   return hits[0] ?? null;
@@ -445,9 +450,14 @@ function stripSpecies(e: SightingEvent): SightingEvent {
   };
 }
 
+/**
+ * P184i: last10 === null (season prior failed or not given) treats every
+ * species as regular; a species with last10 0 is a vagrant.
+ */
 export function pickLahenemas(
   events: SpeciesEvent[],
   asOf: string,
+  last10: Map<string, number> | null = null,
 ): LahenemasPick[] {
   const bySpecies = new Map<string, SpeciesEvent[]>();
   for (const e of events) {
@@ -458,10 +468,12 @@ export function pickLahenemas(
   const out: LahenemasPick[] = [];
   for (const [species_et, list] of bySpecies) {
     const code = list[0].species_code;
+    const vagrant = last10 !== null && (last10.get(species_et) ?? 0) === 0;
     const track = findTrack(list, asOf);
     // P184h8: the season direction gate applies to the track's latest event
-    // too; a failing track falls through to the near check.
-    if (track && nearAllowed(track[track.length - 1], asOf)) {
+    // too; a failing track falls through to the near check. P184i: not for
+    // vagrants.
+    if (track && (vagrant || nearAllowed(track[track.length - 1], asOf))) {
       out.push({
         species_et,
         species_code: code,
@@ -471,7 +483,7 @@ export function pickLahenemas(
       });
       continue;
     }
-    const near = nearEvent(list, asOf);
+    const near = nearEvent(list, asOf, vagrant);
     if (near) {
       out.push({
         species_et,
@@ -952,7 +964,7 @@ async function buildLahenemas(
   names: string[],
   asOf: string,
   now: Date,
-): Promise<LahenemasPick[]> {
+): Promise<SpeciesEvent[]> {
   const since = addDays(asOf, -LAHENEMAS_WINDOW_DAYS);
   const rows: RareObsRow[] = [];
   for (const part of chunk(names, IN_CHUNK)) {
@@ -969,7 +981,8 @@ async function buildLahenemas(
       ),
     );
   }
-  return pickLahenemas(dedupeEvents(rows), asOf);
+  // P184i: picked in buildEvidenceLists, once the last10 map is known.
+  return dedupeEvents(rows);
 }
 
 export async function buildEvidenceLists(
@@ -1021,7 +1034,8 @@ export async function buildEvidenceLists(
   let lahenemas: LahenemasItem[] = [];
   if (lahenemasRes.ok) {
     try {
-      lahenemas = toLahenemasItems(lahenemasRes.v, bySpecies, hooaeg, last10);
+      const picks = pickLahenemas(lahenemasRes.v, asOf, last10);
+      lahenemas = toLahenemasItems(picks, bySpecies, hooaeg, last10);
     } catch (e) {
       errors.push(`lahenemas: ${errText(e)}`);
       lahenemas = [];

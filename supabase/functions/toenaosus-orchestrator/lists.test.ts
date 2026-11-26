@@ -162,6 +162,45 @@ Deno.test("pickLahenemas: May track from the south is kept", () => {
   assertEquals(out.find((p) => p.species_et === name)?.kind, "track");
 });
 
+// P184i: vagrants (last10 0) skip the direction gate and stay 10 days;
+// regular species (last10 >= 1) and a failed prior (null map) keep the gate.
+const VLK = "V\u00e4lja-v\u00e4ikel\u00f5oke";
+const vlkReport = [sev(VLK, ev("2026-11-14", "LV", 57.37, 21.56, 274))];
+
+Deno.test("pickLahenemas P184i: vagrant LV report listed for 10 days", () => {
+  const vagrant = new Map([[VLK, 0]]);
+  for (const asOf of ["2026-11-17", "2026-11-24"]) {
+    const out = pickLahenemas(vlkReport, asOf, vagrant);
+    assertEquals(out.find((p) => p.species_et === VLK)?.kind, "near", asOf);
+  }
+  const late = pickLahenemas(vlkReport, "2026-11-25", vagrant);
+  assertEquals(late.find((p) => p.species_et === VLK), undefined);
+});
+
+Deno.test("pickLahenemas P184i: regular species keeps the direction gate", () => {
+  const out = pickLahenemas(vlkReport, "2026-11-17", new Map([[VLK, 3]]));
+  assertEquals(out.find((p) => p.species_et === VLK), undefined);
+});
+
+Deno.test("pickLahenemas P184i: failed prior treats a vagrant as regular", () => {
+  const out = pickLahenemas(vlkReport, "2026-11-17", null);
+  assertEquals(out.find((p) => p.species_et === VLK), undefined);
+});
+
+Deno.test("pickLahenemas P184i: November PL -> LV track kept only for a vagrant", () => {
+  const name = "M\u00e4gikiur";
+  const events = [
+    ev("2026-11-07", "PL", 52.0, 21.0, 807),
+    ev("2026-11-10", "PL", 53.1, 21.5, 680),
+    ev("2026-11-15", "PL", 54.4, 22.5, 522),
+    ev("2026-11-19", "LV", 56.5, 24.0, 271),
+  ].map((e) => sev(name, e));
+  const vagrant = pickLahenemas(events, "2026-11-19", new Map([[name, 0]]));
+  assertEquals(vagrant.find((p) => p.species_et === name)?.kind, "track");
+  const regular = pickLahenemas(events, "2026-11-19", new Map([[name, 3]]));
+  assertEquals(regular.find((p) => p.species_et === name), undefined);
+});
+
 Deno.test("nearAllowed: month boundaries", () => {
   const lv = ev("2026-11-16", "LV", 56.9, 24.1, 230);
   const fi = ev("2026-11-16", "FI", 60.2, 24.9, 150);

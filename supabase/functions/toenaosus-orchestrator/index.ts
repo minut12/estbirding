@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-26 - P184i vagrants count from any direction, near 10 days
 // redeploy-marker: 2026-11-21 - P184h11 sedentary species skip Lahenemas
 // redeploy-marker: 2026-11-20 - P184h8 Lahenemas tracks obey season direction
 // redeploy-marker: 2026-11-19 - P184h5 Juba Eestis chance by days since last report

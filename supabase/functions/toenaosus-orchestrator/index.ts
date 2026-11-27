@@ -1,3 +1,4 @@
+// redeploy-marker: 2026-11-27 - P184j raport always written: no-LLM fallback (sonnet / parse / budget)
 // redeploy-marker: 2026-11-26 - P184i vagrants count from any direction, near 10 days
 // redeploy-marker: 2026-11-21 - P184h11 sedentary species skip Lahenemas
 // redeploy-marker: 2026-11-20 - P184h8 Lahenemas tracks obey season direction
@@ -155,6 +156,7 @@ import {
   type WindSample,
 } from "./eta.ts";
 import { buildEvidenceLists, type EvidenceLists, tallinnDate } from "./lists.ts";
+import { type LlmFailure, llmFailure, withoutNarrative } from "./narrative.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_FN_BASE = SUPABASE_URL + "/functions/v1";
@@ -3209,11 +3211,12 @@ interface ParseOutput {
   period_end: string;
   season: string;
   regions: string[];
-  intro_et: string;
+  // P184j: null on a no-LLM raport (narrative.ts), like model below.
+  intro_et: string | null;
   entries: Array<Record<string, unknown>>;
   corridor_watchlist: WatchlistItem[];
   source_data: Record<string, unknown>;
-  model: string;
+  model: string | null;
   generation_meta: Record<string, unknown>;
   evidence_lists: EvidenceLists | null;
 }
@@ -3489,6 +3492,66 @@ interface RunOptions {
   notifyTest: { species: string } | null;
 }
 
+// P16 stage 7, lifted out of run() by P184j so a throw can be caught in one
+// place. Behaviour unchanged: the parts share one clock (`sonnetTimeout` is the
+// ceiling for the whole stage, not per call), so a rejected part is only
+// retried when the failure was fast enough to leave room for a second attempt.
+interface SonnetStageResult {
+  apiResps: AnthropicResponse[];
+  partMs: number[];
+  partRetried: boolean[];
+}
+
+async function runSonnetStage(
+  partContents: string[],
+  maxTokens: number,
+  sonnetTimeout: number,
+): Promise<SonnetStageResult> {
+  const t5 = Date.now();
+  const partRetried: boolean[] = partContents.map(() => false);
+  const partMs: number[] = partContents.map(() => 0);
+
+  const settled = await Promise.allSettled(
+    partContents.map(async (content, i) => {
+      const tp = Date.now();
+      const resp = await callSonnet(
+        SYSTEM_PROMPT,
+        content,
+        maxTokens,
+        sonnetTimeout,
+      );
+      partMs[i] = Date.now() - tp;
+      return resp;
+    }),
+  );
+
+  const apiResps: AnthropicResponse[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const r = settled[i];
+    if (r.status === "fulfilled") {
+      apiResps.push(r.value);
+      continue;
+    }
+    // A timeout never qualifies: two attempts cannot fit inside one ceiling.
+    const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+    const remaining = sonnetTimeout - (Date.now() - t5);
+    if (!SONNET_FAST_FAILURE.test(msg) || remaining < SONNET_RETRY_MIN_MS) {
+      throw r.reason;
+    }
+    console.warn(
+      `[toenaosus-orch] P16 part ${i} failed fast (${msg.slice(0, 120)}), ` +
+        `retrying once with ${remaining} ms left`,
+    );
+    const tp = Date.now();
+    apiResps.push(
+      await callSonnet(SYSTEM_PROMPT, partContents[i], maxTokens, remaining),
+    );
+    partMs[i] = Date.now() - tp;
+    partRetried[i] = true;
+  }
+  return { apiResps, partMs, partRetried };
+}
+
 async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
   const timings: Record<string, number> = {};
   let calls = 0;
@@ -3644,102 +3707,74 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
     );
 
     // --- stage 6: budget guard --------------------------------------------
-    // Never start a Sonnet call we cannot finish.
+    // Never start a Sonnet call we cannot finish. P184j: an exhausted budget no
+    // longer ends the run without a row -- it skips stage 7 and falls through
+    // to the no-LLM raport below.
+    let llmFailed: LlmFailure | null = null;
+    let apiResps: AnthropicResponse[] = [];
     const elapsed = elapsedOf(orch);
     const sonnetTimeout = Math.min(
       SONNET_MAX_TIMEOUT_MS,
       ORCH_BUDGET_MS - elapsed - SONNET_RESERVE_MS,
     );
     if (elapsed > ORCH_BUDGET_MS || sonnetTimeout <= 0) {
-      OPEN_RUNS.delete(orch.rowId);
-      if (!shuttingDown) {
-        await closeRun(sb, orch.rowId, {
-          calls,
-          ok: false,
-          state: { ...orch.state, stage: "budget", elapsed_ms: elapsed },
-          error: "budget",
-        });
-      }
+      llmFailed = llmFailure(
+        "budget",
+        `budget exhausted before sonnet: ${elapsed} ms`,
+      );
       console.error(
         `[toenaosus-orch] budget exhausted before sonnet: ${elapsed} ms`,
       );
-      return;
-    }
-
-    // --- stage 7: node "Sonnet" -------------------------------------------
-    await heartbeat(sb, orch, "sonnet");
-    const t5 = Date.now();
-    const maxTokens = opts.dryRun && opts.maxTokensOverride
-      ? opts.maxTokensOverride
-      : MAX_TOKENS;
-    // P16: the parts share one clock -- `sonnetTimeout` is the ceiling for the
-    // whole stage, not per call -- so a rejected part is only retried when the
-    // failure was fast enough to leave room for a second attempt.
-    const partContents = fc.sonnet_user_contents;
-    const partRetried: boolean[] = partContents.map(() => false);
-    const partMs: number[] = partContents.map(() => 0);
-
-    const settled = await Promise.allSettled(
-      partContents.map(async (content, i) => {
-        const tp = Date.now();
-        const resp = await callSonnet(
-          SYSTEM_PROMPT,
-          content,
+      await heartbeat(sb, orch, "budget");
+    } else {
+      // --- stage 7: node "Sonnet" -----------------------------------------
+      await heartbeat(sb, orch, "sonnet");
+      const t5 = Date.now();
+      const maxTokens = opts.dryRun && opts.maxTokensOverride
+        ? opts.maxTokensOverride
+        : MAX_TOKENS;
+      try {
+        const stage = await runSonnetStage(
+          fc.sonnet_user_contents,
           maxTokens,
           sonnetTimeout,
         );
-        partMs[i] = Date.now() - tp;
-        return resp;
-      }),
-    );
-
-    const apiResps: AnthropicResponse[] = [];
-    for (let i = 0; i < settled.length; i++) {
-      const r = settled[i];
-      if (r.status === "fulfilled") {
-        apiResps.push(r.value);
-        continue;
+        apiResps = stage.apiResps;
+        calls = fc.sonnet_user_contents.length;
+        timings.sonnet_ms = Date.now() - t5;
+        orch.state = {
+          ...orch.state,
+          timings,
+          stop_reason: worstStopReason(apiResps),
+          output_tokens: apiResps.reduce(
+            (sum, r) => sum + (r.usage?.output_tokens ?? 0),
+            0,
+          ),
+          sonnet_parts: apiResps.map((r, i) => ({
+            ms: stage.partMs[i],
+            output_tokens: r.usage?.output_tokens ?? null,
+            stop_reason: r.stop_reason ?? null,
+            candidates: fc.sonnet_part_candidates[i] ?? 0,
+            retried: stage.partRetried[i],
+          })),
+          intro_source: "part0",
+        };
+        await heartbeat(sb, orch, "sonnet_done");
+      } catch (e) {
+        // P184j: throw A (not retryable) or throw B (the retry failed). The
+        // calls were made, so they still count.
+        llmFailed = llmFailure("sonnet", e);
+        calls = fc.sonnet_user_contents.length;
+        timings.sonnet_ms = Date.now() - t5;
+        console.error(
+          `[toenaosus-orch] P184j sonnet failed, no-LLM raport: ${llmFailed.error}`,
+        );
+        await heartbeat(sb, orch, "sonnet_failed");
       }
-      // A timeout never qualifies: two attempts cannot fit inside one ceiling.
-      const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
-      const remaining = sonnetTimeout - (Date.now() - t5);
-      if (!SONNET_FAST_FAILURE.test(msg) || remaining < SONNET_RETRY_MIN_MS) {
-        throw r.reason;
-      }
-      console.warn(
-        `[toenaosus-orch] P16 part ${i} failed fast (${msg.slice(0, 120)}), ` +
-          `retrying once with ${remaining} ms left`,
-      );
-      const tp = Date.now();
-      apiResps.push(
-        await callSonnet(SYSTEM_PROMPT, partContents[i], maxTokens, remaining),
-      );
-      partMs[i] = Date.now() - tp;
-      partRetried[i] = true;
     }
 
-    calls = partContents.length;
-    timings.sonnet_ms = Date.now() - t5;
-    orch.state = {
-      ...orch.state,
-      timings,
-      stop_reason: worstStopReason(apiResps),
-      output_tokens: apiResps.reduce(
-        (sum, r) => sum + (r.usage?.output_tokens ?? 0),
-        0,
-      ),
-      sonnet_parts: apiResps.map((r, i) => ({
-        ms: partMs[i],
-        output_tokens: r.usage?.output_tokens ?? null,
-        stop_reason: r.stop_reason ?? null,
-        candidates: fc.sonnet_part_candidates[i] ?? 0,
-        retried: partRetried[i],
-      })),
-      intro_source: "part0",
-    };
-    await heartbeat(sb, orch, "sonnet_done");
-
     // --- stage 8: node "Parse + Merge" ------------------------------------
+    // listsPromise never rejects (withTimeout resolves to fallbackLists).
     const evidenceLists = await listsPromise;
     orch.state = {
       ...orch.state,
@@ -3752,7 +3787,26 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
       },
     };
     const t6 = Date.now();
-    const payload = parseMerge(apiResps, fc, etaWinds, evidenceLists);
+    let payload: ParseOutput | null = null;
+    if (!llmFailed) {
+      try {
+        payload = parseMerge(apiResps, fc, etaWinds, evidenceLists);
+      } catch (e) {
+        llmFailed = llmFailure("parse", e);
+        console.error(
+          `[toenaosus-orch] P184j parse failed, no-LLM raport: ${llmFailed.error}`,
+        );
+      }
+    }
+    if (!payload || llmFailed) {
+      // P184j: all-or-nothing. parseMerge with no parts never throws and
+      // builds the deterministic entries; withoutNarrative stubs the rest.
+      payload = withoutNarrative(
+        parseMerge([], fc, etaWinds, evidenceLists),
+        llmFailed ?? llmFailure("parse", "no payload"),
+      );
+      orch.state = { ...orch.state, llm_failed: payload.generation_meta.llm_failed };
+    }
     timings.parse_ms = Date.now() - t6;
     orch.state = {
       ...orch.state,
@@ -3794,6 +3848,8 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
         elapsed_ms: elapsedOf(orch),
         timings,
         generation_meta: payload.generation_meta,
+        // P184j: ok stays true (a raport was written); this marks it degraded.
+        llm_failed: llmFailed,
         insert: insert
           ? { inserted: insert.inserted ?? null, id: insert.id ?? null }
           : null,
@@ -3801,7 +3857,7 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
       error: null,
     });
     console.log(
-      `[toenaosus-orch] done run_id=${orch.runId} entries=${payload.entries.length} watchlist=${payload.corridor_watchlist.length} elapsed=${
+      `[toenaosus-orch] done run_id=${orch.runId} entries=${payload.entries.length} watchlist=${payload.corridor_watchlist.length} llm_failed=${llmFailed?.stage ?? "no"} elapsed=${
         elapsedOf(orch)
       }`,
     );
